@@ -74,9 +74,9 @@
   (dotimes (index (length vector))
     (setf (cffi:mem-aref pointer type index) (aref vector index))))
 
-(defun copy-from-foreign (pointer vector type)
-  (dotimes (index (length vector))
-    (setf (aref vector index) (cffi:mem-aref pointer type index))))
+(defun copy-from-foreign (pointer vector type start count)
+  (loop for index from start below (+ start count)
+        do (setf (aref vector index) (cffi:mem-aref pointer type index))))
 
 (defmacro with-pinned-pointers ((&rest bindings) &body body)
   #+(or sbcl ccl ecl)
@@ -88,27 +88,29 @@
   (progn bindings body
          '(error "Pinned array access is unsupported on this implementation")))
 
-(defmacro with-copied-pointers ((&rest bindings) type outputs &body body)
+(defmacro with-copied-pointers ((&rest bindings) type outputs range &body body)
   `(cffi:with-foreign-objects
        ,(loop for (pointer vector) in bindings
               collect `(,pointer ,type (length ,vector)))
      ,@(loop for (pointer vector) in bindings
-             collect `(copy-to-foreign ,vector ,pointer ,type))
+             unless (member pointer outputs)
+               collect `(copy-to-foreign ,vector ,pointer ,type))
      (multiple-value-prog1 (progn ,@body)
        ,@(loop for (pointer vector) in bindings
                when (member pointer outputs)
-                 collect `(copy-from-foreign ,pointer ,vector ,type)))))
+                 collect `(copy-from-foreign ,pointer ,vector ,type ,@range)))))
 
-(defmacro with-native-vectors ((type-var (&rest bindings) &key outputs) &body body)
+(defmacro with-native-vectors ((type-var (&rest bindings) &key outputs range) &body body)
   "Bind each (POINTER VECTOR) to a native pointer using *NATIVE-ARRAY-ACCESS*.
-Vectors named by OUTPUTS' pointers are copied back in :COPY mode."
+In :COPY mode, output vectors are not copied in; RANGE, a (START COUNT) pair
+of forms, is the part copied back."
   (let ((function (gensym "BODY"))
         (pointers (mapcar #'first bindings)))
     `(flet ((,function ,pointers ,@body))
        (declare (dynamic-extent #',function))
        (ecase *native-array-access*
          (:pointer (with-pinned-pointers ,bindings (,function ,@pointers)))
-         (:copy (with-copied-pointers ,bindings ,type-var ,outputs
+         (:copy (with-copied-pointers ,bindings ,type-var ,outputs ,range
                   (,function ,@pointers)))))))
 
 (defun call-native-binary (operation type output a b length)
@@ -128,7 +130,8 @@ Vectors named by OUTPUTS' pointers are copied back in :COPY mode."
                       destination-offset left-offset right-offset)
   (let ((type (foreign-type destination)))
     (with-native-vectors (type ((output destination) (a left) (b right))
-                          :outputs (output))
+                          :outputs (output)
+                          :range (destination-offset count))
       (call-native-binary operation type
                           (element-pointer output type destination-offset)
                           (element-pointer a type left-offset)

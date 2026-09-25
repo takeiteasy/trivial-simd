@@ -171,7 +171,8 @@ operands below +KERNEL-INPUT-BASE+ are registers, the rest are inputs."
     `(let ((,foreign (if (eq ,type :f32) :float :double)))
        (with-native-vectors (,foreign ((,output ,destination)
                                        ,@(mapcar #'list pointers arguments))
-                             :outputs (,output))
+                             :outputs (,output)
+                             :range (,d-offset ,count))
          (cffi:with-foreign-object (,table :pointer ,(max 1 (length arguments)))
            ,@(loop for pointer in pointers
                    for offset in offsets
