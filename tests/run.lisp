@@ -1,0 +1,17 @@
+(require :asdf)
+(unless (find-package :ql)
+  (dolist (candidate '("quicklisp/setup.lisp" ".roswell/lisp/quicklisp/setup.lisp"))
+    (let ((path (merge-pathnames candidate (user-homedir-pathname))))
+      (when (probe-file path)
+        (load path)
+        (return)))))
+(asdf:load-asd (merge-pathnames "../trivial-simd.asd"
+                                (uiop:pathname-directory-pathname *load-truename*)))
+(asdf:load-system "trivial-simd")
+(let ((expected (uiop:getenv "TRIVIAL_SIMD_BACKEND")))
+  (when (and expected (not (string= expected ""))
+             (not (string-equal expected "auto"))
+             (not (string-equal expected
+                                (symbol-name (trivial-simd:backend)))))
+    (error "Expected backend ~A, got ~A" expected (trivial-simd:backend))))
+(asdf:test-system "trivial-simd")

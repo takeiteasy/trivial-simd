@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [trunk]
+  pull_request:
+
+jobs:
+  test:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: SBCL / Linux, os: ubuntu-latest, lisp: sbcl-bin, backend: sbcl }
+          - { name: CCL / Linux, os: ubuntu-latest, lisp: ccl-bin, backend: native }
+          - { name: ECL / Linux, os: ubuntu-latest, lisp: ecl, backend: native }
+          - { name: SBCL / macOS, os: macos-latest, lisp: sbcl-bin, backend: native }
+          - { name: ECL / macOS, os: macos-latest, lisp: ecl, backend: native }
+          - { name: CCL / macOS Intel, os: macos-15-intel, lisp: ccl-bin, backend: native }
+          - { name: SBCL / Windows, os: windows-latest, lisp: sbcl-bin, backend: native }
+          - { name: Lisp fallback / Linux, os: ubuntu-latest, lisp: sbcl-bin, backend: lisp }
+          - { name: Lisp fallback / macOS, os: macos-latest, lisp: sbcl-bin, backend: lisp }
+          - { name: Lisp fallback / Windows, os: windows-latest, lisp: sbcl-bin, backend: lisp }
+    env:
+      LISP: ${{ matrix.lisp }}
+      TRIVIAL_SIMD_BACKEND: ${{ matrix.backend }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build native library
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Compile native library
+        run: cmake --build build --config Release
+
+      - uses: 40ants/setup-lisp@v4
+        with:
+          asdf-system: trivial-simd
+          cache: false
+
+      - name: Run tests
+        shell: lispsh -eo pipefail {0}
+        run: ros -Q run --load tests/run.lisp
