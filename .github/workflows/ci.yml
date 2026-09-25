@@ -95,7 +95,7 @@ jobs:
         env:
           CCL_EXECUTABLE: ${{ matrix.executable }}
         run: |
-          "$RUNNER_TEMP/ccl/$CCL_EXECUTABLE" --no-init --batch --load tests/run.lisp --eval '(quit)'
+          "$RUNNER_TEMP/ccl/$CCL_EXECUTABLE" --no-init --batch --load "$HOME/.roswell/src/asdf-3.3.5.3/build/asdf.lisp" --load tests/run.lisp --eval '(quit)'
 
   arm-windows:
     name: SBCL / Windows ARM64
@@ -144,5 +144,10 @@ jobs:
       - name: Run tests
         shell: pwsh
         run: |
+          if (-not (Test-Path build/trivial_simd.dll)) { throw 'Native DLL is missing' }
+          $env:TRIVIAL_SIMD_BACKEND = 'lisp'
+          & $env:SBCL_EXE --noinform --non-interactive --load "$HOME/quicklisp/setup.lisp" --eval '(asdf:load-asd (truename "trivial-simd.asd"))' --eval '(asdf:load-system "trivial-simd")' --eval '(format t "OS=~S DLL=~S AVAILABLE=~S~%" (uiop:operating-system) (trivial-simd::native-library-path) trivial-simd::*native-available-p*)'
+          if ($LASTEXITCODE -ne 0) { throw 'Native backend diagnostic failed' }
+          $env:TRIVIAL_SIMD_BACKEND = 'native'
           & $env:SBCL_EXE --script tests/run.lisp
           if ($LASTEXITCODE -ne 0) { throw "Tests exited $LASTEXITCODE" }
