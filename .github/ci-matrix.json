@@ -1,0 +1,24 @@
+{
+  "paths": {
+    "docs": "^(docs/|.*\\.md$|LICENSE$|\\.hut\\.scfg$|\\.builds?/|\\.build\\.yml$|examples/)",
+    "focus": "^(native/|native\\.lisp$|CMakeLists\\.txt$|backends\\.lisp$|kernel\\.lisp$)"
+  },
+  "entries": [
+    { "name": "SBCL / Linux", "os": "ubuntu-latest", "lisp": "sbcl-bin", "backend": "sbcl", "family": ["linux"], "tier": 1, "when": "any" },
+    { "name": "Lisp fallback / Linux", "os": "ubuntu-latest", "lisp": "sbcl-bin", "backend": "lisp", "family": ["linux"], "tier": 1, "when": "any" },
+    { "name": "ECL / Linux", "os": "ubuntu-latest", "lisp": "ecl", "backend": "native", "family": ["linux"], "tier": 1, "when": "focus" },
+    { "name": "CCL / Linux", "os": "ubuntu-latest", "lisp": "ccl-bin", "backend": "native", "family": ["linux"], "tier": 2, "when": "focus" },
+    { "name": "SBCL / Linux ARM64", "os": "ubuntu-24.04-arm", "lisp": "sbcl-bin", "backend": "native", "family": ["linux"], "tier": 2, "when": "focus" },
+    { "name": "ECL / Linux ARM64", "os": "ubuntu-24.04-arm", "lisp": "ecl", "backend": "native", "family": ["linux"], "tier": 2, "when": "focus" },
+    { "name": "SBCL / macOS", "os": "macos-latest", "lisp": "sbcl-bin", "backend": "native", "family": ["macos"], "tier": 2, "when": "focus" },
+    { "name": "ECL / macOS", "os": "macos-latest", "lisp": "ecl", "backend": "native", "family": ["macos"], "tier": 2, "when": "focus" },
+    { "name": "CCL / macOS Intel", "os": "macos-15-intel", "lisp": "ccl-bin", "backend": "native", "family": ["macos"], "tier": 2, "when": "focus" },
+    { "name": "SBCL / Windows", "os": "windows-latest", "lisp": "sbcl-bin", "backend": "native", "family": ["windows"], "tier": 2, "when": "focus" },
+    { "name": "Lisp fallback / macOS", "os": "macos-latest", "lisp": "sbcl-bin", "backend": "lisp", "family": ["macos"], "tier": 2, "when": "any" },
+    { "name": "Lisp fallback / Windows", "os": "windows-latest", "lisp": "sbcl-bin", "backend": "lisp", "family": ["windows"], "tier": 2, "when": "any" }
+  ],
+  "extras": [
+    { "name": "CCL / ARM64 (Linux, macOS)", "job": "arm-ccl", "lisp": "ccl", "family": ["linux", "macos"], "tier": 2, "when": "focus" },
+    { "name": "SBCL / Windows ARM64", "job": "arm-windows", "lisp": "sbcl", "family": ["windows"], "tier": 2, "when": "focus" }
+  ]
+}

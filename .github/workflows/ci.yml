@@ -3,28 +3,61 @@ name: CI
 on:
   push:
     branches: [trunk]
+    tags: ['v*']
   pull_request:
+    types: [opened, synchronize, reopened, labeled]
+  workflow_dispatch:
+    inputs:
+      os:
+        description: Run only this OS family
+        type: choice
+        options: [all, linux, macos, windows]
+        default: all
+      lisp:
+        description: Run only Lisps whose name contains this text (for example ccl); empty for all
+        type: string
+        default: ''
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
+  plan:
+    name: Plan
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      extras: ${{ steps.plan.outputs.extras }}
+      count: ${{ steps.plan.outputs.count }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - id: plan
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          ACTION: ${{ github.event.action }}
+          LABEL: ${{ github.event.label.name }}
+          PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          INPUT_OS: ${{ inputs.os }}
+          INPUT_LISP: ${{ inputs.lisp }}
+        run: .github/scripts/plan.sh
+
   test:
+    needs: plan
+    if: needs.plan.outputs.count != '0'
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - { name: SBCL / Linux, os: ubuntu-latest, lisp: sbcl-bin, backend: sbcl }
-          - { name: CCL / Linux, os: ubuntu-latest, lisp: ccl-bin, backend: native }
-          - { name: ECL / Linux, os: ubuntu-latest, lisp: ecl, backend: native }
-          - { name: SBCL / Linux ARM64, os: ubuntu-24.04-arm, lisp: sbcl-bin, backend: native }
-          - { name: ECL / Linux ARM64, os: ubuntu-24.04-arm, lisp: ecl, backend: native }
-          - { name: SBCL / macOS, os: macos-latest, lisp: sbcl-bin, backend: native }
-          - { name: ECL / macOS, os: macos-latest, lisp: ecl, backend: native }
-          - { name: CCL / macOS Intel, os: macos-15-intel, lisp: ccl-bin, backend: native }
-          - { name: SBCL / Windows, os: windows-latest, lisp: sbcl-bin, backend: native }
-          - { name: Lisp fallback / Linux, os: ubuntu-latest, lisp: sbcl-bin, backend: lisp }
-          - { name: Lisp fallback / macOS, os: macos-latest, lisp: sbcl-bin, backend: lisp }
-          - { name: Lisp fallback / Windows, os: windows-latest, lisp: sbcl-bin, backend: lisp }
+        include: ${{ fromJSON(needs.plan.outputs.matrix) }}
     env:
       LISP: ${{ matrix.lisp }}
       TRIVIAL_SIMD_BACKEND: ${{ matrix.backend }}
@@ -51,6 +84,8 @@ jobs:
         run: ros -Q run --load tests/run.lisp
 
   arm-ccl:
+    needs: plan
+    if: contains(fromJSON(needs.plan.outputs.extras), 'arm-ccl')
     name: CCL / ${{ matrix.name }} ARM64
     runs-on: ${{ matrix.os }}
     strategy:
@@ -103,6 +138,8 @@ jobs:
           "$RUNNER_TEMP/ccl/$CCL_EXECUTABLE" --no-init --batch --load "$RUNNER_TEMP/ccl/asdf.lisp" --load tests/run.lisp --eval '(quit)'
 
   arm-windows:
+    needs: plan
+    if: contains(fromJSON(needs.plan.outputs.extras), 'arm-windows')
     name: SBCL / Windows ARM64
     runs-on: windows-11-arm
     env:

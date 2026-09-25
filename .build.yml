@@ -1,0 +1,21 @@
+image: debian/stable
+packages:
+  - build-essential
+  - cmake
+  - curl
+  - sbcl
+sources:
+  - https://git.sr.ht/~takeiteasy/trivial-simd
+tasks:
+  - quicklisp: |
+      curl -fsSL --retry 5 -o quicklisp.lisp https://beta.quicklisp.org/quicklisp.lisp
+      sbcl --non-interactive --load quicklisp.lisp \
+           --eval '(quicklisp-quickstart:install)' \
+           --eval '(ql:quickload (list :cffi :fiveam))'
+  - build: |
+      cd trivial-simd
+      cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+      cmake --build build
+  - test: |
+      cd trivial-simd
+      sbcl --script tests/run.lisp

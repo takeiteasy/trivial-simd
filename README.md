@@ -28,6 +28,7 @@ and `cmake --build build --config Release`. The Lisp fallback loads without it.
 - [Kernels](docs/kernels.md)
 - [Backends and build](docs/backends.md)
 - [Testing and benchmarks](docs/testing.md)
+- [CI](docs/ci.md)
 
 ## Limitations
 

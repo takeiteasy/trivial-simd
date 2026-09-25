@@ -12,7 +12,8 @@ ecl --load tests/run.lisp --eval '(quit)'
 Set `TRIVIAL_SIMD_BACKEND=lisp` or `native` to require that backend. GitHub
 Actions runs the suite on the combinations in [backend coverage](backends.md#tested-combinations),
 including ARM64 Linux, macOS, and Windows. ARM64 jobs require the native backend
-and verify that the Lisp process runs on ARM64.
+and verify that the Lisp process runs on ARM64. Most jobs run on request; see
+[CI](ci.md).
 
 For a local ARM64 native check, build the library first, then run:
 
