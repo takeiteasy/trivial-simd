@@ -5,7 +5,7 @@ The library selects the first available backend in this order:
 | Backend | Availability | Array access |
 |---|---|---|
 | `:sbcl` | SBCL on x86-64 with `sb-simd` | Direct specialized-array loads and stores |
-| `:native` | Built C library on macOS, Linux, or Windows | Direct pointers on SBCL, ECL, and CCL[^pointer] |
+| `:native` | Built C library on macOS, Linux, or Windows | Direct pointers on SBCL, ECL, and CCL[^pointer]; copies elsewhere |
 | `:lisp` | Any supported Common Lisp implementation | Direct Lisp array access |
 
 The C backend uses SSE2 on x86-64 and NEON on ARM64. Other architectures use
@@ -95,11 +95,13 @@ additional instruction sets above are not selected by it.
 Direct float-vector access relies on the tested SBCL, ECL, and CCL CFFI
 implementations; CFFI documents shareable byte vectors rather than a general
 float-vector guarantee.[^pointer] The native backend copies arrays on other
-Lisp implementations. The
-[array-access ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/2) tracks
-tested direct access on more implementations. Small arrays may still run faster
-in Lisp; use the [benchmark](testing.md) for a workload.
+Lisp implementations, which is far slower than pinned access.[^copy] Support
+for more implementations is tracked by their own tickets above. Small arrays may
+still run faster in Lisp; use the [benchmark](testing.md) for a workload.
 
 [^pointer]: CFFI's pointer macro maps to implementation-specific pinned or
     foreign views of specialized arrays on these three implementations.
+[^copy]: The suite also runs the native backend in copy mode on every tested
+    implementation. Per-element copying costs about 500 µs per 1,024 floats on
+    SBCL (`*native-array-access*` is `:copy`).
 [^ccl-arm]: ARM64 CI uses Clozure CL `v1.13-arm64-pre2` on Linux and macOS.

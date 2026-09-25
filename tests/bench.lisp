@@ -10,9 +10,11 @@
         (b (make-array length :element-type 'single-float :initial-element 2.0))
         (out (make-array length :element-type 'single-float)))
     (dolist (backend (append '(:lisp)
-                             (when trivial-simd::*native-available-p* '(:native))
+                             (when trivial-simd::*native-available-p* '(:native :native-copy))
                              (when trivial-simd::*sbcl-simd-available-p* '(:sbcl))))
-      (let ((trivial-simd::*backend* backend)
+      (let ((trivial-simd::*backend* (if (eq backend :native-copy) :native backend))
+            (trivial-simd::*native-array-access*
+              (if (eq backend :native-copy) :copy trivial-simd::*native-array-access*))
             (iterations (max 20 (floor 1000000 length))))
         (let ((start (get-internal-real-time)))
           (dotimes (i iterations)

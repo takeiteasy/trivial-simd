@@ -4,8 +4,15 @@
 
 (defun available-backends ()
   (append '(:lisp)
-          (when simd::*native-available-p* '(:native))
+          (when simd::*native-available-p* '(:native :native-copy))
           (when simd::*sbcl-simd-available-p* '(:sbcl))))
+
+(defmacro with-backend ((backend) &body body)
+  `(let* ((backend ,backend)
+          (simd::*backend* (if (eq backend :native-copy) :native backend))
+          (simd::*native-array-access*
+            (if (eq backend :native-copy) :copy simd::*native-array-access*)))
+     ,@body))
 
 (defun values-for (length type offset)
   (make-array length :element-type type
@@ -17,7 +24,7 @@
     (<= (abs (- actual expected)) (* tolerance (max 1 (abs expected))))))
 
 (test backend-is-reported
-  (is (member (simd:backend) (available-backends))))
+  (is (member (simd:backend) (remove :native-copy (available-backends)))))
 
 (test arithmetic-across-backends
   (dolist (type '(single-float double-float))
@@ -31,7 +38,7 @@
               (funcall function reference left right))
             (dolist (backend (available-backends))
               (let ((output (make-array length :element-type type)))
-                (let ((simd::*backend* backend))
+                (with-backend (backend)
                   (is (eq output (funcall function output left right))))
                 (dotimes (i length)
                   (is (close-enough-p (aref output i) (aref reference i) type)))))))))))
@@ -45,13 +52,13 @@
                (reference (make-array 9 :element-type type)))
           (let ((simd::*backend* :lisp))
             (funcall operation reference left right))
-          (let ((simd::*backend* backend))
+          (with-backend (backend)
             (funcall operation left left right))
           (dotimes (i 9)
             (is (close-enough-p (aref left i) (aref reference i) type)))
           (let ((left (values-for 9 type 1))
                 (right (values-for 9 type 2)))
-            (let ((simd::*backend* backend))
+            (with-backend (backend)
               (funcall operation right left right))
             (dotimes (i 9)
               (is (close-enough-p (aref right i) (aref reference i) type)))))))))
@@ -64,7 +71,7 @@
              (reference-sum (let ((simd::*backend* :lisp)) (simd:sum left)))
              (reference-dot (let ((simd::*backend* :lisp)) (simd:dot left right))))
         (dolist (backend (available-backends))
-          (let ((simd::*backend* backend))
+          (with-backend (backend)
             (is (close-enough-p (simd:sum left) reference-sum type))
             (is (close-enough-p (simd:dot left right) reference-dot type))))))))
 

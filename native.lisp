@@ -15,35 +15,54 @@
     (cffi:load-foreign-library path)
     (setf *native-available-p* t)))
 
-(cffi:defcfun ("ts_add_f32" %native-add-f32) :void
+(defmacro define-native ((c-name lisp-name) return-type &rest arguments)
+  "Define LISP-NAME as a foreign call to C-NAME."
+  #-ecl
+  `(cffi:defcfun (,c-name ,lisp-name) ,return-type ,@arguments)
+  ;; ECL's CFFI call by name looks up the symbol on every call (~22 us).
+  #+ecl
+  `(let ((pointer nil))
+     (defun ,lisp-name ,(mapcar #'first arguments)
+       (cffi:foreign-funcall-pointer
+        (or pointer (setf pointer (cffi:foreign-symbol-pointer ,c-name))) ()
+        ,@(loop for (name type) in arguments append (list type name))
+        ,return-type))))
+
+(define-native ("ts_add_f32" %native-add-f32) :void
   (destination :pointer) (left :pointer) (right :pointer) (length :size))
-(cffi:defcfun ("ts_subtract_f32" %native-subtract-f32) :void
+(define-native ("ts_subtract_f32" %native-subtract-f32) :void
   (destination :pointer) (left :pointer) (right :pointer) (length :size))
-(cffi:defcfun ("ts_multiply_f32" %native-multiply-f32) :void
+(define-native ("ts_multiply_f32" %native-multiply-f32) :void
   (destination :pointer) (left :pointer) (right :pointer) (length :size))
-(cffi:defcfun ("ts_divide_f32" %native-divide-f32) :void
+(define-native ("ts_divide_f32" %native-divide-f32) :void
   (destination :pointer) (left :pointer) (right :pointer) (length :size))
-(cffi:defcfun ("ts_sum_f32" %native-sum-f32) :float
+(define-native ("ts_sum_f32" %native-sum-f32) :float
   (input :pointer) (length :size))
-(cffi:defcfun ("ts_dot_f32" %native-dot-f32) :float
+(define-native ("ts_dot_f32" %native-dot-f32) :float
   (left :pointer) (right :pointer) (length :size))
 
-(cffi:defcfun ("ts_add_f64" %native-add-f64) :void
+(define-native ("ts_add_f64" %native-add-f64) :void
   (destination :pointer) (left :pointer) (right :pointer) (length :size))
-(cffi:defcfun ("ts_subtract_f64" %native-subtract-f64) :void
+(define-native ("ts_subtract_f64" %native-subtract-f64) :void
   (destination :pointer) (left :pointer) (right :pointer) (length :size))
-(cffi:defcfun ("ts_multiply_f64" %native-multiply-f64) :void
+(define-native ("ts_multiply_f64" %native-multiply-f64) :void
   (destination :pointer) (left :pointer) (right :pointer) (length :size))
-(cffi:defcfun ("ts_divide_f64" %native-divide-f64) :void
+(define-native ("ts_divide_f64" %native-divide-f64) :void
   (destination :pointer) (left :pointer) (right :pointer) (length :size))
-(cffi:defcfun ("ts_sum_f64" %native-sum-f64) :double
+(define-native ("ts_sum_f64" %native-sum-f64) :double
   (input :pointer) (length :size))
-(cffi:defcfun ("ts_dot_f64" %native-dot-f64) :double
+(define-native ("ts_dot_f64" %native-dot-f64) :double
   (left :pointer) (right :pointer) (length :size))
+
+(defvar *native-array-access*
+  #+(or sbcl ccl ecl) :pointer
+  #-(or sbcl ccl ecl) :copy
+  "How native calls reach Lisp float vectors: :POINTER (pinned) or :COPY.")
 
 (defun foreign-type (vector)
   (if (typep vector '(simple-array single-float (*))) :float :double))
 
+;; TODO: generic per-element copy is ~3000x slower than pinned access (ticket #33).
 (defun copy-to-foreign (vector pointer type)
   (dotimes (index (length vector))
     (setf (cffi:mem-aref pointer type index) (aref vector index))))
@@ -52,22 +71,39 @@
   (dotimes (index (length vector))
     (setf (aref vector index) (cffi:mem-aref pointer type index))))
 
-(defun native-binary (operation destination left right)
-  (let* ((length (length destination))
-         (type (foreign-type destination)))
-    #+(or sbcl ccl ecl)
-    (cffi:with-pointer-to-vector-data (output destination)
-      (cffi:with-pointer-to-vector-data (a left)
-        (cffi:with-pointer-to-vector-data (b right)
-          (call-native-binary operation type output a b length))))
-    #-(or sbcl ccl ecl)
-    (cffi:with-foreign-objects ((output type length) (a type length) (b type length))
-      ;; TODO: copying limits throughput; add tested pinning adapters (ticket #2).
-      (copy-to-foreign left a type)
-      (copy-to-foreign right b type)
-      (call-native-binary operation type output a b length)
-      (copy-from-foreign output destination type)))
-  destination)
+(defmacro with-pinned-pointers ((&rest bindings) &body body)
+  #+(or sbcl ccl ecl)
+  (if bindings
+      `(cffi:with-pointer-to-vector-data ,(first bindings)
+         (with-pinned-pointers ,(rest bindings) ,@body))
+      `(progn ,@body))
+  #-(or sbcl ccl ecl)
+  (progn bindings body
+         '(error "Pinned array access is unsupported on this implementation")))
+
+(defmacro with-copied-pointers ((&rest bindings) type outputs &body body)
+  `(cffi:with-foreign-objects
+       ,(loop for (pointer vector) in bindings
+              collect `(,pointer ,type (length ,vector)))
+     ,@(loop for (pointer vector) in bindings
+             unless (member pointer outputs)
+               collect `(copy-to-foreign ,vector ,pointer ,type))
+     (multiple-value-prog1 (progn ,@body)
+       ,@(loop for (pointer vector) in bindings
+               when (member pointer outputs)
+                 collect `(copy-from-foreign ,pointer ,vector ,type)))))
+
+(defmacro with-native-vectors ((type-var (&rest bindings) &key outputs) &body body)
+  "Bind each (POINTER VECTOR) to a native pointer using *NATIVE-ARRAY-ACCESS*.
+Vectors named by OUTPUTS' pointers are copied back in :COPY mode."
+  (let ((function (gensym "BODY"))
+        (pointers (mapcar #'first bindings)))
+    `(flet ((,function ,pointers ,@body))
+       (declare (dynamic-extent #',function))
+       (ecase *native-array-access*
+         (:pointer (with-pinned-pointers ,bindings (,function ,@pointers)))
+         (:copy (with-copied-pointers ,bindings ,type-var ,outputs
+                  (,function ,@pointers)))))))
 
 (defun call-native-binary (operation type output a b length)
   (funcall (ecase operation
@@ -77,34 +113,26 @@
              (:divide (if (eq type :float) #'%native-divide-f32 #'%native-divide-f64)))
            output a b length))
 
+(defun native-binary (operation destination left right)
+  (let ((type (foreign-type destination))
+        (length (length destination)))
+    (with-native-vectors (type ((output destination) (a left) (b right))
+                          :outputs (output))
+      (call-native-binary operation type output a b length)))
+  destination)
+
 (defun native-sum (input)
-  (let* ((length (length input))
-         (type (foreign-type input)))
-    #+(or sbcl ccl ecl)
-    (cffi:with-pointer-to-vector-data (a input)
-      (if (eq type :float)
-          (%native-sum-f32 a length)
-          (%native-sum-f64 a length)))
-    #-(or sbcl ccl ecl)
-    (cffi:with-foreign-object (a type length)
-      (copy-to-foreign input a type)
+  (let ((type (foreign-type input))
+        (length (length input)))
+    (with-native-vectors (type ((a input)))
       (if (eq type :float)
           (%native-sum-f32 a length)
           (%native-sum-f64 a length)))))
 
 (defun native-dot (left right)
-  (let* ((length (length left))
-         (type (foreign-type left)))
-    #+(or sbcl ccl ecl)
-    (cffi:with-pointer-to-vector-data (a left)
-      (cffi:with-pointer-to-vector-data (b right)
-        (if (eq type :float)
-            (%native-dot-f32 a b length)
-            (%native-dot-f64 a b length))))
-    #-(or sbcl ccl ecl)
-    (cffi:with-foreign-objects ((a type length) (b type length))
-      (copy-to-foreign left a type)
-      (copy-to-foreign right b type)
+  (let ((type (foreign-type left))
+        (length (length left)))
+    (with-native-vectors (type ((a left) (b right)))
       (if (eq type :float)
           (%native-dot-f32 a b length)
           (%native-dot-f64 a b length)))))
