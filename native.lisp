@@ -54,6 +54,13 @@
 (define-native ("ts_dot_f64" %native-dot-f64) :double
   (left :pointer) (right :pointer) (length :size))
 
+(define-native ("ts_kernel_f32" %native-kernel-f32) :void
+  (code :pointer) (code-length :size) (constants :pointer)
+  (inputs :pointer) (output :pointer) (length :size))
+(define-native ("ts_kernel_f64" %native-kernel-f64) :void
+  (code :pointer) (code-length :size) (constants :pointer)
+  (inputs :pointer) (output :pointer) (length :size))
+
 (defvar *native-array-access*
   #+(or sbcl ccl ecl) :pointer
   #-(or sbcl ccl ecl) :copy
@@ -113,7 +120,9 @@ Vectors named by OUTPUTS' pointers are copied back in :COPY mode."
            output a b length))
 
 (defun element-pointer (pointer type offset)
-  (cffi:inc-pointer pointer (* offset (cffi:foreign-type-size type))))
+  (if (zerop offset)
+      pointer
+      (cffi:inc-pointer pointer (* offset (cffi:foreign-type-size type)))))
 
 (defun native-binary (operation destination left right count
                       destination-offset left-offset right-offset)
@@ -143,3 +152,27 @@ Vectors named by OUTPUTS' pointers are copied back in :COPY mode."
         (if (eq type :float)
             (%native-dot-f32 a b count)
             (%native-dot-f64 a b count))))))
+
+(defstruct (native-program (:constructor %make-native-program))
+  code code-length f32-constants f64-constants)
+
+(defun foreign-copy (values type coerce-type)
+  (let ((pointer (cffi:foreign-alloc type :count (max 1 (length values)))))
+    (loop for value in values
+          for index from 0
+          do (setf (cffi:mem-aref pointer type index) (coerce value coerce-type)))
+    pointer))
+
+;; TODO: program memory is never freed; free it if kernels become dynamic (ticket #34).
+(defun make-native-program (code constants)
+  (%make-native-program :code (foreign-copy code :uint8 'integer)
+                        :code-length (length code)
+                        :f32-constants (foreign-copy constants :float 'single-float)
+                        :f64-constants (foreign-copy constants :double 'double-float)))
+
+(defun call-native-kernel (program type inputs output count)
+  (if (eq type :float)
+      (%native-kernel-f32 (native-program-code program) (native-program-code-length program)
+                          (native-program-f32-constants program) inputs output count)
+      (%native-kernel-f64 (native-program-code program) (native-program-code-length program)
+                          (native-program-f64-constants program) inputs output count)))

@@ -31,5 +31,5 @@ and GitHub Actions do not invoke it.
 
 The benchmark reports microseconds per vector-add call for 32, 1,024, and
 65,536 `single-float` elements on the available Lisp, native C, and SBCL
-backends, plus `NATIVE-COPY` for the copying fallback. Results depend on the Lisp implementation, compiler, CPU, and array
+backends, plus a fused `a*b+c` kernel comparison and `NATIVE-COPY` for the copying fallback. Results depend on the Lisp implementation, compiler, CPU, and array
 access cost.

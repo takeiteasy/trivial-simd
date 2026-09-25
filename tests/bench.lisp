@@ -23,3 +23,30 @@
                   length backend
                   (/ (* 1000000.0 (- (get-internal-real-time) start))
                      internal-time-units-per-second iterations)))))))
+
+(trivial-simd:define-kernel fused-multiply-add (a b c) (+ (* a b) c))
+
+(format t "~%Kernel a*b+c~%")
+(dolist (length '(32 1024 65536))
+  (let ((a (make-array length :element-type 'single-float :initial-element 1.0))
+        (b (make-array length :element-type 'single-float :initial-element 2.0))
+        (c (make-array length :element-type 'single-float :initial-element 3.0))
+        (out (make-array length :element-type 'single-float))
+        (iterations (max 20 (floor 1000000 length))))
+    (flet ((time-call (name function)
+             (let ((start (get-internal-real-time)))
+               (dotimes (i iterations) (funcall function))
+               (format t "~7D elements ~14A ~,3F us/call~%"
+                       length name
+                       (/ (* 1000000.0 (- (get-internal-real-time) start))
+                          internal-time-units-per-second iterations)))))
+      (dolist (backend (append '(:lisp)
+                               (when trivial-simd::*native-available-p* '(:native))
+                               (when trivial-simd::*sbcl-simd-available-p* '(:sbcl))))
+        (let ((trivial-simd::*backend* backend))
+          (time-call (format nil "~A kernel" backend)
+                  (lambda () (fused-multiply-add out a b c)))
+          (time-call (format nil "~A two ops" backend)
+                  (lambda ()
+                    (trivial-simd:multiply! out a b)
+                    (trivial-simd:add! out out c))))))))

@@ -7,9 +7,29 @@
                   :expected-type '(or (simple-array single-float (*))
                                       (simple-array double-float (*)))))))
 
+(defun zero-offsets (count)
+  (case count
+    (1 '(0))
+    (2 '(0 0))
+    (3 '(0 0 0))
+    (t (make-list count :initial-element 0))))
+
+(defun resolve-whole (vectors)
+  (let* ((first (first vectors))
+         (type (float-vector-type first))
+         (length (length first)))
+    (dolist (vector (rest vectors))
+      (unless (eq type (float-vector-type vector))
+        (error "All vectors must have the same element type"))
+      (unless (= length (length vector))
+        (error "All vectors must have the same length")))
+    (values type length (zero-offsets (length vectors)))))
+
 (defun resolve-slice (vectors starts start end)
   "Validate VECTORS and return the element type, count, and per-vector offsets.
 STARTS holds each vector's own start or NIL to use START."
+  (when (and (null start) (null end) (dolist (own starts t) (when own (return nil))))
+    (return-from resolve-slice (resolve-whole vectors)))
   (let* ((type (float-vector-type (first vectors)))
          (length (length (first vectors)))
          (start (or start 0)))
@@ -34,18 +54,19 @@ STARTS holds each vector's own start or NIL to use START."
 
 (defun binary-operation (operation destination left right
                          start end destination-start left-start right-start)
-  (multiple-value-bind (type count offsets)
-      (resolve-slice (list destination left right)
-                     (list destination-start left-start right-start) start end)
-    (declare (ignore type))
-    (destructuring-bind (destination-offset left-offset right-offset) offsets
+  (let ((vectors (list destination left right))
+        (starts (list destination-start left-start right-start)))
+    (declare (dynamic-extent vectors starts))
+    (multiple-value-bind (type count offsets) (resolve-slice vectors starts start end)
+      (declare (ignore type))
+      (destructuring-bind (destination-offset left-offset right-offset) offsets
       (ecase *backend*
         (:sbcl (sbcl-binary operation destination left right count
                             destination-offset left-offset right-offset))
         (:native (native-binary operation destination left right count
                                 destination-offset left-offset right-offset))
         (:lisp (lisp-binary operation destination left right count
-                            destination-offset left-offset right-offset)))))
+                            destination-offset left-offset right-offset))))))
   destination)
 
 (defmacro define-binary-operation (name operation verb)

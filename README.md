@@ -25,6 +25,7 @@ Build the native library with `cmake -S . -B build -DCMAKE_BUILD_TYPE=Release`
 and `cmake --build build --config Release`. The Lisp fallback loads without it.
 
 - [API](docs/api.md)
+- [Kernels](docs/kernels.md)
 - [Backends and build](docs/backends.md)
 - [Testing and benchmarks](docs/testing.md)
 

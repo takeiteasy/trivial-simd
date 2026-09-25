@@ -1,0 +1,87 @@
+(in-package #:trivial-simd/tests)
+
+(in-suite :trivial-simd)
+
+(simd:define-kernel kernel-fma (a b c) (+ (* a b) c))
+(simd:define-kernel kernel-poly (x) (- (* x x 2) (/ x 4) 1))
+(simd:define-kernel kernel-negate (a b) (- (/ a b)))
+(simd:define-kernel kernel-deep (a b c d) (/ (- (* a b) (* c d)) (+ a b c d)))
+(simd:define-kernel kernel-constant () (+ 1 2))
+(simd:define-kernel kernel-reciprocal (a) (/ a))
+
+(defun kernel-reference (function type length &rest inputs)
+  (let ((output (make-array length :element-type type)))
+    (dotimes (i length output)
+      (setf (aref output i)
+            (apply function (mapcar (lambda (input) (aref input i)) inputs))))))
+
+(defun check-kernel (kernel reference type length inputs &rest keys)
+  (dolist (backend (available-backends))
+    (let ((output (make-array length :element-type type))
+          (expected (apply #'kernel-reference reference type length inputs)))
+      (with-backend (backend)
+        (is (eq output (apply kernel output (append inputs keys)))))
+      (dotimes (i length)
+        (is (close-enough-p (aref output i) (aref expected i) type))))))
+
+(test kernels-across-backends
+  (dolist (type '(single-float double-float))
+    (dolist (length '(0 1 3 4 5 9 255 256 257 600))
+      (let ((a (values-for length type 1))
+            (b (values-for length type 2))
+            (c (values-for length type 3))
+            (d (values-for length type 4)))
+        (check-kernel #'kernel-fma (lambda (a b c) (+ (* a b) c)) type length (list a b c))
+        (check-kernel #'kernel-poly
+                      (lambda (x) (- (* x x (coerce 2 type)) (/ x (coerce 4 type)) (coerce 1 type)))
+                      type length (list a))
+        (check-kernel #'kernel-negate (lambda (a b) (- (/ a b))) type length (list a b))
+        (check-kernel #'kernel-deep
+                      (lambda (a b c d) (/ (- (* a b) (* c d)) (+ a b c d)))
+                      type length (list a b c d))
+        (check-kernel #'kernel-constant (lambda () (coerce 3 type)) type length '())
+        (check-kernel #'kernel-reciprocal (lambda (a) (/ (coerce 1 type) a)) type length (list a))))))
+
+(test kernel-aliasing
+  (dolist (backend (available-backends))
+    (let ((a (values-for 300 'single-float 1))
+          (b (values-for 300 'single-float 2))
+          (c (values-for 300 'single-float 3)))
+      (let ((expected (kernel-reference (lambda (a b c) (+ (* a b) c))
+                                        'single-float 300 a b c)))
+        (with-backend (backend)
+          (kernel-fma a a b c))
+        (dotimes (i 300)
+          (is (close-enough-p (aref a i) (aref expected i) 'single-float)))))))
+
+(test kernel-slices
+  (dolist (backend (available-backends))
+    (dolist (type '(single-float double-float))
+      (let* ((a (values-for 40 type 1))
+             (b (values-for 40 type 2))
+             (c (values-for 40 type 3))
+             (output (values-for 40 type 100))
+             (before (copy-seq output)))
+        (with-backend (backend)
+          (kernel-fma output a b c :start 0 :end 9 :destination-start 5 :a-start 11 :c-start 20))
+        (dotimes (i 40)
+          (if (<= 5 i 13)
+              (let ((k (- i 5)))
+                (is (close-enough-p (aref output i)
+                                    (+ (* (aref a (+ 11 k)) (aref b k)) (aref c (+ 20 k)))
+                                    type)))
+              (is (= (aref output i) (aref before i)))))
+        (signals error (kernel-fma output a b c :start 0 :end 9 :b-start 32))))))
+
+(defun balanced-expression (depth)
+  (if (zerop depth) 'a `(+ ,(balanced-expression (1- depth)) ,(balanced-expression (1- depth)))))
+
+(test kernel-definition-errors
+  (signals error (macroexpand-1 '(simd:define-kernel bad (a) (sqrt a))))
+  (signals error (macroexpand-1 '(simd:define-kernel bad (a) (+ a z))))
+  (signals error (macroexpand-1 '(simd:define-kernel bad (a) (+))))
+  (finishes (macroexpand-1 `(simd:define-kernel fits (a) ,(balanced-expression 8))))
+  (signals error (macroexpand-1 `(simd:define-kernel too-many
+                                     ,(loop for i below 250 collect (intern (format nil "A~D" i)))
+                                     0)))
+  (signals error (macroexpand-1 `(simd:define-kernel too-deep (a) ,(balanced-expression 9)))))

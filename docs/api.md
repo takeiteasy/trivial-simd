@@ -55,9 +55,21 @@ the addition order.[^order]
 
 ## Limitations
 
-The API does not expose composable SIMD packs. The
-[composable pack ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/1)
-tracks the next API design step.
+The API does not expose SIMD packs; [kernels](kernels.md) compose operations
+instead. Only `single-float` and `double-float` vectors are supported.
+
+| Area | Ticket |
+|---|---|
+| Integer element types | [#39](https://todo.sr.ht/~takeiteasy/trivial-simd/39) |
+| Scalar operands, `axpy!`, `fma!` | [#40](https://todo.sr.ht/~takeiteasy/trivial-simd/40) |
+| Unary elementwise operations | [#41](https://todo.sr.ht/~takeiteasy/trivial-simd/41) |
+| More reductions | [#42](https://todo.sr.ht/~takeiteasy/trivial-simd/42) |
+| Strided access | [#43](https://todo.sr.ht/~takeiteasy/trivial-simd/43) |
+| Copy, fill, swap | [#44](https://todo.sr.ht/~takeiteasy/trivial-simd/44) |
+| Type conversion | [#45](https://todo.sr.ht/~takeiteasy/trivial-simd/45) |
+| Comparison, mask, select | [#46](https://todo.sr.ht/~takeiteasy/trivial-simd/46) |
+| Complex floats | [#47](https://todo.sr.ht/~takeiteasy/trivial-simd/47) |
+| Matrix support | [#48](https://todo.sr.ht/~takeiteasy/trivial-simd/48) |
 
 [^order]: SIMD reductions accumulate lanes separately before combining them.
     Compare results with a tolerance when the operation order matters.
