@@ -10,8 +10,15 @@ ecl --load tests/run.lisp --eval '(quit)'
 ```
 
 Set `TRIVIAL_SIMD_BACKEND=lisp` or `native` to require that backend. GitHub
-Actions runs the suite on available SBCL, ECL, and CCL combinations across
-macOS, Linux, and Windows.
+Actions runs the suite on the combinations in [backend coverage](backends.md#tested-combinations),
+including ARM64 Linux, macOS, and Windows. ARM64 jobs require the native backend
+and verify that the Lisp process runs on ARM64.
+
+For a local ARM64 native check, build the library first, then run:
+
+```sh
+TRIVIAL_SIMD_BACKEND=native sbcl --script tests/run.lisp
+```
 
 ## Benchmark
 

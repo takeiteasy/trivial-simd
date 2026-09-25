@@ -16,6 +16,8 @@ jobs:
           - { name: SBCL / Linux, os: ubuntu-latest, lisp: sbcl-bin, backend: sbcl }
           - { name: CCL / Linux, os: ubuntu-latest, lisp: ccl-bin, backend: native }
           - { name: ECL / Linux, os: ubuntu-latest, lisp: ecl, backend: native }
+          - { name: SBCL / Linux ARM64, os: ubuntu-24.04-arm, lisp: sbcl-bin, backend: native }
+          - { name: ECL / Linux ARM64, os: ubuntu-24.04-arm, lisp: ecl, backend: native }
           - { name: SBCL / macOS, os: macos-latest, lisp: sbcl-bin, backend: native }
           - { name: ECL / macOS, os: macos-latest, lisp: ecl, backend: native }
           - { name: CCL / macOS Intel, os: macos-15-intel, lisp: ccl-bin, backend: native }
@@ -28,6 +30,10 @@ jobs:
       TRIVIAL_SIMD_BACKEND: ${{ matrix.backend }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Check ARM64 runner architecture
+        if: matrix.os == 'ubuntu-24.04-arm'
+        run: test "$RUNNER_ARCH" = ARM64
 
       - name: Build native library
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
@@ -43,3 +49,100 @@ jobs:
       - name: Run tests
         shell: lispsh -eo pipefail {0}
         run: ros -Q run --load tests/run.lisp
+
+  arm-ccl:
+    name: CCL / ${{ matrix.name }} ARM64
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: Linux, os: ubuntu-24.04-arm, archive: linuxarm64.tar.gz, checksum: 966a7182607e729e41e42159efea4618c2b305dc000e2b902ffe8aa7199ab449, executable: arm64cl }
+          - { name: macOS, os: macos-15, archive: darwinarm64.tar.gz, checksum: 382426a718af3fa9ae15d682fb47d5921dda3565b1a087c3d34d9ff45f3b3bfe, executable: darm64cl }
+    env:
+      LISP: sbcl-bin
+      TRIVIAL_SIMD_BACKEND: native
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check runner architecture
+        run: test "$RUNNER_ARCH" = ARM64
+
+      - name: Build native library
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Compile native library
+        run: cmake --build build --config Release
+
+      - uses: 40ants/setup-lisp@v4
+        with:
+          asdf-system: trivial-simd/tests
+          cache: false
+
+      - name: Install CCL ARM64
+        shell: bash
+        env:
+          CCL_ARCHIVE: ${{ matrix.archive }}
+          CCL_SHA256: ${{ matrix.checksum }}
+        run: |
+          curl -fL "https://github.com/Clozure/ccl/releases/download/v1.13-arm64-pre2/$CCL_ARCHIVE" -o "$RUNNER_TEMP/$CCL_ARCHIVE"
+          echo "$CCL_SHA256  $RUNNER_TEMP/$CCL_ARCHIVE" | shasum -a 256 -c -
+          mkdir "$RUNNER_TEMP/ccl"
+          tar -xzf "$RUNNER_TEMP/$CCL_ARCHIVE" -C "$RUNNER_TEMP/ccl"
+
+      - name: Run tests
+        shell: bash
+        env:
+          CCL_EXECUTABLE: ${{ matrix.executable }}
+        run: |
+          "$RUNNER_TEMP/ccl/$CCL_EXECUTABLE" --no-init --batch --load tests/run.lisp --eval '(quit)'
+
+  arm-windows:
+    name: SBCL / Windows ARM64
+    runs-on: windows-11-arm
+    env:
+      TRIVIAL_SIMD_BACKEND: native
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check runner architecture
+        shell: pwsh
+        run: |
+          if ($env:RUNNER_ARCH -ne 'ARM64') { throw "Expected ARM64 runner, got $env:RUNNER_ARCH" }
+
+      - name: Build native library
+        run: cmake -S . -B build -A ARM64 -DCMAKE_BUILD_TYPE=Release
+
+      - name: Compile native library
+        run: cmake --build build --config Release
+
+      - name: Install SBCL ARM64
+        shell: pwsh
+        run: |
+          $msi = Join-Path $env:RUNNER_TEMP 'sbcl-arm64.msi'
+          Invoke-WebRequest 'https://github.com/roswell/sbcl_bin/releases/download/2.6.8/sbcl-2.6.8-arm64-windows-binary.msi' -OutFile $msi
+          $actual = (Get-FileHash $msi -Algorithm SHA256).Hash
+          if ($actual -ne '8c6a0752b911c2142f42f024a295a14ce044c6687cd6c4ede808eaa13438aa80') { throw 'SBCL download checksum mismatch' }
+          $install = Start-Process msiexec.exe -ArgumentList @('/i', $msi, '/qn', '/norestart') -Wait -PassThru
+          if ($install.ExitCode -ne 0) { throw "SBCL installer exited $($install.ExitCode)" }
+          $sbcl = Get-ChildItem $env:ProgramFiles -Filter sbcl.exe -Recurse | Select-Object -First 1 -ExpandProperty FullName
+          if (-not $sbcl) { throw 'SBCL executable was not installed' }
+          "SBCL_EXE=$sbcl" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Install Lisp dependencies
+        shell: pwsh
+        run: |
+          & $env:SBCL_EXE --noinform --non-interactive --eval '(unless (member :arm64 *features*) (error "Expected ARM64 SBCL"))'
+          if ($LASTEXITCODE -ne 0) { throw 'SBCL architecture check failed' }
+          $bootstrap = Join-Path $env:RUNNER_TEMP 'quicklisp.lisp'
+          Invoke-WebRequest 'https://beta.quicklisp.org/quicklisp.lisp' -OutFile $bootstrap
+          & $env:SBCL_EXE --noinform --non-interactive --load $bootstrap --eval '(quicklisp-quickstart:install)'
+          if ($LASTEXITCODE -ne 0) { throw 'Quicklisp installation failed' }
+          & $env:SBCL_EXE --noinform --non-interactive --load "$HOME/quicklisp/setup.lisp" --eval '(ql:quickload (list :cffi :fiveam))'
+          if ($LASTEXITCODE -ne 0) { throw 'Lisp dependency installation failed' }
+
+      - name: Run tests
+        shell: pwsh
+        run: |
+          & $env:SBCL_EXE --script tests/run.lisp
+          if ($LASTEXITCODE -ne 0) { throw "Tests exited $LASTEXITCODE" }
