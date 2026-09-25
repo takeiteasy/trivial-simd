@@ -7,51 +7,79 @@
                   :expected-type '(or (simple-array single-float (*))
                                       (simple-array double-float (*)))))))
 
-(defun validate-vectors (&rest vectors)
-  (let ((type (float-vector-type (first vectors)))
-        (length (length (first vectors))))
+(defun resolve-slice (vectors starts start end)
+  "Validate VECTORS and return the element type, count, and per-vector offsets.
+STARTS holds each vector's own start or NIL to use START."
+  (let* ((type (float-vector-type (first vectors)))
+         (length (length (first vectors)))
+         (start (or start 0)))
     (dolist (vector (rest vectors))
       (unless (eq type (float-vector-type vector))
-        (error "All vectors must have the same element type"))
-      (unless (= length (length vector))
-        (error "All vectors must have the same length")))
-    type))
+        (error "All vectors must have the same element type")))
+    (unless end
+      (dolist (vector (rest vectors))
+        (unless (= length (length vector))
+          (error "All vectors must have the same length without :END"))))
+    (let ((end (or end length)))
+      (unless (<= 0 start end)
+        (error "Invalid slice: :START ~S, :END ~S" start end))
+      (let* ((count (- end start))
+             (offsets (mapcar (lambda (offset) (or offset start)) starts)))
+        (loop for vector in vectors
+              for offset in offsets
+              do (unless (and (<= 0 offset) (<= (+ offset count) (length vector)))
+                   (error "Slice of ~D elements at offset ~D exceeds vector length ~D"
+                          count offset (length vector))))
+        (values type count offsets)))))
 
-(defun binary-operation (operation destination left right)
-  (validate-vectors destination left right)
-  (ecase *backend*
-    (:sbcl (sbcl-binary operation destination left right))
-    (:native (native-binary operation destination left right))
-    (:lisp (lisp-binary operation destination left right))))
+(defun binary-operation (operation destination left right
+                         start end destination-start left-start right-start)
+  (multiple-value-bind (type count offsets)
+      (resolve-slice (list destination left right)
+                     (list destination-start left-start right-start) start end)
+    (declare (ignore type))
+    (destructuring-bind (destination-offset left-offset right-offset) offsets
+      (ecase *backend*
+        (:sbcl (sbcl-binary operation destination left right count
+                            destination-offset left-offset right-offset))
+        (:native (native-binary operation destination left right count
+                                destination-offset left-offset right-offset))
+        (:lisp (lisp-binary operation destination left right count
+                            destination-offset left-offset right-offset)))))
+  destination)
 
-(defun add! (destination left right)
-  "Add LEFT and RIGHT elementwise into DESTINATION and return it."
-  (binary-operation :add destination left right))
+(defmacro define-binary-operation (name operation verb)
+  `(defun ,name (destination left right &key start end
+                                          destination-start left-start right-start)
+     ,(format nil "~A LEFT and RIGHT elementwise into DESTINATION and return it.
+The slice is :START to :END (default the whole vector); the ...-START keywords
+override the start for one vector." verb)
+     (binary-operation ,operation destination left right
+                       start end destination-start left-start right-start)))
 
-(defun subtract! (destination left right)
-  "Subtract RIGHT from LEFT elementwise into DESTINATION and return it."
-  (binary-operation :subtract destination left right))
+(define-binary-operation add! :add "Add")
+(define-binary-operation subtract! :subtract "Subtract RIGHT from")
+(define-binary-operation multiply! :multiply "Multiply")
+(define-binary-operation divide! :divide "Divide LEFT by RIGHT,")
 
-(defun multiply! (destination left right)
-  "Multiply LEFT and RIGHT elementwise into DESTINATION and return it."
-  (binary-operation :multiply destination left right))
+(defun sum (input &key start end input-start)
+  "Return the sum of the :START to :END slice of INPUT, or a zero if empty."
+  (multiple-value-bind (type count offsets)
+      (resolve-slice (list input) (list input-start) start end)
+    (declare (ignore type))
+    (let ((offset (first offsets)))
+      (ecase *backend*
+        (:sbcl (sbcl-sum input count offset))
+        (:native (native-sum input count offset))
+        (:lisp (lisp-sum input count offset))))))
 
-(defun divide! (destination left right)
-  "Divide LEFT by RIGHT elementwise into DESTINATION and return it."
-  (binary-operation :divide destination left right))
-
-(defun sum (input)
-  "Return the sum of INPUT, or a zero of its element type if empty."
-  (float-vector-type input)
-  (ecase *backend*
-    (:sbcl (sbcl-sum input))
-    (:native (native-sum input))
-    (:lisp (lisp-sum input))))
-
-(defun dot (left right)
-  "Return the dot product of LEFT and RIGHT."
-  (validate-vectors left right)
-  (ecase *backend*
-    (:sbcl (sbcl-dot left right))
-    (:native (native-dot left right))
-    (:lisp (lisp-dot left right))))
+(defun dot (left right &key start end left-start right-start)
+  "Return the dot product of the :START to :END slices of LEFT and RIGHT."
+  (multiple-value-bind (type count offsets)
+      (resolve-slice (list left right) (list left-start right-start) start end)
+    (declare (ignore type))
+    (destructuring-bind (left-offset right-offset) offsets
+      (ecase *backend*
+        (:sbcl (sbcl-dot left right count left-offset right-offset))
+        (:native (native-dot left right count left-offset right-offset))
+        (:lisp (lisp-dot left right count left-offset right-offset))))))

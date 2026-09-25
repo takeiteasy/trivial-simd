@@ -1,16 +1,21 @@
 (in-package #:trivial-simd)
 
 (defmacro define-sbcl-binary (name element-type width aref operator scalar)
-  `(defun ,name (destination left right)
-     (declare (type (simple-array ,element-type (*)) destination left right))
-     (let ((i 0)
-           (n (length destination)))
-       (loop while (<= (+ i ,width) n) do
-         (setf (,aref destination i)
-               (,operator (,aref left i) (,aref right i)))
+  `(defun ,name (destination left right count
+                 destination-offset left-offset right-offset)
+     (declare (type (simple-array ,element-type (*)) destination left right)
+              (type fixnum count destination-offset left-offset right-offset))
+     (let ((i 0))
+       (declare (type fixnum i))
+       (loop while (<= (+ i ,width) count) do
+         (setf (,aref destination (+ destination-offset i))
+               (,operator (,aref left (+ left-offset i))
+                          (,aref right (+ right-offset i))))
          (incf i ,width))
-       (loop while (< i n) do
-         (setf (aref destination i) (,scalar (aref left i) (aref right i)))
+       (loop while (< i count) do
+         (setf (aref destination (+ destination-offset i))
+               (,scalar (aref left (+ left-offset i))
+                        (aref right (+ right-offset i))))
          (incf i)))
      destination))
 
@@ -31,57 +36,71 @@
 (define-sbcl-binary %sbcl-divide-f64 double-float 2
   sb-simd-sse2:f64.2-aref sb-simd-sse2:f64.2/ /)
 
-(defun %sbcl-sum-f32 (input)
-  (declare (type (simple-array single-float (*)) input))
-  (let ((i 0) (n (length input)) (result 0.0f0))
-    (loop while (<= (+ i 4) n) do
+(defun %sbcl-sum-f32 (input count offset)
+  (declare (type (simple-array single-float (*)) input)
+           (type fixnum count offset))
+  (let ((i 0) (result 0.0f0))
+    (declare (type fixnum i))
+    (loop while (<= (+ i 4) count) do
       (multiple-value-bind (a b c d)
-          (sb-simd-sse:f32.4-values (sb-simd-sse:f32.4-aref input i))
+          (sb-simd-sse:f32.4-values (sb-simd-sse:f32.4-aref input (+ offset i)))
         (incf result (+ a b c d)))
       (incf i 4))
-    (loop while (< i n) do (incf result (aref input i)) (incf i))
-    result))
-
-(defun %sbcl-sum-f64 (input)
-  (declare (type (simple-array double-float (*)) input))
-  (let ((i 0) (n (length input)) (result 0.0d0))
-    (loop while (<= (+ i 2) n) do
-      (multiple-value-bind (a b)
-          (sb-simd-sse2:f64.2-values (sb-simd-sse2:f64.2-aref input i))
-        (incf result (+ a b)))
-      (incf i 2))
-    (loop while (< i n) do (incf result (aref input i)) (incf i))
-    result))
-
-(defun %sbcl-dot-f32 (left right)
-  (declare (type (simple-array single-float (*)) left right))
-  (let ((i 0) (n (length left)) (result 0.0f0))
-    (loop while (<= (+ i 4) n) do
-      (multiple-value-bind (a b c d)
-          (sb-simd-sse:f32.4-values
-           (sb-simd-sse:f32.4*
-            (sb-simd-sse:f32.4-aref left i)
-            (sb-simd-sse:f32.4-aref right i)))
-        (incf result (+ a b c d)))
-      (incf i 4))
-    (loop while (< i n) do
-      (incf result (* (aref left i) (aref right i)))
+    (loop while (< i count) do
+      (incf result (aref input (+ offset i)))
       (incf i))
     result))
 
-(defun %sbcl-dot-f64 (left right)
-  (declare (type (simple-array double-float (*)) left right))
-  (let ((i 0) (n (length left)) (result 0.0d0))
-    (loop while (<= (+ i 2) n) do
+(defun %sbcl-dot-f32 (left right count left-offset right-offset)
+  (declare (type (simple-array single-float (*)) left right)
+           (type fixnum count left-offset right-offset))
+  (let ((i 0) (result 0.0f0))
+    (declare (type fixnum i))
+    (loop while (<= (+ i 4) count) do
+      (multiple-value-bind (a b c d)
+          (sb-simd-sse:f32.4-values
+           (sb-simd-sse:f32.4*
+            (sb-simd-sse:f32.4-aref left (+ left-offset i))
+            (sb-simd-sse:f32.4-aref right (+ right-offset i))))
+        (incf result (+ a b c d)))
+      (incf i 4))
+    (loop while (< i count) do
+      (incf result (* (aref left (+ left-offset i))
+                      (aref right (+ right-offset i))))
+      (incf i))
+    result))
+
+(defun %sbcl-sum-f64 (input count offset)
+  (declare (type (simple-array double-float (*)) input)
+           (type fixnum count offset))
+  (let ((i 0) (result 0.0d0))
+    (declare (type fixnum i))
+    (loop while (<= (+ i 2) count) do
+      (multiple-value-bind (a b)
+          (sb-simd-sse2:f64.2-values (sb-simd-sse2:f64.2-aref input (+ offset i)))
+        (incf result (+ a b)))
+      (incf i 2))
+    (loop while (< i count) do
+      (incf result (aref input (+ offset i)))
+      (incf i))
+    result))
+
+(defun %sbcl-dot-f64 (left right count left-offset right-offset)
+  (declare (type (simple-array double-float (*)) left right)
+           (type fixnum count left-offset right-offset))
+  (let ((i 0) (result 0.0d0))
+    (declare (type fixnum i))
+    (loop while (<= (+ i 2) count) do
       (multiple-value-bind (a b)
           (sb-simd-sse2:f64.2-values
            (sb-simd-sse2:f64.2*
-            (sb-simd-sse2:f64.2-aref left i)
-            (sb-simd-sse2:f64.2-aref right i)))
+            (sb-simd-sse2:f64.2-aref left (+ left-offset i))
+            (sb-simd-sse2:f64.2-aref right (+ right-offset i))))
         (incf result (+ a b)))
       (incf i 2))
-    (loop while (< i n) do
-      (incf result (* (aref left i) (aref right i)))
+    (loop while (< i count) do
+      (incf result (* (aref left (+ left-offset i))
+                      (aref right (+ right-offset i))))
       (incf i))
     result))
 

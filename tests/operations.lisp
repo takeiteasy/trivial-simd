@@ -83,3 +83,64 @@
     (signals error (simd:add! single single double))
     (signals type-error (simd:sum #(1 2 3)))
     (signals error (simd:dot single short))))
+
+(defun expected-slice (operation type count left-offset right-offset left right)
+  (let ((function (ecase operation
+                    (simd:add! #'+) (simd:subtract! #'-)
+                    (simd:multiply! #'*) (simd:divide! #'/))))
+    (loop for i below count
+          collect (funcall function
+                           (aref left (+ left-offset i))
+                           (aref right (+ right-offset i))))))
+
+(test slices-across-backends
+  (dolist (backend (available-backends))
+    (dolist (type '(single-float double-float))
+      (dolist (operation '(simd:add! simd:subtract! simd:multiply! simd:divide!))
+        (dolist (case '((3 20 nil nil nil) (0 9 5 0 11) (1 6 7 3 2) (0 0 4 4 4)))
+          (destructuring-bind (start end destination-start left-start right-start) case
+            (let* ((left (values-for 40 type 1))
+                   (right (values-for 40 type 2))
+                   (output (values-for 40 type 100))
+                   (before (copy-seq output))
+                   (count (- end start))
+                   (d (or destination-start start))
+                   (l (or left-start start))
+                   (r (or right-start start))
+                   (expected (expected-slice operation type count l r left right)))
+              (with-backend (backend)
+                (is (eq output (funcall operation output left right
+                                        :start start :end end
+                                        :destination-start destination-start
+                                        :left-start left-start
+                                        :right-start right-start))))
+              (dotimes (i 40)
+                (if (<= d i (+ d count -1))
+                    (is (close-enough-p (aref output i) (elt expected (- i d)) type))
+                    (is (= (aref output i) (aref before i))))))))))))
+
+(test slice-reductions-across-backends
+  (dolist (backend (available-backends))
+    (dolist (type '(single-float double-float))
+      (let ((left (values-for 40 type 1))
+            (right (values-for 40 type 2)))
+        (with-backend (backend)
+          (is (close-enough-p (simd:sum left :start 3 :end 20)
+                              (loop for i from 3 below 20 sum (aref left i)) type))
+          (is (close-enough-p (simd:sum left :start 2 :end 11 :input-start 20)
+                              (loop for i from 20 below 29 sum (aref left i)) type))
+          (is (close-enough-p (simd:dot left right :start 1 :end 10 :right-start 30)
+                              (loop for i from 1 below 10
+                                    sum (* (aref left i) (aref right (+ 29 i)))) type))
+          (is (zerop (simd:sum left :start 5 :end 5))))))))
+
+(test invalid-slices
+  (let ((a (values-for 8 'single-float 1))
+        (b (values-for 8 'single-float 1)))
+    (signals error (simd:add! a a b :start 4 :end 2))
+    (signals error (simd:add! a a b :start -1 :end 4))
+    (signals error (simd:add! a a b :start 0 :end 9))
+    (signals error (simd:add! a a b :start 0 :end 4 :right-start 5))
+    (signals error (simd:add! a a b :start 0 :end 4 :left-start -1))
+    (signals error (simd:sum a :start 0 :end 4 :input-start 5))
+    (signals error (simd:add! a a (values-for 9 'single-float 1)))))
