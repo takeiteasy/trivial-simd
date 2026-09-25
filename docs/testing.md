@@ -20,5 +20,6 @@ sbcl --script bench/run.lisp
 ```
 
 The benchmark reports microseconds per vector-add call for 32, 1,024, and
-65,536 `single-float` elements on the Lisp and native C backends. Results
-depend on the Lisp implementation, compiler, CPU, and copying cost.
+65,536 `single-float` elements on the available Lisp, native C, and SBCL
+backends. Results depend on the Lisp implementation, compiler, CPU, and array
+access cost.

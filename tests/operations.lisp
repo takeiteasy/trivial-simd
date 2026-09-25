@@ -21,7 +21,7 @@
 
 (test arithmetic-across-backends
   (dolist (type '(single-float double-float))
-    (dolist (length '(0 1 2 3 4 5 7 8 9 17))
+    (dolist (length '(0 1 2 3 4 5 7 8 9 17 257))
       (let ((left (values-for length type 1))
             (right (values-for length type 2)))
         (dolist (operation '(simd:add! simd:subtract! simd:multiply! simd:divide!))
