@@ -6,7 +6,7 @@
   (let ((name (case (uiop:operating-system)
                 (:macosx #p"build/libtrivial_simd.dylib")
                 (:linux #p"build/libtrivial_simd.so")
-                (:windows #p"build/trivial_simd.dll"))))
+                ((:windows :win) #p"build/trivial_simd.dll"))))
     (when name
       (merge-pathnames name (asdf:system-source-directory "trivial-simd")))))
 

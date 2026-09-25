@@ -8,6 +8,10 @@
 (asdf:load-asd (merge-pathnames "../trivial-simd.asd"
                                 (uiop:pathname-directory-pathname *load-truename*)))
 (asdf:load-system "trivial-simd")
+(when (string-equal (or (uiop:getenv "RUNNER_ARCH") "") "ARM64")
+  (unless (let ((machine (string-upcase (machine-type))))
+            (or (search "ARM64" machine) (search "AARCH64" machine)))
+    (error "Expected an ARM64 Lisp, got ~A" (machine-type))))
 (let ((expected (uiop:getenv "TRIVIAL_SIMD_BACKEND")))
   (when (and expected (not (string= expected ""))
              (not (string-equal expected "auto"))

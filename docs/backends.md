@@ -16,11 +16,13 @@ scalar C loops. SBCL on ARM64 uses the C backend when built because its
 
 | Platform | Lisp implementation | Required backend in CI |
 |---|---|---|
-| Linux | SBCL | `:sbcl`, `:lisp` |
-| Linux | CCL, ECL | `:native` |
-| macOS | SBCL | `:native`, `:lisp` |
-| macOS | ECL, CCL on Intel | `:native` |
-| Windows | SBCL | `:native`, `:lisp` |
+| Linux x86-64 | SBCL | `:sbcl`, `:lisp` |
+| Linux x86-64 | CCL, ECL | `:native` |
+| Linux ARM64 | SBCL, ECL, CCL[^ccl-arm] | `:native` |
+| macOS ARM64 | SBCL, ECL, CCL[^ccl-arm] | `:native`; SBCL also uses `:lisp` |
+| macOS Intel | CCL | `:native` |
+| Windows x86-64 | SBCL | `:native`, `:lisp` |
+| Windows ARM64 | SBCL | `:native` |
 
 The [CI matrix](../.github/workflows/ci.yml) defines the runner versions and
 exercises the full test suite for each row.
@@ -66,14 +68,11 @@ additional instruction sets above are not selected by it.
 
 | Target | Planned work |
 |---|---|
-| ARM64 Linux | [Validate native backend and CI](https://todo.sr.ht/~takeiteasy/trivial-simd/12) |
-| ARM64 Windows | [Validate native backend and CI](https://todo.sr.ht/~takeiteasy/trivial-simd/13) |
 | FreeBSD | [Build and test](https://todo.sr.ht/~takeiteasy/trivial-simd/14) |
 | OpenBSD | [Build and test](https://todo.sr.ht/~takeiteasy/trivial-simd/15) |
 | NetBSD | [Build and test](https://todo.sr.ht/~takeiteasy/trivial-simd/16) |
 | Android | [Build and test](https://todo.sr.ht/~takeiteasy/trivial-simd/17) |
 | iOS | [Build and test](https://todo.sr.ht/~takeiteasy/trivial-simd/18) |
-| CCL on ARM64 macOS | [Add CI coverage](https://todo.sr.ht/~takeiteasy/trivial-simd/19) |
 
 ### Planned Lisp implementations
 
@@ -103,3 +102,4 @@ in Lisp; use the [benchmark](testing.md) for a workload.
 
 [^pointer]: CFFI's pointer macro maps to implementation-specific pinned or
     foreign views of specialized arrays on these three implementations.
+[^ccl-arm]: ARM64 CI uses Clozure CL `v1.13-arm64-pre2` on Linux and macOS.
