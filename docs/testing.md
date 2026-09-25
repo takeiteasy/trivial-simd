@@ -16,8 +16,11 @@ macOS, Linux, and Windows.
 ## Benchmark
 
 ```sh
-sbcl --script bench/run.lisp
+sbcl --script tests/bench.lisp
 ```
+
+Run this script explicitly when you want measurements. The ASDF test system
+and GitHub Actions do not invoke it.
 
 The benchmark reports microseconds per vector-add call for 32, 1,024, and
 65,536 `single-float` elements on the available Lisp, native C, and SBCL
