@@ -86,7 +86,7 @@ jobs:
   arm-ccl:
     needs: plan
     if: contains(fromJSON(needs.plan.outputs.extras), 'arm-ccl')
-    name: ${{ matrix.name && format('CCL / {0} ARM64', matrix.name) || 'CCL / ARM64' }}
+    name: CCL / ARM64
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
