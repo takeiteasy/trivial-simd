@@ -98,4 +98,5 @@ Slice keywords add roughly 35 ns per call.
 
 [^sbcl]: SIMD operations use temporary variables and ordered assignments, keeping
     nested expressions out of operator macro arguments during compilation. Each
-    input pack is loaded once per iteration.
+    input pack is loaded once per iteration; temporary variables are reused after
+    their values are consumed.
