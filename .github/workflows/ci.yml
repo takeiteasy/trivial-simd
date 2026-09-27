@@ -74,6 +74,9 @@ jobs:
       - name: Compile native library
         run: cmake --build build --config Release
 
+      - name: Test native kernel VM
+        run: ctest --test-dir build -C Release --output-on-failure
+
       - uses: 40ants/setup-lisp@v4
         with:
           asdf-system: trivial-simd
@@ -107,6 +110,9 @@ jobs:
 
       - name: Compile native library
         run: cmake --build build --config Release
+
+      - name: Test native kernel VM
+        run: ctest --test-dir build -C Release --output-on-failure
 
       - name: Install CCL ARM64
         shell: bash
@@ -157,6 +163,9 @@ jobs:
 
       - name: Compile native library
         run: cmake --build build --config Release
+
+      - name: Test native kernel VM
+        run: ctest --test-dir build -C Release --output-on-failure
 
       - name: Install SBCL ARM64
         shell: pwsh

@@ -4,7 +4,7 @@
 
 (defparameter *kernel-opcodes*
   '((:copy . 0) (:constant . 1) (:add . 2) (:subtract . 3)
-    (:multiply . 4) (:divide . 5) (:negate . 6)))
+    (:multiply . 4) (:divide . 5) (:negate . 6) (:spill . 7) (:reload . 8)))
 
 (defconstant +kernel-output+ #xFF)
 (defconstant +kernel-input-base+ +kernel-registers+)
@@ -44,21 +44,45 @@
                       (right (register-need (fourth node))))
                   (max 1 (if (= left right) (1+ left) (max left right)))))))
 
-;; TODO: expressions needing more registers are rejected; spill to memory (ticket #35).
+;; TODO: 16-bit scratch indexes cap live slots at 65,536; widen bytecode (#50).
+(defun kernel-scratch-index (index)
+  (unless (typep index '(unsigned-byte 16))
+    (error "Kernel scratch index ~D exceeds the 65,536-slot limit" index))
+  index)
+
 (defun lower-kernel (tree)
-  "Return (values instructions constants). Each instruction is (op dst a b);
-operands below +KERNEL-INPUT-BASE+ are registers, the rest are inputs."
+  "Return instructions, constants, and scratch count. Instructions are (op dst a b).
+SPILL/RELOAD use a register and slot; other operands name registers or inputs."
   (let ((free (loop for register below +kernel-registers+ collect register))
         (instructions '())
-        (constants '()))
+        (constants '())
+        (scratch-free '())
+        (scratch-count 0))
     (labels ((allocate ()
                (or (pop free)
-                   (error "Kernel expression needs more than ~D registers"
-                          +kernel-registers+)))
+                   (error "Internal kernel register allocation exhausted")))
              (register-p (operand) (< operand +kernel-input-base+))
              (release (operand) (when (register-p operand) (push operand free)))
              (emit (op destination a b)
                (push (list op destination a b) instructions))
+             (scratch-slot ()
+               (or (pop scratch-free)
+                   (prog1 (kernel-scratch-index scratch-count)
+                     (incf scratch-count))))
+             (generate-pair (first second)
+               (let* ((operand (generate first nil))
+                      (slot (when (and (register-p operand)
+                                       (> (register-need second) (length free)))
+                              (let ((slot (scratch-slot)))
+                                (emit :spill operand slot 0)
+                                (release operand)
+                                slot)))
+                      (other (generate second nil)))
+                 (when slot
+                   (setf operand (allocate))
+                   (emit :reload operand slot 0)
+                   (push slot scratch-free))
+                 (values operand other)))
              (constant-index (value)
                (or (position value constants)
                    (progn (setf constants (append constants (list value)))
@@ -88,21 +112,25 @@ operands below +KERNEL-INPUT-BASE+ are registers, the rest are inputs."
                   (destructuring-bind (kind left right) (rest node)
                     (let (left-operand right-operand)
                       (if (>= (register-need left) (register-need right))
-                          (setf left-operand (generate left nil)
-                                right-operand (generate right nil))
-                          (setf right-operand (generate right nil)
-                                left-operand (generate left nil)))
+                          (multiple-value-setq (left-operand right-operand)
+                            (generate-pair left right))
+                          (multiple-value-setq (right-operand left-operand)
+                            (generate-pair right left)))
                       (let ((destination (destination-for top-p left-operand right-operand)))
                         (emit kind destination left-operand right-operand)
                         (dolist (operand (list left-operand right-operand))
                           (unless (eql operand destination) (release operand)))
                         destination)))))))
       (generate tree t))
-    (values (nreverse instructions) constants)))
+    (values (nreverse instructions) constants scratch-count)))
 
 (defun kernel-bytes (instructions)
   (loop for (op destination a b) in instructions
-        append (list (cdr (assoc op *kernel-opcodes*)) destination a b)))
+        append (if (member op '(:spill :reload))
+                   (let ((index (kernel-scratch-index a)))
+                     (list (cdr (assoc op *kernel-opcodes*)) destination
+                           (ldb (byte 8 0) index) (ldb (byte 8 8) index)))
+                   (list (cdr (assoc op *kernel-opcodes*)) destination a b))))
 
 (defun kernel-element-type (type)
   (ecase type (:f32 'single-float) (:f64 'double-float)))
@@ -189,7 +217,7 @@ EXPRESSION elementwise from ARGUMENTS into DESTINATION. Experimental."
   (when (> (length arguments) +kernel-max-arguments+)
     (error "A kernel takes at most ~D arguments" +kernel-max-arguments+))
   (let ((tree (parse-kernel-expression expression arguments)))
-    (multiple-value-bind (instructions constants) (lower-kernel tree)
+    (multiple-value-bind (instructions constants scratch-count) (lower-kernel tree)
       (let* ((destination (gensym "DESTINATION"))
              (count (gensym "COUNT"))
              (d-offset (gensym "D-OFFSET"))
@@ -229,7 +257,7 @@ EXPRESSION elementwise from ARGUMENTS into DESTINATION. Experimental."
                    (:native
                     (let ((,program (or ,program
                                         (setf ,program
-                                              (make-native-program ',bytes ',constants)))))
+                                              (make-native-program ',bytes ',constants ,scratch-count)))))
                       ,(native-kernel-form program type destination arguments
                                            d-offset offsets count))))))
              ,destination))))))

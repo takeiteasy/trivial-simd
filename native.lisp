@@ -54,12 +54,12 @@
 (define-native ("ts_dot_f64" %native-dot-f64) :double
   (left :pointer) (right :pointer) (length :size))
 
-(define-native ("ts_kernel_f32" %native-kernel-f32) :void
+(define-native ("ts_kernel_f32" %native-kernel-f32) :int
   (code :pointer) (code-length :size) (constants :pointer)
-  (inputs :pointer) (output :pointer) (length :size))
-(define-native ("ts_kernel_f64" %native-kernel-f64) :void
+  (inputs :pointer) (output :pointer) (length :size) (scratch-count :size))
+(define-native ("ts_kernel_f64" %native-kernel-f64) :int
   (code :pointer) (code-length :size) (constants :pointer)
-  (inputs :pointer) (output :pointer) (length :size))
+  (inputs :pointer) (output :pointer) (length :size) (scratch-count :size))
 
 (defvar *native-array-access*
   #+(or sbcl ccl ecl) :pointer
@@ -157,7 +157,7 @@ of forms, is the part copied back."
             (%native-dot-f64 a b count))))))
 
 (defstruct (native-program (:constructor %make-native-program))
-  code code-length f32-constants f64-constants)
+  code code-length f32-constants f64-constants scratch-count)
 
 (defun foreign-copy (values type coerce-type)
   (let ((pointer (cffi:foreign-alloc type :count (max 1 (length values)))))
@@ -167,15 +167,19 @@ of forms, is the part copied back."
     pointer))
 
 ;; TODO: program memory is never freed; free it if kernels become dynamic (ticket #34).
-(defun make-native-program (code constants)
+(defun make-native-program (code constants scratch-count)
   (%make-native-program :code (foreign-copy code :uint8 'integer)
                         :code-length (length code)
+                        :scratch-count scratch-count
                         :f32-constants (foreign-copy constants :float 'single-float)
                         :f64-constants (foreign-copy constants :double 'double-float)))
 
 (defun call-native-kernel (program type inputs output count)
-  (if (eq type :float)
-      (%native-kernel-f32 (native-program-code program) (native-program-code-length program)
-                          (native-program-f32-constants program) inputs output count)
-      (%native-kernel-f64 (native-program-code program) (native-program-code-length program)
-                          (native-program-f64-constants program) inputs output count)))
+  (unless (zerop
+           (funcall (if (eq type :float) #'%native-kernel-f32 #'%native-kernel-f64)
+                    (native-program-code program) (native-program-code-length program)
+                    (if (eq type :float)
+                        (native-program-f32-constants program)
+                        (native-program-f64-constants program))
+                    inputs output count (native-program-scratch-count program)))
+    (error "Unable to allocate native kernel scratch storage")))

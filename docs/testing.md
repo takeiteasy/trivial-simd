@@ -2,6 +2,8 @@
 
 The FiveAM suite checks the Lisp reference and every locally available SIMD
 backend for both float types, empty vectors, SIMD tails, aliasing, and errors.
+Kernel tests also cover register spilling, scratch-slot reuse, and encoding
+boundaries.
 
 ```sh
 sbcl --script tests/run.lisp
@@ -20,6 +22,29 @@ For a local ARM64 native check, build the library first, then run:
 ```sh
 TRIVIAL_SIMD_BACKEND=native sbcl --script tests/run.lisp
 ```
+
+## Kernel example
+
+With Quicklisp loaded and this project registered with ASDF:
+
+```lisp
+(load (compile-file "examples/kernels.lisp" :output-file "/tmp/kernels-example.fasl"))
+```
+
+Compiling the example also works around the
+[ECL interpreter limitation](kernels.md#limitations).
+
+## Native VM checks
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release
+ctest --test-dir build -C Release --output-on-failure
+```
+
+The native harness checks both float types, scratch indexes through 65,535,
+partial blocks, allocation failure, size overflow, and cleanup. GitHub Actions
+and sourcehut builds run it alongside the Lisp suite.
 
 ## Benchmark
 

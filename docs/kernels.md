@@ -37,7 +37,13 @@ Anything else signals an error when the kernel is defined. Vectors share one
 | `:native` | Register bytecode run by a C interpreter over 256-element blocks[^vm] |
 
 The native backend makes one foreign call per kernel call and needs no
-intermediate arrays.
+full-length intermediate arrays. Expressions that exceed eight registers spill
+intermediate values into scratch blocks. Scratch slots are reused, and their
+storage is allocated per call and freed before returning. Kernels that fit in
+eight registers and empty calls allocate no scratch storage.[^scratch]
+
+See the [runnable examples](../examples/kernels.lisp) for a balanced expression
+that uses spilling.
 
 ## Performance
 
@@ -60,9 +66,11 @@ Slice keywords add roughly 35 ns per call.
 
 - Experimental; the operator set is `+ - * /`.[^ops] See the
   [operators ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/36).
-- An expression may need at most 8 registers, so it may nest about 8 levels of
-  balanced operations. See the
-  [register spilling ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/35).
+- A native program supports at most 65,536 simultaneous scratch slots; exceeding
+  this limit signals an error when defining the kernel. See the
+  [scratch addressing ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/50).
+- Spilling kernels allocate scratch storage on each native call. See the
+  [spill performance ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/49).
 - No reductions inside a kernel. See the
   [reductions ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/37).
 - ECL native kernel calls cost more than two bulk calls at small sizes. See the
@@ -72,9 +80,18 @@ Slice keywords add roughly 35 ns per call.
 - Element types are `single-float` and `double-float`. See the
   [integer ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/39).
 - SBCL kernels are generated only on x86-64 with `sb-simd`.
+- ECL's interpreter can reject large kernel definitions with `Too large jump`.
+  Put those definitions in a file and use `compile-file` followed by `load`.
+  See the [ECL interpreter ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/51).
 
 [^constants]: Constants must be representable as `single-float`.
 [^vm]: Instructions are four bytes: opcode, destination, and two operands. An
     operand names a register (0-7) or an input vector; the last instruction
-    writes to `destination` directly.
+    writes to `destination` directly. Spill/reload instructions encode an opcode,
+    a register, and a little-endian 16-bit scratch index.
 [^ops]: `+` and `*` with one operand return it unchanged.
+
+[^scratch]: Each scratch slot holds 256 elements: 1 KiB for `single-float` or
+    2 KiB for `double-float`. Storage depends on peak live spills, not vector
+    length. Allocation failure signals a Lisp error before writing the output.
+    Rebuild the native library when updating the Lisp implementation.

@@ -1,5 +1,7 @@
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
 
 #if defined(__aarch64__) || defined(_M_ARM64)
 #include <arm_neon.h>
@@ -112,7 +114,7 @@ TS_REDUCTIONS(f64, double, TS_F64_WIDTH, TS_F64_VECTOR, TS_F64_LOAD, TS_F64_STOR
 
 enum {
     TS_OP_COPY, TS_OP_CONSTANT, TS_OP_ADD, TS_OP_SUBTRACT,
-    TS_OP_MULTIPLY, TS_OP_DIVIDE, TS_OP_NEGATE
+    TS_OP_MULTIPLY, TS_OP_DIVIDE, TS_OP_NEGATE, TS_OP_SPILL, TS_OP_RELOAD
 };
 
 #define TS_KERNEL_BLOCK 256
@@ -129,15 +131,28 @@ enum {
  * A destination is a register (0-7) or TS_KERNEL_OUTPUT. An operand below
  * TS_KERNEL_REGISTERS is a register; otherwise it is input (operand - 8).
  * TS_OP_CONSTANT reads operand a as a constant index.
+ * SPILL/RELOAD use a register and a little-endian 16-bit scratch index.
  */
 #define TS_KERNEL(suffix, type, width, load, store, zero, add, sub, mul, div) \
-void ts_kernel_##suffix(const uint8_t *code, size_t code_length, \
+int ts_kernel_##suffix(const uint8_t *code, size_t code_length, \
                         const type *constants, const type *const *inputs, \
-                        type *out, size_t n) { \
+                        type *out, size_t n, size_t scratch_count) { \
+    if (n == 0) return 0; \
+    if (scratch_count > SIZE_MAX / TS_KERNEL_BLOCK / sizeof(type)) return -1; \
+    type *scratch = scratch_count ? malloc(scratch_count * TS_KERNEL_BLOCK * sizeof(type)) : NULL; \
+    if (scratch_count && !scratch) return -1; \
     type registers[TS_KERNEL_REGISTERS][TS_KERNEL_BLOCK]; \
     for (size_t base = 0; base < n; base += TS_KERNEL_BLOCK) { \
         size_t m = n - base < TS_KERNEL_BLOCK ? n - base : TS_KERNEL_BLOCK; \
         for (size_t pc = 0; pc < code_length; pc += 4) { \
+            if (code[pc] == TS_OP_SPILL || code[pc] == TS_OP_RELOAD) { \
+                size_t slot = (size_t)code[pc + 2] | ((size_t)code[pc + 3] << 8); \
+                type *block = scratch + slot * TS_KERNEL_BLOCK; \
+                type *reg = registers[code[pc + 1]]; \
+                if (code[pc] == TS_OP_SPILL) memcpy(block, reg, m * sizeof(type)); \
+                else memcpy(reg, block, m * sizeof(type)); \
+                continue; \
+            } \
             type *destination = code[pc + 1] == TS_KERNEL_OUTPUT \
                 ? out + base : registers[code[pc + 1] & (TS_KERNEL_REGISTERS - 1)]; \
             size_t i = 0; \
@@ -166,6 +181,8 @@ void ts_kernel_##suffix(const uint8_t *code, size_t code_length, \
             } \
         } \
     } \
+    free(scratch); \
+    return 0; \
 }
 
 TS_KERNEL(f32, float, TS_F32_WIDTH, TS_F32_LOAD, TS_F32_STORE, TS_F32_ZERO,

@@ -84,4 +84,77 @@
   (signals error (macroexpand-1 `(simd:define-kernel too-many
                                      ,(loop for i below 250 collect (intern (format nil "A~D" i)))
                                      0)))
-  (signals error (macroexpand-1 `(simd:define-kernel too-deep (a) ,(balanced-expression 9)))))
+  (finishes (macroexpand-1 `(simd:define-kernel spills (a) ,(balanced-expression 9)))))
+
+(test kernel-spill-lowering
+  (multiple-value-bind (code constants slots)
+      (simd::lower-kernel (simd::parse-kernel-expression '(+ (* a b) c) '(a b c)))
+    (is (equal '((:multiply 0 8 9) (:add 255 0 10)) code))
+    (is (null constants))
+    (is (zerop slots)))
+  (dolist (depth '(8 9 10))
+    (multiple-value-bind (code constants slots)
+        (simd::lower-kernel (simd::parse-kernel-expression (balanced-expression depth) '(a)))
+      (declare (ignore constants))
+      (is (= (max 0 (- depth 8)) slots))
+      (is (= (count :spill code :key #'first) (count :reload code :key #'first)))
+      (is (= simd::+kernel-output+ (second (car (last code)))))))
+  (multiple-value-bind (code constants slots)
+      (simd::lower-kernel (simd::parse-kernel-expression
+                          `(+ ,(balanced-expression 9) ,(balanced-expression 9)) '(a)))
+    (declare (ignore constants))
+    (is (= 2 slots))
+    (is (> (count :spill code :key #'first) slots))))
+
+(test kernel-spill-encoding
+  (dolist (slot '(0 255 256 65535))
+    (is (equal (list 7 3 (mod slot 256) (floor slot 256)
+                     8 4 (mod slot 256) (floor slot 256))
+               (simd::kernel-bytes `((:spill 3 ,slot 0) (:reload 4 ,slot 0))))))
+  (dolist (slot '(-1 65536))
+    (signals error (simd::kernel-bytes `((:spill 0 ,slot 0))))))
+
+(macrolet ((define-spilling-kernel ()
+             (labels ((sum-tree (depth)
+                        (if (zerop depth) 'a
+                            `(+ ,(sum-tree (1- depth)) ,(sum-tree (1- depth))))))
+               (let ((sum (sum-tree 9)))
+                 `(simd:define-kernel kernel-spilling (a) (- (/ 3 ,sum) (- ,sum)))))))
+  (define-spilling-kernel))
+
+(test spilling-kernels-across-backends
+  (dolist (type '(single-float double-float))
+    (let ((reference (lambda (a) (+ (/ (coerce 3 type) (* (coerce 512 type) a))
+                                   (* (coerce 512 type) a)))))
+      (dolist (length '(0 1 3 4 5 255 256 257 600))
+        (check-kernel 'kernel-spilling reference type length (list (values-for length type 1))))
+      (dolist (backend (available-backends))
+        (let* ((a (values-for 620 type 1))
+               (before (copy-seq a)))
+          (with-backend (backend)
+            (kernel-spilling a a :start 7 :end 608))
+          (dotimes (i 620)
+            (is (close-enough-p (aref a i)
+                                (if (<= 7 i 607) (funcall reference (aref before i))
+                                    (aref before i)) type))))
+        (let* ((a (values-for 640 type 1))
+               (out (values-for 630 type 100))
+               (before (copy-seq out)))
+          (with-backend (backend)
+            (kernel-spilling out a :end 601 :destination-start 5 :a-start 11))
+          (dotimes (i 630)
+            (is (close-enough-p (aref out i)
+                                (if (<= 5 i 605) (funcall reference (aref a (+ i 6)))
+                                    (aref before i)) type))))))))
+
+(test kernel-scratch-allocation-error
+  (when simd::*native-available-p*
+    (dolist (type '(:float :double))
+      (cffi:with-foreign-object (output type)
+        (setf (cffi:mem-ref output type) (if (eq type :float) 17.0 17.0d0))
+        (let ((program (simd::%make-native-program
+                        :code (cffi:null-pointer) :code-length 0
+                        :f32-constants (cffi:null-pointer) :f64-constants (cffi:null-pointer)
+                        :scratch-count (1- (ash 1 (* 8 (cffi:foreign-type-size :size)))))))
+          (signals error (simd::call-native-kernel program type (cffi:null-pointer) output 1))
+          (is (= 17 (cffi:mem-ref output type))))))))

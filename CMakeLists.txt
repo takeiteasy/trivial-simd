@@ -17,3 +17,10 @@ foreach(config DEBUG RELEASE RELWITHDEBINFO MINSIZEREL)
     LIBRARY_OUTPUT_DIRECTORY_${config} "${PROJECT_BINARY_DIR}"
     RUNTIME_OUTPUT_DIRECTORY_${config} "${PROJECT_BINARY_DIR}")
 endforeach()
+
+include(CTest)
+if(BUILD_TESTING)
+  add_executable(native_kernel_test tests/native-kernel.c)
+  set_target_properties(native_kernel_test PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED YES)
+  add_test(NAME native-kernel COMMAND native_kernel_test)
+endif()
