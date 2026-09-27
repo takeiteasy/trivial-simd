@@ -33,7 +33,7 @@ Anything else signals an error when the kernel is defined. Vectors share one
 | Backend | Implementation |
 |---|---|
 | `:lisp` | Typed scalar loop |
-| `:sbcl` | `sb-simd` pack loop with a scalar tail |
+| `:sbcl` | `sb-simd` pack loop with a scalar tail[^sbcl] |
 | `:native` | Register bytecode run by a C interpreter over 256-element blocks[^vm] |
 
 The native backend makes one foreign call per kernel call and needs no
@@ -95,3 +95,7 @@ Slice keywords add roughly 35 ns per call.
     2 KiB for `double-float`. Storage depends on peak live spills, not vector
     length. Allocation failure signals a Lisp error before writing the output.
     Rebuild the native library when updating the Lisp implementation.
+
+[^sbcl]: SIMD operations use temporary variables and ordered assignments, keeping
+    nested expressions out of operator macro arguments during compilation. Each
+    input pack is loaded once per iteration.
