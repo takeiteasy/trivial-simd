@@ -80,9 +80,6 @@ Slice keywords add roughly 35 ns per call.
 - Element types are `single-float` and `double-float`. See the
   [integer ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/39).
 - SBCL kernels are generated only on x86-64 with `sb-simd`.
-- ECL's interpreter can reject large kernel definitions with `Too large jump`.
-  Put those definitions in a file and use `compile-file` followed by `load`.
-  See the [ECL interpreter ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/51).
 
 [^constants]: Constants must be representable as `single-float`.
 [^vm]: Instructions are four bytes: opcode, destination, and two operands. An
@@ -99,4 +96,5 @@ Slice keywords add roughly 35 ns per call.
 [^sbcl]: SIMD operations use temporary variables and ordered assignments, keeping
     nested expressions out of operator macro arguments during compilation. Each
     input pack is loaded once per iteration; temporary variables are reused after
-    their values are consumed.
+    their values are consumed. Scalar loops and SIMD tails also load each input
+    element once per iteration.

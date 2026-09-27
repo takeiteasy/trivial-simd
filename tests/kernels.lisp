@@ -158,3 +158,13 @@
                         :scratch-count (1- (ash 1 (* 8 (cffi:foreign-type-size :size)))))))
           (signals error (simd::call-native-kernel program type (cffi:null-pointer) output 1))
           (is (= 17 (cffi:mem-ref output type))))))))
+
+#+ecl
+(test interpreted-spilling-kernel
+  (let ((sum (balanced-expression 9)))
+    (eval `(simd:define-kernel interpreted-spilling (a) (- (/ 3 ,sum) (- ,sum)))))
+  (dolist (type '(single-float double-float))
+    (check-kernel 'interpreted-spilling
+                  (lambda (a) (+ (/ (coerce 3 type) (* (coerce 512 type) a))
+                                 (* (coerce 512 type) a)))
+                  type 5 (list (values-for 5 type 1)))))

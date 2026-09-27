@@ -136,17 +136,19 @@ SPILL/RELOAD use a register and slot; other operands name registers or inputs."
   (ecase type (:f32 'single-float) (:f64 'double-float)))
 
 (defun scalar-kernel-form (node type arguments offsets index)
-  (let ((element (kernel-element-type type)))
+  (let ((element (kernel-element-type type))
+        (inputs (loop for nil in arguments collect (gensym "ELEMENT"))))
     (labels ((walk (node)
                (ecase (first node)
-                 (:argument `(aref ,(nth (second node) arguments)
-                                   (+ ,(nth (second node) offsets) ,index)))
+                 (:argument (nth (second node) inputs))
                  (:constant (coerce (second node) element))
                  (:negate `(- ,(walk (second node))))
                  (:operation
                   `(,(car (rassoc (second node) *kernel-operators*))
                     ,(walk (third node)) ,(walk (fourth node)))))))
-      (walk node))))
+      `(let ,(loop for input in inputs for argument in arguments for offset in offsets
+                   collect `(,input (aref ,argument (+ ,offset ,index))))
+         ,(walk node)))))
 
 (defun lisp-kernel-form (tree type destination arguments d-offset offsets count)
   (let ((index (gensym "I"))
@@ -214,6 +216,7 @@ SPILL/RELOAD use a register and slot; other operands name registers or inputs."
                  (declare (type fixnum ,index))
                  (loop while (<= (+ ,index ,width) ,count) do
                    (let ,(loop for name in packs collect `(,name (,cast 0)))
+                     ,@(when packs `((declare (type ,cast ,@packs))))
                      ,@(nreverse assignments)
                      (setf (,aref ,destination (+ ,d-offset ,index)) (,cast ,result)))
                    (incf ,index ,width))

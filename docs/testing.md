@@ -3,7 +3,7 @@
 The FiveAM suite checks the Lisp reference and every locally available SIMD
 backend for both float types, empty vectors, SIMD tails, aliasing, and errors.
 Kernel tests also cover register spilling, scratch-slot reuse, and encoding
-boundaries.
+boundaries. ECL also exercises an interpreted spilling-kernel definition.
 
 ```sh
 sbcl --script tests/run.lisp
@@ -30,9 +30,6 @@ With Quicklisp loaded and this project registered with ASDF:
 ```lisp
 (load (compile-file "examples/kernels.lisp" :output-file "/tmp/kernels-example.fasl"))
 ```
-
-Compiling the example also works around the
-[ECL interpreter limitation](kernels.md#limitations).
 
 ## Native VM checks
 
