@@ -28,6 +28,17 @@
         ,@(loop for (name type) in arguments append (list type name))
         ,return-type))))
 
+(define-native ("ts_fma_scalar_f32" %native-fma-f32) :float
+  (a :float) (b :float) (c :float))
+(define-native ("ts_fma_scalar_f64" %native-fma-f64) :double
+  (a :double) (b :double) (c :double))
+(define-native ("ts_fma_supported" %native-fma-supported) :int)
+
+(defvar *native-fma-available-p*
+  (and *native-available-p*
+       (every (lambda (name) (ignore-errors (cffi:foreign-symbol-pointer name)))
+              '("ts_fma_scalar_f32" "ts_fma_scalar_f64" "ts_fma_supported"))))
+
 (define-native ("ts_add_f32" %native-add-f32) :void
   (destination :pointer) (left :pointer) (right :pointer) (length :size))
 (define-native ("ts_subtract_f32" %native-subtract-f32) :void

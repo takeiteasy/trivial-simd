@@ -234,7 +234,18 @@ SPILL/RELOAD use a register and slot; other operands name registers or inputs."
                  (incf ,sum ,(scalar-kernel-form tree type arguments offsets index))))))))
 
 #+(and sbcl x86-64)
-(defun sbcl-kernel-form (tree type destination arguments d-offset offsets count)
+(defun sbcl-kernel-form (tree type destination arguments d-offset offsets count
+                         &optional hardware-fma-p)
+  (when (and (not hardware-fma-p) *sbcl-fma-f32* *sbcl-fma-f64*
+             (labels ((contains-fma (node)
+                        (and (consp node)
+                             (or (eq (first node) :fma) (some #'contains-fma (rest node))))))
+               (contains-fma tree)))
+    (return-from sbcl-kernel-form
+      `(if (sbcl-fma-enabled-p)
+           ,(sbcl-kernel-form tree type destination arguments d-offset offsets count t)
+           ,(let ((*sbcl-fma-f32* nil))
+              (sbcl-kernel-form tree type destination arguments d-offset offsets count)))))
   (destructuring-bind (package width prefix)
       (ecase type (:f32 '("SB-SIMD-SSE" 4 "F32.4")) (:f64 '("SB-SIMD-SSE2" 2 "F64.2")))
     (flet ((symbol-for (suffix)
@@ -271,11 +282,14 @@ SPILL/RELOAD use a register and slot; other operands name registers or inputs."
                                       (allocate)))
                           (packed (mapcar (lambda (operand) `(,cast ,operand)) operands))
                           (form
-                            (case kind
-                              (:abs `(,(symbol-for "-ANDC1") (,cast ,(- (coerce 0 (kernel-element-type type))))
+                            (cond
+                              ((eq kind :abs) `(,(symbol-for "-ANDC1") (,cast ,(- (coerce 0 (kernel-element-type type))))
                                       ,(first packed)))
-                              ((:min :max) `(,(symbol-for (if (eq kind :min) "-MIN" "-MAX"))
+                              ((member kind '(:min :max)) `(,(symbol-for (if (eq kind :min) "-MIN" "-MAX"))
                                             ,(second packed) ,(first packed)))
+                              ((and (eq kind :fma) hardware-fma-p)
+                               `(,(find-symbol (concatenate 'string prefix "-FMADD") "SB-SIMD-FMA")
+                                 ,@packed))
                               (t
                                (let ((lanes (loop for nil in operands
                                                   collect (loop repeat width collect (gensym "LANE")))))

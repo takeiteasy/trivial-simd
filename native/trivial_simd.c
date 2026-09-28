@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include "fma.h"
 
 #pragma STDC FP_CONTRACT OFF
 
@@ -65,14 +66,19 @@
 #define TS_F64_MIN(a, b) _mm_min_pd(b, a)
 #define TS_F32_MAX(a, b) _mm_max_ps(b, a)
 #define TS_F64_MAX(a, b) _mm_max_pd(b, a)
-/* TODO: SSE2 FMA is per-lane; select hardware FMA at runtime (#54). */
 static __m128 ts_fma_f32(__m128 a, __m128 b, __m128 c) {
+#ifdef TS_HAVE_HARDWARE_FMA
+    if (ts_fma_supported()) return ts_fma_hardware_f32(a, b, c);
+#endif
     float left[4], right[4], addend[4];
     _mm_storeu_ps(left, a); _mm_storeu_ps(right, b); _mm_storeu_ps(addend, c);
     for (size_t i = 0; i < 4; ++i) addend[i] = fmaf(left[i], right[i], addend[i]);
     return _mm_loadu_ps(addend);
 }
 static __m128d ts_fma_f64(__m128d a, __m128d b, __m128d c) {
+#ifdef TS_HAVE_HARDWARE_FMA
+    if (ts_fma_supported()) return ts_fma_hardware_f64(a, b, c);
+#endif
     double left[2], right[2], addend[2];
     _mm_storeu_pd(left, a); _mm_storeu_pd(right, b); _mm_storeu_pd(addend, c);
     for (size_t i = 0; i < 2; ++i) addend[i] = fma(left[i], right[i], addend[i]);

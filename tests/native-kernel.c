@@ -227,7 +227,19 @@ static void check_final_output_##suffix(void) { \
 CHECK_FINAL_OUTPUT(f32, float, TS_F32_WIDTH, 0x1p-23f)
 CHECK_FINAL_OUTPUT(f64, double, TS_F64_WIDTH, 0x1p-52)
 
+static void check_scalar_fma(void) {
+    assert(ts_fma_scalar_f32(0x1.000002p0f, 0x1.fffffcp-1f, -1.0f) == -0x1p-46f);
+    assert(ts_fma_scalar_f64(0x1.0000000000001p0, 0x1.ffffffffffffep-1, -1.0) == -0x1p-104);
+    assert(signbit(ts_fma_scalar_f32(-0.0f, 1.0f, -0.0f)));
+    assert(signbit(ts_fma_scalar_f64(-0.0, 1.0, -0.0)));
+    assert(ts_fma_supported() == 0 || ts_fma_supported() == 1);
+#ifdef TS_FORCE_SOFTWARE_FMA
+    assert(ts_fma_supported() == 0);
+#endif
+}
+
 int main(void) {
+    check_scalar_fma();
     check_f32();
     check_f64();
     check_math_f32();

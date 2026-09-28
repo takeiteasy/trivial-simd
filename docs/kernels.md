@@ -61,7 +61,8 @@ is valid. An arithmetic error may leave part of `destination` updated.
 `min` and `max` retain the left operand on equal values, including signed zeros.
 
 `fma` uses round-to-nearest-even for finite operands with finite results,
-including subnormals. `(+ (* a b) c)` performs separate multiplication and
+including subnormals. Scalar and packed acceleration retain the same result as
+its exact portable fallback. `(+ (* a b) c)` performs separate multiplication and
 addition. The exported scalar `fma` function takes three floats of the same type.
 An exact cancellation returns positive zero; a negative-zero product plus
 negative zero returns negative zero.[^fma]
@@ -111,8 +112,9 @@ for measurements and [FMA fallback limitations](#limitations).
 - NaNs, infinities, non-default rounding modes, and floating-point traps may
   behave differently by backend. See the
   [IEEE consistency ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/53).
-- Lisp and SBCL FMA use an exact integer fallback, applied per SIMD lane on
-  SBCL. See the [FMA performance ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/54).
+- ARM64 Lisp FMA uses scalar foreign calls when the native library is available;
+  otherwise it uses exact integer arithmetic. In-process scalar acceleration is
+  tracked by the [ARM64 FMA ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/60).
 - A native program supports at most 65,536 simultaneous scratch slots; exceeding
   this limit signals an error when defining the kernel. See the
   [scratch addressing ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/50).
@@ -155,7 +157,10 @@ for measurements and [FMA fallback limitations](#limitations).
 
 [^fma]: The portable helper aligns decoded integer significands, computes the
     product and sum exactly, then rounds once to the vector precision. Native
-    ARM64 uses NEON FMA; SSE2 uses scalar `fma`/`fmaf` per lane. Rebuild the
+    ARM64 uses NEON FMA. Native x86 selects packed FMA when the CPU and OS
+    support it, retaining per-lane `fma`/`fmaf` otherwise. SBCL x86 selects
+    scalar and packed `sb-simd` FMA with an OS AVX-state guard. Other scalar
+    paths use optional native helpers or exact integer arithmetic. Rebuild the
     native library after updating the kernel implementation.
 
 [^sum]: Lisp sums elements in order; SBCL accumulates SIMD lanes before adding

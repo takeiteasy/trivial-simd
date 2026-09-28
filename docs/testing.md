@@ -7,7 +7,7 @@ copy-back, compact slice transfers, and overlapping copy-mode input snapshots. N
 retained functions after redefinition, and collection during active native calls.
 Threaded tests exercise concurrent first use with private call buffers. ECL tests
 also check helper compilation, reuse, and compiler-failure fallback. Kernel
-tests cover register spilling, scratch-slot reuse, encoding boundaries, square-root domain errors, signed zeros, single-rounding FMA, and
+tests cover register spilling, scratch-slot reuse, encoding boundaries, square-root domain errors, signed zeros, single-rounding FMA, deterministic exact-reference comparisons, forced FMA fallbacks, and
 scalar-returning sums with slices and spilling. ECL also exercises interpreted
 spilling and reduction definitions.
 
@@ -45,7 +45,7 @@ cmake --build build --config Release
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-The native harness runs SIMD and scalar C checks for both float types. It covers
+The native harness runs SIMD, scalar C, and forced software-FMA checks for both float types. It covers
 scratch indexes through 65,535, partial blocks, math operators, scalar reductions,
 allocation failure, size overflow, and cleanup after successful or failed calls.
 Final-output checks compare every supported reduction operation bit-for-bit
@@ -174,3 +174,27 @@ sbcl --script tests/slice-bench.lisp
 ccl --no-init --batch --eval '(load (compile-file "tests/slice-bench.lisp" :output-file "/tmp/slice-bench.fasl"))' --eval '(quit)'
 ecl --norc --eval '(load (compile-file "tests/slice-bench.lisp" :output-file "/tmp/slice-bench.fas"))' --eval '(quit)'
 ```
+
+## FMA profiling
+
+`tests/fma-bench.lisp` compares exact portable FMA, scalar C helpers, and automatic
+selection for elementwise and sum kernels, in both precisions at 32, 1,024,
+and 65,536 elements. Correctness checks precede warmed calibrated medians.
+`Hardware FMA` reports guarded x86 availability; ARM64 native kernels use NEON.
+
+```sh
+sbcl --script tests/fma-bench.lisp
+ccl --no-init --batch --eval '(load (compile-file "tests/fma-bench.lisp" :output-file "/tmp/fma-bench.fasl"))' --eval '(quit)'
+ecl --norc --eval '(load (compile-file "tests/fma-bench.lisp" :output-file "/tmp/fma-bench.fas"))' --eval '(quit)'
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_FMA_PROFILE=ON
+cmake --build build --config Release
+build/native_fma_software_profile
+build/native_fma_profile
+```
+
+The C executables measure identical native bytecode with software and automatic
+FMA selection. They use calibrated median CPU-time batches and verify every
+output outside timing. On Windows, use the `.exe` suffix.
+The manual **FMA profile** GitHub workflow runs native and Lisp checks, then two
+measurement trials on x86-64 Linux for SBCL, CCL, and ECL. Benchmarks remain
+outside the normal test suite.

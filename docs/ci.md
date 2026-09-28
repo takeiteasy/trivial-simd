@@ -59,3 +59,10 @@ twice the Linux rate; public repositories use standard runners for free.[^cost]
     `kernel.lisp`, `kernel-math.lisp`, or `CMakeLists.txt`. The path lists are in the `paths`
     section of the matrix file.
 [^cost]: GitHub's current rates are in its Actions billing documentation.
+
+## FMA measurements
+
+Run the **FMA profile** workflow manually for x86-64 Linux correctness checks
+and repeated SBCL, CCL, and ECL FMA measurements. It includes the native
+hardware-selected and forced software profiles. Timing results appear in the
+job logs; see [FMA profiling](testing.md#fma-profiling) for local commands.

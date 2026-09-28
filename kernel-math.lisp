@@ -10,8 +10,7 @@
 (defun kernel-max (left right)
   (if (>= left right) left right))
 
-;; TODO: exact integer FMA is costly; select correctly rounded primitives (#54).
-(defun fma (a b c)
+(defun portable-fma (a b c)
   "Return A*B+C with one nearest-even rounding for same-type finite floats."
   (let* ((single (typep a 'single-float))
          (type (if single 'single-float 'double-float)))
@@ -38,3 +37,53 @@
                        (rounded (round (abs exact) (ash 1 shift)))
                        (result (scale-float (float rounded a) (+ exponent shift))))
                   (if (minusp exact) (- result) result)))))))))
+
+(defvar *fma-mode* :auto)
+(defvar *sbcl-fma-available-p* nil)
+(defvar *sbcl-fma-f32* nil)
+(defvar *sbcl-fma-f64* nil)
+
+(defun refresh-sbcl-fma ()
+  (setf *sbcl-fma-available-p*
+        #+(and sbcl x86-64)
+        (and *sbcl-fma-f32* *sbcl-fma-f64*
+             (ignore-errors
+               (and (plusp (sb-alien:extern-alien "avx_supported" sb-alien:int))
+                    (logbitp 12 (nth-value 2 (sb-vm::%cpu-identification 1 0))))))
+        #-(and sbcl x86-64) nil))
+
+#+(and sbcl x86-64)
+(defun initialize-sbcl-fma ()
+  (let ((package (find-package "SB-SIMD-FMA")))
+    (when (and package
+               (every (lambda (name) (let ((symbol (find-symbol name package)))
+                                      (and symbol (fboundp symbol))))
+                      '("F32-FMADD" "F64-FMADD" "F32.4-FMADD" "F64.2-FMADD")))
+      (flet ((helper (name type)
+               (compile nil `(lambda (a b c)
+                               (declare (type ,type a b c) (optimize (speed 3)))
+                               (,(find-symbol name package) a b c)))))
+        (setf *sbcl-fma-f32* (helper "F32-FMADD" 'single-float)
+              *sbcl-fma-f64* (helper "F64-FMADD" 'double-float)))))
+  (refresh-sbcl-fma)
+  (pushnew 'refresh-sbcl-fma sb-ext:*init-hooks*))
+
+(defun hardware-fma-available-p ()
+  (or *sbcl-fma-available-p*
+      (and *native-fma-available-p* (plusp (%native-fma-supported)))))
+
+(defun sbcl-fma-enabled-p ()
+  (and (eq *fma-mode* :auto) *sbcl-fma-available-p*))
+
+(defun fma (a b c)
+  "Return A*B+C with one nearest-even rounding for same-type finite floats."
+  (let* ((single (typep a 'single-float))
+         (type (if single 'single-float 'double-float)))
+    (unless (and (typep a type) (typep b type) (typep c type))
+      (error "FMA needs three floats of the same type"))
+    (cond ((sbcl-fma-enabled-p)
+           (funcall (if single *sbcl-fma-f32* *sbcl-fma-f64*) a b c))
+          ;; TODO: per-element foreign calls limit ARM64 Lisp FMA; use in-process primitives (#60).
+          ((and (member *fma-mode* '(:auto :native)) *native-fma-available-p*)
+           (if single (%native-fma-f32 a b c) (%native-fma-f64 a b c)))
+          (t (portable-fma a b c)))))

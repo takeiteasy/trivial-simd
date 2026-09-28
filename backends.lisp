@@ -6,7 +6,8 @@
 (when (ignore-errors (require :sb-simd))
   (when (find-package :sb-simd-sse2)
     (load (asdf:system-relative-pathname "trivial-simd" "sbcl-simd.lisp"))
-    (setf *sbcl-simd-available-p* t)))
+    (setf *sbcl-simd-available-p* t)
+    (initialize-sbcl-fma)))
 
 (defun select-backend ()
   (let ((requested (uiop:getenv "TRIVIAL_SIMD_BACKEND")))

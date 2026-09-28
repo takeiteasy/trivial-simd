@@ -1,0 +1,41 @@
+name: FMA profile
+
+on:
+  workflow_dispatch:
+
+jobs:
+  profile:
+    name: ${{ matrix.lisp }} / x86-64
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        lisp: [sbcl-bin, ccl-bin, ecl]
+    env:
+      LISP: ${{ matrix.lisp }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_FMA_PROFILE=ON
+      - name: Build
+        run: cmake --build build --config Release
+      - name: Native checks
+        run: ctest --test-dir build -C Release --output-on-failure
+      - uses: 40ants/setup-lisp@v4
+        with:
+          asdf-system: trivial-simd
+          cache: false
+      - name: Lisp checks
+        shell: lispsh -eo pipefail {0}
+        run: ros -Q run --load tests/run.lisp
+      - name: Native measurements
+        run: |
+          for trial in 1 2; do
+            build/native_fma_software_profile
+            build/native_fma_profile
+          done
+      - name: Lisp measurements
+        shell: lispsh -eo pipefail {0}
+        run: |
+          ros -Q run --eval '(load (compile-file "tests/fma-bench.lisp" :output-file (compile-file-pathname "/tmp/fma-profile.lisp")))'
+          ros -Q run --eval '(load (compile-file-pathname "/tmp/fma-profile.lisp"))'
