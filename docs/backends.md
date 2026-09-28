@@ -9,8 +9,8 @@ The library selects the first available backend in this order:
 | `:lisp` | Any supported Common Lisp implementation | Direct Lisp array access |
 
 The C backend uses SSE2 on x86-64 and NEON on ARM64. Other architectures use
-scalar C loops. SBCL on ARM64 uses the C backend when built because its
-`sb-simd` module does not provide an ARM64 instruction set in the tested SBCL.
+scalar C loops. This library enables its SBCL backend only on x86-64.
+SBCL on ARM64 selects the C backend when built, or the Lisp fallback otherwise.
 
 ## Tested combinations
 

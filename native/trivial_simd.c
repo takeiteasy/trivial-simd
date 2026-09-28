@@ -227,7 +227,12 @@ static int ts_kernel_run_##suffix(const uint8_t *code, size_t code_length, \
                     if (left[j] < 0) { free(scratch); return -2; } \
                 } \
                 for (; i + width <= m; i += width) store(destination + i, sqrtv(load(left + i))); \
-                for (; i < m; ++i) destination[i] = sqrts(left[i]); \
+                for (; i < m; ++i) { \
+                    if (left[i] == 0) { \
+                        if (destination != left) memcpy(destination + i, left + i, sizeof(type)); \
+                    } \
+                    else destination[i] = sqrts(left[i]); \
+                } \
                 break; \
             case TS_OP_ABS: \
                 for (; i + width <= m; i += width) store(destination + i, absv(load(left + i))); \
@@ -236,12 +241,22 @@ static int ts_kernel_run_##suffix(const uint8_t *code, size_t code_length, \
             case TS_OP_MIN: \
                 for (; i + width <= m; i += width) \
                     store(destination + i, minv(load(left + i), load(right + i))); \
-                for (; i < m; ++i) destination[i] = left[i] <= right[i] ? left[i] : right[i]; \
+                for (; i < m; ++i) { \
+                    if (left[i] == right[i]) { \
+                        if (destination != left) memcpy(destination + i, left + i, sizeof(type)); \
+                    } \
+                    else destination[i] = left[i] < right[i] ? left[i] : right[i]; \
+                } \
                 break; \
             case TS_OP_MAX: \
                 for (; i + width <= m; i += width) \
                     store(destination + i, maxv(load(left + i), load(right + i))); \
-                for (; i < m; ++i) destination[i] = left[i] >= right[i] ? left[i] : right[i]; \
+                for (; i < m; ++i) { \
+                    if (left[i] == right[i]) { \
+                        if (destination != left) memcpy(destination + i, left + i, sizeof(type)); \
+                    } \
+                    else destination[i] = left[i] > right[i] ? left[i] : right[i]; \
+                } \
                 break; \
             case TS_OP_FMA: \
                 for (; i + width <= m; i += width) \

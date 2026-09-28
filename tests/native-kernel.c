@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #ifdef NDEBUG
 #undef NDEBUG
@@ -81,6 +82,14 @@ static void check_##suffix(void) { \
 CHECK_KERNEL(f32, float)
 CHECK_KERNEL(f64, double)
 
+static void check_zero_sign(double value, int negative, const char *operation) {
+    if (value != 0 || !!signbit(value) != negative) {
+        fprintf(stderr, "%s: expected %s zero, got %.17g (sign %d)\n",
+                operation, negative ? "negative" : "positive", value, !!signbit(value));
+        abort();
+    }
+}
+
 #define CHECK_MATH(suffix, type, epsilon, root, absolute, fused) \
 static void check_math_##suffix(void) { \
     type a[600], b[600], c[600], out[600]; \
@@ -116,11 +125,11 @@ static void check_math_##suffix(void) { \
     for (size_t i = 0; i < 600; ++i) assert(out[i] == -(type)(epsilon * epsilon)); \
     for (size_t i = 0; i < 600; ++i) { a[i] = -(type)0.0; b[i] = 0; c[i] = -(type)0.0; } \
     assert(ts_kernel_##suffix(sqrt_code, sizeof(sqrt_code), NULL, inputs, out, 600, 0) == 0); \
-    for (size_t i = 0; i < 600; ++i) assert(signbit(out[i])); \
+    for (size_t i = 0; i < 600; ++i) check_zero_sign(out[i], 1, "sqrt"); \
     assert(ts_kernel_##suffix(min_code, sizeof(min_code), NULL, inputs, out, 600, 0) == 0); \
-    for (size_t i = 0; i < 600; ++i) assert(signbit(out[i])); \
+    for (size_t i = 0; i < 600; ++i) check_zero_sign(out[i], 1, "min"); \
     assert(ts_kernel_##suffix(max_code, sizeof(max_code), NULL, inputs, out, 600, 0) == 0); \
-    for (size_t i = 0; i < 600; ++i) assert(signbit(out[i])); \
+    for (size_t i = 0; i < 600; ++i) check_zero_sign(out[i], 1, "max"); \
     size_t errors[] = {0, 3, 256, 599}; \
     for (size_t e = 0; e < sizeof(errors) / sizeof(errors[0]); ++e) { \
         a[errors[e]] = -1; \

@@ -3,8 +3,9 @@
 The FiveAM suite checks the Lisp reference and every locally available SIMD
 backend for both float types, empty vectors, SIMD tails, aliasing, and errors.
 Kernel tests also cover register spilling, scratch-slot reuse, and encoding
-boundaries, square-root domain errors, signed zeros, single-rounding FMA, scalar-returning sum kernels, and reductions
-with slices and spilling. ECL also exercises an interpreted spilling-kernel definition.
+boundaries, square-root domain errors, signed zeros, single-rounding FMA, and
+scalar-returning sums with slices and spilling. ECL also exercises interpreted
+spilling and reduction definitions.
 
 ```sh
 sbcl --script tests/run.lisp
@@ -40,11 +41,10 @@ cmake --build build --config Release
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-The native harness runs SIMD and scalar C checks for both float types, scratch indexes through 65,535,
-partial blocks, new math operators, scalar reduction output, domain-error
-cleanup, allocation failure,
-size overflow, and cleanup. GitHub Actions
-and sourcehut builds run it alongside the Lisp suite.
+The native harness runs SIMD and scalar C checks for both float types. It covers
+scratch indexes through 65,535, partial blocks, math operators, scalar reductions,
+allocation failure, size overflow, and cleanup after successful or failed calls.
+GitHub Actions and sourcehut builds run it alongside the Lisp suite.
 
 ## Benchmark
 
@@ -57,5 +57,6 @@ and GitHub Actions do not invoke it.
 
 The benchmark reports microseconds per vector-add call for 32, 1,024, and
 65,536 `single-float` elements on the available Lisp, native C, and SBCL
-backends, plus separate-operation `a*b+c`, true FMA, and `sum(a*b)` kernel comparisons and `NATIVE-COPY` for the copying fallback. Results depend on the Lisp implementation, compiler, CPU, and array
-access cost.
+backends. It also compares separate-operation `a*b+c`, true FMA, and `sum(a*b)`
+kernels, and reports `NATIVE-COPY` for the copying fallback. Results depend on
+the Lisp implementation, compiler, CPU, and array access cost.
