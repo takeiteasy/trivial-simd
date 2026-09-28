@@ -165,3 +165,15 @@
           (let ((before (copy-seq output)))
             (simd::copy-from-foreign pointer output foreign length 0)
             (is (equalp before output))))))))
+
+(test integer-slice-indices
+  (let ((a (values-for 8 'single-float 1))
+        (out (values-for 8 'single-float -1)))
+    (dolist (backend (available-backends))
+      (with-backend (backend)
+        (dolist (keys '((:start 0.0 :end 4) (:start 0 :end 4.0)
+                        (:end 4 :left-start 0.5) (:end 4 :right-start 0.5)
+                        (:end 4 :destination-start 0.5)))
+          (signals error (apply #'simd:add! out a a keys)))
+        (signals error (simd:sum a :end 4 :input-start 0.5))
+        (signals error (simd:dot a a :end 4 :right-start 0.5))))))

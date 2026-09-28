@@ -37,7 +37,8 @@ vector while the element count stays `end - start`.
 (trivial-simd:sum a :start 2 :end 10)
 ```
 
-Elements of `destination` outside the slice are unchanged. Without `:end`,
+Slice bounds and per-vector starts are integers. Elements of `destination`
+outside the slice are unchanged. Without `:end`,
 every vector must have the same length. A slice that exceeds a vector signals
 an error.
 

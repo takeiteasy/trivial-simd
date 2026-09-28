@@ -41,14 +41,15 @@ STARTS holds each vector's own start or NIL to use START."
         (unless (= length (length vector))
           (error "All vectors must have the same length without :END"))))
     (let ((end (or end length)))
-      (unless (<= 0 start end)
+      (unless (and (integerp start) (integerp end) (<= 0 start end))
         (error "Invalid slice: :START ~S, :END ~S" start end))
       (let* ((count (- end start))
              (offsets (mapcar (lambda (offset) (or offset start)) starts)))
         (loop for vector in vectors
               for offset in offsets
-              do (unless (and (<= 0 offset) (<= (+ offset count) (length vector)))
-                   (error "Slice of ~D elements at offset ~D exceeds vector length ~D"
+              do (unless (and (integerp offset) (<= 0 offset)
+                              (<= (+ offset count) (length vector)))
+                   (error "Invalid slice of ~D elements at offset ~S for vector length ~D"
                           count offset (length vector))))
         (values type count offsets)))))
 

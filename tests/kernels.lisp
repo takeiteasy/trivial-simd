@@ -475,3 +475,12 @@
                          (apply #'kernel-sum-fma
                                 (mapcar (lambda (v) (make-array 1 :element-type type :initial-element v))
                                         case)))))))))))))
+
+(test integer-kernel-slice-indices
+  (let ((a (values-for 8 'single-float 1))
+        (out (values-for 8 'single-float -1)))
+    (dolist (backend (available-backends))
+      (with-backend (backend)
+        (signals error (kernel-true-fma out a a a :end 4 :a-start 0.5))
+        (signals error (kernel-true-fma out a a a :end 4 :destination-start 0.5))
+        (signals error (kernel-sum a :end 4 :a-start 0.5))))))
