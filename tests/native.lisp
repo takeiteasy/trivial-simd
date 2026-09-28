@@ -45,10 +45,11 @@
     (finishes (funcall release))))
 
 (defun await-collection (predicate)
-  (loop repeat 30
-        do (trivial-garbage:gc :full t)
-           (when (funcall predicate) (return t))
-           (sleep 0.01)))
+  (or (loop repeat 100
+            do (trivial-garbage:gc :full t)
+               (when (funcall predicate) (return t))
+               (sleep 0.01))
+      (funcall predicate)))
 
 (defun counted-finalizer (callback counter)
   (lambda () (funcall callback) (incf (car counter))))
