@@ -53,8 +53,9 @@
 (defun counted-finalizer (callback counter)
   (lambda () (funcall callback) (incf (car counter))))
 
-(defun track-finalizers (finalize counter &optional weak)
+(defun track-finalizers (finalize counter &optional weak registered)
   (lambda (owner callback)
+    (when registered (incf (car registered)))
     (when weak (setf (car weak) (trivial-garbage:make-weak-pointer owner)))
     (funcall finalize owner (counted-finalizer callback counter))))
 
@@ -83,21 +84,25 @@
   (symbol-function 'lifetime-kernel))
 
 (defun replace-native-lifetime-kernels (output input)
-  (loop for constant from 2 to 5
-        do (funcall (define-native-lifetime-kernel constant) output input))
+  (with-backend (:native)
+    (loop for constant from 2 to 5
+          do (funcall (define-native-lifetime-kernel constant) output input)))
   (fmakunbound 'lifetime-kernel)
   nil)
 
 (defun exercise-native-redefinitions (released)
-  (let ((old nil)
+  (let ((registered (list 0))
+        (old nil)
         (input (values-for 5 'single-float 1))
         (output (make-array 5 :element-type 'single-float)))
     (with-backend (:native)
       (with-function-replaced (trivial-garbage:finalize
-                               (track-finalizers #'trivial-garbage:finalize released))
+                               (track-finalizers #'trivial-garbage:finalize released nil registered))
         (setf old (define-native-lifetime-kernel 1))
         (funcall old output input)
         (run-on-test-thread (lambda () (replace-native-lifetime-kernels output input))))
+      (unless (= 5 (car registered))
+        (error "Expected five native programs, registered ~D" (car registered)))
       (unless (await-collection (lambda () (= 4 (car released))))
         (error "Unreachable redefinitions retained their programs (~D/4 released)"
                (car released)))
@@ -110,8 +115,7 @@
 (test native-program-redefinition
   (when simd::*native-available-p*
     (let ((released (list 0)))
-      (finishes (run-on-test-thread (lambda () (exercise-native-redefinitions released))))
-      (is (await-collection (lambda () (= 5 (car released))))))))
+      (finishes (exercise-native-redefinitions released)))))
 
 (defun concurrent-kernel-worker (gate elementwise reduction mode type)
   (lambda ()
@@ -228,5 +232,4 @@
     (let ((released (list 0)))
       (with-function-replaced (simd::compile-native-kernel-runner
                                (lambda (form fallback) (declare (ignore form)) fallback))
-        (finishes (run-on-test-thread (lambda () (exercise-native-redefinitions released)))))
-      (is (await-collection (lambda () (= 5 (car released))))))))
+        (finishes (exercise-native-redefinitions released))))))
