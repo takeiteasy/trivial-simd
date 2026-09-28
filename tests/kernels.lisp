@@ -396,3 +396,21 @@
     (check-kernel-reduction 'interpreted-sum-fma (lambda (a b c) (+ (* a b) c))
                             type 5 (list (values-for 5 type 1) (values-for 5 type 2)
                                          (values-for 5 type 3)))))
+
+(test native-copy-kernel-overlap
+  (when simd::*native-available-p*
+    (dolist (type '(single-float double-float))
+      (let* ((input (values-for 65536 type 1))
+             (before (copy-seq input)))
+        (with-backend (:native-copy)
+          (kernel-fma input input input input :end 257 :destination-start 60001
+                      :a-start 60000 :b-start 60002 :c-start 60001)
+          (let ((expected (copy-seq before)))
+            (dotimes (i 257)
+              (setf (aref expected (+ 60001 i))
+                    (+ (* (aref before (+ 60000 i)) (aref before (+ 60002 i)))
+                       (aref before (+ 60001 i)))))
+            (is (equalp expected input)))
+          (is (= (kernel-dot before before :end 5 :a-start 60000 :b-start 61000)
+                 (loop for i below 5 sum (* (aref before (+ 60000 i))
+                                           (aref before (+ 61000 i)))))))))))

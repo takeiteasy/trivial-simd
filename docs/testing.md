@@ -3,7 +3,7 @@
 The FiveAM suite checks the Lisp reference and every locally available SIMD
 backend for both float types, empty vectors, SIMD tails, aliasing, and errors.
 Direct copy tests check both precisions, round trips, empty ranges, and partial
-copy-back. Native program tests check partial-initialization cleanup, finalization,
+copy-back, compact slice transfers, and overlapping copy-mode input snapshots. Native program tests check partial-initialization cleanup, finalization,
 retained functions after redefinition, and collection during active native calls.
 Threaded tests exercise concurrent first use with private call buffers. ECL tests
 also check helper compilation, reuse, and compiler-failure fallback. Kernel
@@ -161,3 +161,16 @@ allocation.
     calibration. Baseline symbols have distinct names because some Lisp
     implementations resolve foreign symbols globally. The Lisp baseline uses
     a cached-pointer wrapper; direct C columns compare equivalent call paths.
+
+## Slice benchmark
+
+`tests/slice-bench.lisp` compares native copy and pointer access for addition,
+sum, dot, elementwise kernels, and sum kernels in both precisions. It measures
+32-element slices in 1,024- and 65,536-element parents, a 1,024-element slice,
+and a whole-vector control. Result checks precede calibrated median timings.
+
+```sh
+sbcl --script tests/slice-bench.lisp
+ccl --no-init --batch --eval '(load (compile-file "tests/slice-bench.lisp" :output-file "/tmp/slice-bench.fasl"))' --eval '(quit)'
+ecl --norc --eval '(load (compile-file "tests/slice-bench.lisp" :output-file "/tmp/slice-bench.fas"))' --eval '(quit)'
+```

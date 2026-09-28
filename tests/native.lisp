@@ -234,3 +234,47 @@
       (with-function-replaced (simd::compile-native-kernel-runner
                                (lambda (form fallback) (declare (ignore form)) fallback))
         (finishes (exercise-native-redefinitions released))))))
+
+(test native-copy-compact-slices
+  (dolist (type '(single-float double-float))
+    (let* ((input (values-for 65536 type 1))
+           (output (values-for 65536 type -100))
+           (foreign (simd::foreign-type input)))
+      (dolist (count '(0 1 5 257))
+        (let ((before (copy-seq output)))
+          (cffi:with-foreign-object (pointer foreign (max 1 count))
+            (simd::copy-to-foreign input pointer foreign 60000 count)
+            (dotimes (i count)
+              (is (= (aref input (+ 60000 i)) (cffi:mem-aref pointer foreign i))))
+            (simd::copy-from-foreign pointer output foreign 50000 count))
+          (dotimes (i count)
+            (setf (aref before (+ 50000 i)) (aref input (+ 60000 i))))
+          (is (equalp before output)))))))
+
+(test native-copy-transfer-ranges
+  (when simd::*native-available-p*
+    (dolist (type '(single-float double-float))
+      (let ((input (values-for 65536 type 1))
+            (output (values-for 1024 type -1))
+            (copy #'simd::copy-to-foreign)
+            (ranges nil))
+        (with-function-replaced (simd::copy-to-foreign
+                                 (lambda (vector pointer foreign start count)
+                                   (push (list start count) ranges)
+                                   (funcall copy vector pointer foreign start count)))
+          (with-backend (:native-copy)
+            (simd:add! output input input :end 5 :destination-start 10
+                       :left-start 60000 :right-start 61000)
+            (is (equal '((61000 5) (60000 5)) ranges)))))
+      (let* ((input (values-for 65536 type 1))
+             (before (copy-seq input)))
+        (with-backend (:native-copy)
+          (dolist (count '(0 1 5 257))
+            (replace input before)
+            (simd:add! input input input :end count :destination-start 60001
+                       :left-start 60000 :right-start 60002)
+            (let ((expected (copy-seq before)))
+              (dotimes (i count)
+                (setf (aref expected (+ 60001 i))
+                      (+ (aref before (+ 60000 i)) (aref before (+ 60002 i)))))
+              (is (equalp expected input)))))))))

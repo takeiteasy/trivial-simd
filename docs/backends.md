@@ -100,13 +100,13 @@ float-vector guarantee.[^pointer] The native backend copies arrays on other
 Lisp implementations, using typed per-element loops.[^copy] Support
 for more implementations is tracked by their own tickets above. Small arrays may
 still run faster in Lisp; use the [benchmark](testing.md) for a workload.
-Copy mode allocates full-sized buffers and copies whole inputs for slices; see
-the [slice-sized transfer ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/57).
+Copy mode allocates buffers for the requested slice and copies only its elements.
+Each input has separate storage, including repeated and aliased inputs.
 
 [^pointer]: CFFI's pointer macro maps to implementation-specific pinned or
     foreign views of specialized arrays on these three implementations.
 [^copy]: The suite also runs the native backend in copy mode on every tested
     implementation. Copy mode dispatches once by float type and uses literal CFFI types
-    in specialized loops. It allocates full-sized input buffers and copies all
-    input elements, even for slices (`*native-array-access*` is `:copy`).
+    in specialized loops. Foreign index zero corresponds to each vector’s requested
+    start; output copy-back touches only the destination slice (`*native-array-access*` is `:copy`).
 [^ccl-arm]: ARM64 CI uses Clozure CL `v1.13-arm64-pre2` on Linux and macOS.

@@ -76,28 +76,34 @@
 (defun foreign-type (vector)
   (if (typep vector '(simple-array single-float (*))) :float :double))
 
+;; Public callers validate slice bounds before these unchecked transfers.
 (macrolet ((define-copy-loops (element foreign to from)
              `(progn
-                (defun ,to (vector pointer)
+                (defun ,to (vector pointer start count)
                   (declare (type (simple-array ,element (*)) vector)
-                           (optimize (speed 3)))
-                  (dotimes (index (length vector))
-                    (setf (cffi:mem-aref pointer ,foreign index)
-                          (aref vector index))))
+                           (type fixnum start count)
+                           (optimize (speed 3) (safety 0)))
+                  (loop for index of-type fixnum below count
+                        for source of-type fixnum from start
+                        do (setf (cffi:mem-aref pointer ,foreign index)
+                                 (aref vector source))))
                 (defun ,from (pointer vector start count)
                   (declare (type (simple-array ,element (*)) vector)
                            (type fixnum start count)
-                           (optimize (speed 3)))
-                  (loop for index of-type fixnum from start below (+ start count)
-                        do (setf (aref vector index)
+                           (optimize (speed 3) (safety 0)))
+                  (loop for index of-type fixnum below count
+                        for destination of-type fixnum from start
+                        do (setf (aref vector destination)
                                  (cffi:mem-aref pointer ,foreign index)))))))
   (define-copy-loops single-float :float copy-to-f32 copy-from-f32)
   (define-copy-loops double-float :double copy-to-f64 copy-from-f64))
 
-(defun copy-to-foreign (vector pointer type)
+(declaim (notinline copy-to-foreign))
+
+(defun copy-to-foreign (vector pointer type start count)
   (ecase type
-    (:float (copy-to-f32 vector pointer))
-    (:double (copy-to-f64 vector pointer))))
+    (:float (copy-to-f32 vector pointer start count))
+    (:double (copy-to-f64 vector pointer start count))))
 
 (defun copy-from-foreign (pointer vector type start count)
   (ecase type
@@ -114,30 +120,29 @@
   (progn bindings body
          '(error "Pinned array access is unsupported on this implementation")))
 
-;; TODO: whole-vector buffers cost O(length); use slice-sized transfers (#57).
-(defmacro with-copied-pointers ((&rest bindings) type outputs range &body body)
+(defmacro with-copied-pointers ((&rest bindings) type outputs count &body body)
   `(cffi:with-foreign-objects
-       ,(loop for (pointer vector) in bindings
-              collect `(,pointer ,type (length ,vector)))
-     ,@(loop for (pointer vector) in bindings
+       ,(loop for (pointer) in bindings collect `(,pointer ,type (max 1 ,count)))
+     ,@(loop for (pointer vector start) in bindings
              unless (member pointer outputs)
-               collect `(copy-to-foreign ,vector ,pointer ,type))
+               collect `(copy-to-foreign ,vector ,pointer ,type ,start ,count))
      (multiple-value-prog1 (progn ,@body)
-       ,@(loop for (pointer vector) in bindings
+       ,@(loop for (pointer vector start) in bindings
                when (member pointer outputs)
-                 collect `(copy-from-foreign ,pointer ,vector ,type ,@range)))))
+                 collect `(copy-from-foreign ,pointer ,vector ,type ,start ,count)))))
 
-(defmacro with-native-vectors ((type-var (&rest bindings) &key outputs range) &body body)
-  "Bind each (POINTER VECTOR) to a native pointer using *NATIVE-ARRAY-ACCESS*.
-In :COPY mode, output vectors are not copied in; RANGE, a (START COUNT) pair
-of forms, is the part copied back."
+(defmacro with-native-vectors ((type-var (&rest bindings) &key outputs count) &body body)
+  "Bind (POINTER VECTOR START) to COUNT elements using *NATIVE-ARRAY-ACCESS*."
   (let ((function (gensym "BODY"))
         (pointers (mapcar #'first bindings)))
     `(flet ((,function ,pointers ,@body))
        (declare (dynamic-extent #',function))
        (ecase *native-array-access*
-         (:pointer (with-pinned-pointers ,bindings (,function ,@pointers)))
-         (:copy (with-copied-pointers ,bindings ,type-var ,outputs ,range
+         (:pointer
+          (with-pinned-pointers ,(mapcar (lambda (binding) (subseq binding 0 2)) bindings)
+            (,function ,@(loop for (pointer nil start) in bindings
+                               collect `(element-pointer ,pointer ,type-var ,start)))))
+         (:copy (with-copied-pointers ,bindings ,type-var ,outputs ,count
                   (,function ,@pointers)))))))
 
 (defun call-native-binary (operation type output a b length)
@@ -156,32 +161,25 @@ of forms, is the part copied back."
 (defun native-binary (operation destination left right count
                       destination-offset left-offset right-offset)
   (let ((type (foreign-type destination)))
-    (with-native-vectors (type ((output destination) (a left) (b right))
-                          :outputs (output)
-                          :range (destination-offset count))
-      (call-native-binary operation type
-                          (element-pointer output type destination-offset)
-                          (element-pointer a type left-offset)
-                          (element-pointer b type right-offset)
-                          count)))
+    (with-native-vectors (type ((output destination destination-offset)
+                               (a left left-offset) (b right right-offset))
+                          :outputs (output) :count count)
+      (call-native-binary operation type output a b count)))
   destination)
 
 (defun native-sum (input count offset)
   (let ((type (foreign-type input)))
-    (with-native-vectors (type ((a input)))
-      (let ((a (element-pointer a type offset)))
-        (if (eq type :float)
-            (%native-sum-f32 a count)
-            (%native-sum-f64 a count))))))
+    (with-native-vectors (type ((a input offset)) :count count)
+      (if (eq type :float)
+          (%native-sum-f32 a count)
+          (%native-sum-f64 a count)))))
 
 (defun native-dot (left right count left-offset right-offset)
   (let ((type (foreign-type left)))
-    (with-native-vectors (type ((a left) (b right)))
-      (let ((a (element-pointer a type left-offset))
-            (b (element-pointer b type right-offset)))
-        (if (eq type :float)
-            (%native-dot-f32 a b count)
-            (%native-dot-f64 a b count))))))
+    (with-native-vectors (type ((a left left-offset) (b right right-offset)) :count count)
+      (if (eq type :float)
+          (%native-dot-f32 a b count)
+          (%native-dot-f64 a b count)))))
 
 (defstruct (native-program (:constructor %make-native-program))
   code code-length f32-constants f64-constants scratch-count

@@ -57,18 +57,11 @@ setup; see [kernel limitations](kernels.md#limitations).
 
 ## Native copy mode
 
-Copy mode uses typed loops and separate input buffers. These measurements are
-microseconds per 1,024-element `add!` call on Apple M1, using three repeated runs.
-SBCL is 2.6.8, CCL is 1.13, and ECL is 26.5.5.
-
-| Implementation | Single-float | Double-float |
-|---|---:|---:|
-| SBCL | 3.03 | 3.09 |
-| CCL | 13.52 | 13.61 |
-| ECL | 642 | 685 |
-
-Copying still depends on implementation-specific foreign memory access. Small
-slices also copy whole input vectors; see [array access](backends.md#array-access).
+Copy mode allocates and transfers only the requested slice. Inputs have separate
+buffers, and copy-back updates only the destination range. The cost depends on
+slice length rather than parent-vector length. See the
+[slice benchmark](testing.md#slice-benchmark) for both precisions and all native
+operation families.
 
 ## ECL native calls
 

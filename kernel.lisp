@@ -354,17 +354,17 @@ SPILL/RELOAD use a register and slot; other operands name registers or inputs."
 (defun native-kernel-form (program foreign destination arguments d-offset offsets count)
   (let ((pointers (loop for nil in arguments collect (gensym "POINTER")))
         (output (gensym "OUTPUT")) (table (gensym "TABLE")))
-    `(with-native-vectors (,foreign (,@(when destination `((,output ,destination)))
-                                    ,@(mapcar #'list pointers arguments))
+    `(with-native-vectors (,foreign (,@(when destination `((,output ,destination ,d-offset)))
+                                    ,@(mapcar #'list pointers arguments offsets))
                           :outputs ,(when destination (list output))
-                          :range ,(when destination (list d-offset count)))
+                          :count ,count)
        (cffi:with-foreign-object (,table :pointer ,(max 1 (length arguments)))
-         ,@(loop for pointer in pointers for offset in offsets for index from 0
+         ,@(loop for pointer in pointers for index from 0
                  collect `(setf (cffi:mem-aref ,table :pointer ,index)
-                                (element-pointer ,pointer ,foreign ,offset)))
+                                ,pointer))
          ,(if destination
               `(call-native-kernel ,program ,foreign ,table
-                                   (element-pointer ,output ,foreign ,d-offset) ,count)
+                                   ,output ,count)
               `(cffi:with-foreign-object (,output ,foreign)
                  (call-native-kernel ,program ,foreign ,table ,output ,count :sum-p t)
                  (cffi:mem-ref ,output ,foreign)))))))
