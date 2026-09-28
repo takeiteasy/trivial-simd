@@ -64,14 +64,15 @@
     (simd::make-native-program '(1 255 0 0) '(1) 0))
   nil)
 
+(defun run-on-test-thread (function)
+  (if bordeaux-threads:*supports-threads-p*
+      (bordeaux-threads:join-thread (bordeaux-threads:make-thread function))
+      (funcall function)))
+
 (test native-program-is-collected
   (let ((released (list 0))
         (weak (list nil)))
-    (if bordeaux-threads:*supports-threads-p*
-        (bordeaux-threads:join-thread
-         (bordeaux-threads:make-thread
-          (lambda () (make-tracked-native-program released weak))))
-        (make-tracked-native-program released weak))
+    (run-on-test-thread (lambda () (make-tracked-native-program released weak)))
     (is (await-collection (lambda () (= 1 (car released)))))
     (is (null (trivial-garbage:weak-pointer-value (car weak))))
     (trivial-garbage:gc :full t)
@@ -80,6 +81,12 @@
 (defun define-native-lifetime-kernel (constant)
   (eval `(simd:define-kernel lifetime-kernel (a) (+ a ,constant)))
   (symbol-function 'lifetime-kernel))
+
+(defun replace-native-lifetime-kernels (output input)
+  (loop for constant from 2 to 5
+        do (funcall (define-native-lifetime-kernel constant) output input))
+  (fmakunbound 'lifetime-kernel)
+  nil)
 
 (defun exercise-native-redefinitions (released)
   (let ((old nil)
@@ -90,11 +97,10 @@
                                (track-finalizers #'trivial-garbage:finalize released))
         (setf old (define-native-lifetime-kernel 1))
         (funcall old output input)
-        (loop for constant from 2 to 5
-              do (funcall (define-native-lifetime-kernel constant) output input))
-        (fmakunbound 'lifetime-kernel))
+        (run-on-test-thread (lambda () (replace-native-lifetime-kernels output input))))
       (unless (await-collection (lambda () (= 4 (car released))))
-        (error "Unreachable redefinitions retained their programs"))
+        (error "Unreachable redefinitions retained their programs (~D/4 released)"
+               (car released)))
       (funcall old output input)
       (dotimes (i 5)
         (unless (= (1+ (aref input i)) (aref output i))
@@ -104,7 +110,7 @@
 (test native-program-redefinition
   (when simd::*native-available-p*
     (let ((released (list 0)))
-      (finishes (exercise-native-redefinitions released))
+      (finishes (run-on-test-thread (lambda () (exercise-native-redefinitions released))))
       (is (await-collection (lambda () (= 5 (car released))))))))
 
 (defun concurrent-kernel-worker (gate elementwise reduction mode type)
@@ -222,5 +228,5 @@
     (let ((released (list 0)))
       (with-function-replaced (simd::compile-native-kernel-runner
                                (lambda (form fallback) (declare (ignore form)) fallback))
-        (finishes (exercise-native-redefinitions released)))
+        (finishes (run-on-test-thread (lambda () (exercise-native-redefinitions released)))))
       (is (await-collection (lambda () (= 5 (car released))))))))
