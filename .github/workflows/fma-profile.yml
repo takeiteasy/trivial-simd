@@ -27,15 +27,14 @@ jobs:
           cache: false
       - name: Lisp checks
         shell: lispsh -eo pipefail {0}
-        run: ros -Q run --load tests/run.lisp
+        run: ros -Q run --eval '(handler-case (load "tests/run.lisp") (error (condition) (format *error-output* "~A~%" condition) (uiop:quit 1)))'
       - name: Native measurements
         run: |
+          lscpu
           for trial in 1 2; do
             build/native_fma_software_profile
             build/native_fma_profile
           done
       - name: Lisp measurements
         shell: lispsh -eo pipefail {0}
-        run: |
-          ros -Q run --eval '(load (compile-file "tests/fma-bench.lisp" :output-file (compile-file-pathname "/tmp/fma-profile.lisp")))'
-          ros -Q run --eval '(load (compile-file-pathname "/tmp/fma-profile.lisp"))'
+        run: ros -Q run --load tests/run-fma-profile.lisp

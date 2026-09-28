@@ -196,5 +196,6 @@ The C executables measure identical native bytecode with software and automatic
 FMA selection. They use calibrated median CPU-time batches and verify every
 output outside timing. On Windows, use the `.exe` suffix.
 The manual **FMA profile** GitHub workflow runs native and Lisp checks, then two
-measurement trials on x86-64 Linux for SBCL, CCL, and ECL. Benchmarks remain
+measurement trials on x86-64 Linux for SBCL, CCL, and ECL. The runner exits
+with a failure status on Lisp errors. Benchmarks remain
 outside the normal test suite.

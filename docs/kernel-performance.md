@@ -51,6 +51,22 @@ sizes in both precisions. See [FMA profiling](testing.md#fma-profiling).
 | ECL | double-float | 32 | 45.01 | 21.35 |
 | ECL | double-float | 65,536 | 87,696.00 | 40,339.00 |
 
+Native x86-64 Linux profiling compares identical FMA bytecode with per-lane
+`fma`/`fmaf` and runtime-selected packed hardware FMA. Both repeated trials
+show a gain at every measured size and precision. Representative C execution
+microseconds per call from the SBCL profiling job are:
+
+| Type | Elements | Per-lane software path | Packed hardware path |
+|---|---:|---:|---:|
+| single-float | 32 | 0.101 | 0.035 |
+| single-float | 65,536 | 176.484 | 44.447 |
+| double-float | 32 | 0.114 | 0.068 |
+| double-float | 65,536 | 190.000 | 95.627 |
+
+These timings come from the GitHub Linux x86-64 profiling runner; they are not
+comparable to the M1 table above. The C profile disables hardware dispatch in
+its software executable; the platform math library may itself use hardware FMA.
+
 ## Sum of products
 
 `(trivial-simd:sum (* a b))` returns a scalar without an intermediate vector.

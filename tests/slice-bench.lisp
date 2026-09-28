@@ -1,6 +1,9 @@
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (require :asdf)
-  (load (merge-pathnames "quicklisp/setup.lisp" (user-homedir-pathname))))
+  (unless (find-package :ql)
+    (dolist (candidate '("quicklisp/setup.lisp" ".roswell/lisp/quicklisp/setup.lisp"))
+      (let ((path (merge-pathnames candidate (user-homedir-pathname))))
+        (when (probe-file path) (load path) (return))))))
 
 (defmacro load-benchmark-system ()
   `(progn

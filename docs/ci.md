@@ -1,7 +1,7 @@
 # CI
 
 CI runs a small set of jobs automatically and the full platform matrix on
-request.
+request. Lisp errors return a failing process status in Roswell test steps.
 
 ## When jobs run
 
