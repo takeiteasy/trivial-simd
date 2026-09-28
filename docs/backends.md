@@ -34,6 +34,8 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release
 ```
 
+MSVC builds use `/fp:strict` to preserve signed zeros and rounding.
+
 The shared library stays in `build/`. Start a fresh Lisp process after
 building it, then load `trivial-simd`. If no shared library is present, the
 system loads with its Lisp backend. Set `TRIVIAL_SIMD_BACKEND` to `auto`
