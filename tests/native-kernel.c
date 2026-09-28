@@ -124,12 +124,19 @@ static void check_math_##suffix(void) { \
     assert(ts_kernel_##suffix(fma_code, sizeof(fma_code), NULL, inputs, out, 600, 0) == 0); \
     for (size_t i = 0; i < 600; ++i) assert(out[i] == -(type)(epsilon * epsilon)); \
     for (size_t i = 0; i < 600; ++i) { a[i] = -(type)0.0; b[i] = 0; c[i] = -(type)0.0; } \
-    assert(ts_kernel_##suffix(sqrt_code, sizeof(sqrt_code), NULL, inputs, out, 600, 0) == 0); \
-    for (size_t i = 0; i < 600; ++i) check_zero_sign(out[i], 1, "sqrt"); \
-    assert(ts_kernel_##suffix(min_code, sizeof(min_code), NULL, inputs, out, 600, 0) == 0); \
-    for (size_t i = 0; i < 600; ++i) check_zero_sign(out[i], 1, "min"); \
-    assert(ts_kernel_##suffix(max_code, sizeof(max_code), NULL, inputs, out, 600, 0) == 0); \
-    for (size_t i = 0; i < 600; ++i) check_zero_sign(out[i], 1, "max"); \
+    size_t zero_lengths[] = {1, 5, 600}; \
+    for (size_t z = 0; z < sizeof(zero_lengths) / sizeof(zero_lengths[0]); ++z) { \
+        size_t n = zero_lengths[z]; \
+        assert(ts_kernel_##suffix(sqrt_code, sizeof(sqrt_code), NULL, inputs, out, n, 0) == 0); \
+        for (size_t i = 0; i < n; ++i) check_zero_sign(out[i], 1, "sqrt"); \
+        assert(ts_kernel_##suffix(min_code, sizeof(min_code), NULL, inputs, out, n, 0) == 0); \
+        for (size_t i = 0; i < n; ++i) check_zero_sign(out[i], 1, "min"); \
+        assert(ts_kernel_##suffix(max_code, sizeof(max_code), NULL, inputs, out, n, 0) == 0); \
+        for (size_t i = 0; i < n; ++i) check_zero_sign(out[i], 1, "max"); \
+    } \
+    for (size_t i = 0; i < 600; ++i) b[i] = 1; \
+    assert(ts_kernel_##suffix(fma_code, sizeof(fma_code), NULL, inputs, out, 600, 0) == 0); \
+    for (size_t i = 0; i < 600; ++i) check_zero_sign(out[i], 1, "fma"); \
     size_t errors[] = {0, 3, 256, 599}; \
     for (size_t e = 0; e < sizeof(errors) / sizeof(errors[0]); ++e) { \
         a[errors[e]] = -1; \
