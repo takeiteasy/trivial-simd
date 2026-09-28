@@ -134,7 +134,7 @@ jobs:
         run: |
           curl -fL 'https://beta.quicklisp.org/quicklisp.lisp' -o "$RUNNER_TEMP/quicklisp.lisp"
           "$RUNNER_TEMP/ccl/$CCL_EXECUTABLE" --no-init --batch --load "$RUNNER_TEMP/ccl/asdf.lisp" --load "$RUNNER_TEMP/quicklisp.lisp" --eval '(quicklisp-quickstart:install)' --eval '(quit)'
-          "$RUNNER_TEMP/ccl/$CCL_EXECUTABLE" --no-init --batch --load "$RUNNER_TEMP/ccl/asdf.lisp" --load "$HOME/quicklisp/setup.lisp" --eval '(ql:quickload (list :cffi :fiveam))' --eval '(quit)'
+          "$RUNNER_TEMP/ccl/$CCL_EXECUTABLE" --no-init --batch --load "$RUNNER_TEMP/ccl/asdf.lisp" --load "$HOME/quicklisp/setup.lisp" --eval '(ql:quickload (list :cffi :fiveam :trivial-garbage))' --eval '(quit)'
 
       - name: Run tests
         shell: bash
@@ -189,7 +189,7 @@ jobs:
           Invoke-WebRequest 'https://beta.quicklisp.org/quicklisp.lisp' -OutFile $bootstrap
           & $env:SBCL_EXE --noinform --non-interactive --load $bootstrap --eval '(quicklisp-quickstart:install)'
           if ($LASTEXITCODE -ne 0) { throw 'Quicklisp installation failed' }
-          & $env:SBCL_EXE --noinform --non-interactive --load "$HOME/quicklisp/setup.lisp" --eval '(ql:quickload (list :cffi :fiveam))'
+          & $env:SBCL_EXE --noinform --non-interactive --load "$HOME/quicklisp/setup.lisp" --eval '(ql:quickload (list :cffi :fiveam :trivial-garbage))'
           if ($LASTEXITCODE -ne 0) { throw 'Lisp dependency installation failed' }
 
       - name: Run tests

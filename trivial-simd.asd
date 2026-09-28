@@ -3,7 +3,7 @@
   :author "George Watson"
   :license "MIT"
   :version "0.1.0"
-  :depends-on ("cffi")
+  :depends-on ("cffi" "trivial-garbage")
   :serial t
   :components ((:file "package")
                (:file "native")
@@ -18,6 +18,7 @@
   :serial t
   :components ((:file "tests/package")
                (:file "tests/operations")
+               (:file "tests/native")
                (:file "tests/kernels"))
   :perform (asdf:test-op (operation component)
              (declare (ignore operation component))

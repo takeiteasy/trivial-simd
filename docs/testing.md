@@ -3,7 +3,8 @@
 The FiveAM suite checks the Lisp reference and every locally available SIMD
 backend for both float types, empty vectors, SIMD tails, aliasing, and errors.
 Direct copy tests check both precisions, round trips, empty ranges, and partial
-copy-back. Kernel tests also cover register spilling, scratch-slot reuse, and encoding
+copy-back. Native program tests check partial-initialization cleanup, finalization,
+and retained functions after redefinition. Kernel tests also cover register spilling, scratch-slot reuse, and encoding
 boundaries, square-root domain errors, signed zeros, single-rounding FMA, and
 scalar-returning sums with slices and spilling. ECL also exercises interpreted
 spilling and reduction definitions.

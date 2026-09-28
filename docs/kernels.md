@@ -85,6 +85,10 @@ intermediate values into scratch blocks. Scratch slots are reused, and their
 storage is allocated per call and freed before returning. Kernels that fit in
 eight registers and empty calls allocate no scratch storage.[^scratch]
 
+Native code and constant buffers are allocated lazily and reclaimed when their
+kernel function becomes unreachable. Retained references to an older function
+remain callable after redefinition. Reclamation follows garbage collection.[^ownership]
+
 See the [runnable examples](../examples/kernels.lisp) for a balanced expression
 that uses spilling.
 
@@ -114,8 +118,6 @@ for measurements and [FMA fallback limitations](#limitations).
   [additional reductions ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/42).
 - ECL native kernel calls cost more than two bulk calls at small sizes. See the
   [ECL overhead ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/38).
-- Kernel program memory is not freed. See the
-  [memory ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/34).
 - Element types are `single-float` and `double-float`. See the
   [integer ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/39).
 - SBCL kernels are generated only on x86-64 with `sb-simd`.
@@ -151,3 +153,7 @@ for measurements and [FMA fallback limitations](#limitations).
     then adds block totals. The native reduction makes one foreign call and
     uses bounded register, output-block, and spill storage. Allocation and
     square-root domain errors signal Lisp errors without returning a sum.
+
+[^ownership]: `trivial-garbage` finalizers release foreign buffers without retaining
+    their owning program. Partial initialization frees completed allocations,
+    and active native calls keep the owner reachable until they finish.

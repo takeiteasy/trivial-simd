@@ -186,30 +186,67 @@ of forms, is the part copied back."
 (defstruct (native-program (:constructor %make-native-program))
   code code-length f32-constants f64-constants scratch-count)
 
-(defun foreign-copy (values type coerce-type)
-  (let ((pointer (cffi:foreign-alloc type :count (max 1 (length values)))))
-    (loop for value in values
-          for index from 0
-          do (setf (cffi:mem-aref pointer type index) (coerce value coerce-type)))
-    pointer))
+(declaim (notinline foreign-copy free-native-program-buffers))
 
-;; TODO: program memory is never freed; free it if kernels become dynamic (ticket #34).
+(defun free-native-program-buffers (buffers)
+  (loop for tail on buffers
+        for pointer = (shiftf (car tail) nil)
+        when pointer do (cffi:foreign-free pointer)))
+
+(defun native-program-finalizer (buffers)
+  ;; Keep the owner out of the finalizer's lexical environment on interpreted ECL.
+  (lambda () (free-native-program-buffers buffers)))
+
+(defun foreign-copy (values type coerce-type)
+  (let* ((buffers (list (cffi:foreign-alloc type :count (max 1 (length values)))))
+         (pointer (first buffers))
+         (complete nil))
+    (unwind-protect
+         (progn
+           (when (cffi:null-pointer-p pointer)
+             (error "Unable to allocate native kernel program storage"))
+           (loop for value in values
+                 for index from 0
+                 do (setf (cffi:mem-aref pointer type index) (coerce value coerce-type)))
+           (setf complete t)
+           pointer)
+      (unless complete (free-native-program-buffers buffers)))))
+
 (defun make-native-program (code constants scratch-count)
-  (%make-native-program :code (foreign-copy code :uint8 'integer)
-                        :code-length (length code)
-                        :scratch-count scratch-count
-                        :f32-constants (foreign-copy constants :float 'single-float)
-                        :f64-constants (foreign-copy constants :double 'double-float)))
+  (declare (notinline trivial-garbage:finalize))
+  (let ((buffers nil) (complete nil))
+    (unwind-protect
+         (flet ((copy (values type coerce-type)
+                  (let ((pointer (foreign-copy values type coerce-type)))
+                    (push pointer buffers)
+                    pointer)))
+           (let ((program (%make-native-program
+                           :code (copy code :uint8 'integer)
+                           :code-length (length code)
+                           :scratch-count scratch-count
+                           :f32-constants (copy constants :float 'single-float)
+                           :f64-constants (copy constants :double 'double-float))))
+             (trivial-garbage:finalize program (native-program-finalizer buffers))
+             (setf complete t)
+             program))
+      (unless complete (free-native-program-buffers buffers)))))
+
+;; The post-call reference keeps the owner live while C uses its raw pointers.
+(declaim (notinline keep-native-program-alive))
+(defun keep-native-program-alive (program)
+  (native-program-code program))
 
 (defun call-native-kernel (program type inputs output count &key sum-p)
-  (case (funcall (if sum-p
-                    (if (eq type :float) #'%native-kernel-sum-f32 #'%native-kernel-sum-f64)
-                    (if (eq type :float) #'%native-kernel-f32 #'%native-kernel-f64))
-                 (native-program-code program) (native-program-code-length program)
-                 (if (eq type :float)
-                     (native-program-f32-constants program)
-                     (native-program-f64-constants program))
-                 inputs output count (native-program-scratch-count program))
-    (0 nil)
-    (-2 (error "Negative kernel square root operand"))
-    (otherwise (error "Unable to allocate native kernel scratch storage"))))
+  (unwind-protect
+       (case (funcall (if sum-p
+                         (if (eq type :float) #'%native-kernel-sum-f32 #'%native-kernel-sum-f64)
+                         (if (eq type :float) #'%native-kernel-f32 #'%native-kernel-f64))
+                      (native-program-code program) (native-program-code-length program)
+                      (if (eq type :float)
+                          (native-program-f32-constants program)
+                          (native-program-f64-constants program))
+                      inputs output count (native-program-scratch-count program))
+         (0 nil)
+         (-2 (error "Negative kernel square root operand"))
+         (otherwise (error "Unable to allocate native kernel scratch storage")))
+    (keep-native-program-alive program)))
