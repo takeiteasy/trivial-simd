@@ -19,7 +19,7 @@ It uses SBCL SIMD where available, a small C library, or a pure Lisp fallback.
 - `:sbcl` — SBCL on x86-64 when `sb-simd` is available.
 - `:native` — the C library on macOS, Linux, or Windows: SSE2 on x86-64,
   NEON on ARM64, and scalar C elsewhere.
-- `:lisp` — pure Common Lisp fallback.
+- `:lisp` — portable Lisp arithmetic with optional scalar FMA acceleration.
 
 Build the native library with `cmake -S . -B build -DCMAKE_BUILD_TYPE=Release`
 and `cmake --build build --config Release`. The Lisp fallback loads without it.

@@ -234,24 +234,21 @@ SPILL/RELOAD use a register and slot; other operands name registers or inputs."
                  (incf ,sum ,(scalar-kernel-form tree type arguments offsets index))))))))
 
 #+(and sbcl x86-64)
-(defun sbcl-kernel-form (tree type destination arguments d-offset offsets count
-                         &optional hardware-fma-p)
-  (when (and (not hardware-fma-p) *sbcl-fma-f32* *sbcl-fma-f64*
-             (labels ((contains-fma (node)
-                        (and (consp node)
-                             (or (eq (first node) :fma) (some #'contains-fma (rest node))))))
-               (contains-fma tree)))
-    (return-from sbcl-kernel-form
-      `(if (sbcl-fma-enabled-p)
-           ,(sbcl-kernel-form tree type destination arguments d-offset offsets count t)
-           ,(let ((*sbcl-fma-f32* nil))
-              (sbcl-kernel-form tree type destination arguments d-offset offsets count)))))
+(defun sbcl-kernel-form (tree type destination arguments d-offset offsets count)
   (destructuring-bind (package width prefix)
       (ecase type (:f32 '("SB-SIMD-SSE" 4 "F32.4")) (:f64 '("SB-SIMD-SSE2" 2 "F64.2")))
     (flet ((symbol-for (suffix)
              (or (find-symbol (concatenate 'string prefix suffix) package)
                  (error "sb-simd symbol ~A~A is missing" prefix suffix))))
       (let ((index (gensym "I"))
+            (hardware-fma
+              (when (and *sbcl-fma-f32* *sbcl-fma-f64*
+                         (labels ((contains-fma (node)
+                                    (and (consp node)
+                                         (or (eq (first node) :fma)
+                                             (some #'contains-fma (rest node))))))
+                           (contains-fma tree)))
+                (gensym "HARDWARE-FMA")))
             (variables (if destination (cons destination arguments) arguments))
             (aref (symbol-for "-AREF"))
             (cast (symbol-for ""))
@@ -287,9 +284,6 @@ SPILL/RELOAD use a register and slot; other operands name registers or inputs."
                                       ,(first packed)))
                               ((member kind '(:min :max)) `(,(symbol-for (if (eq kind :min) "-MIN" "-MAX"))
                                             ,(second packed) ,(first packed)))
-                              ((and (eq kind :fma) hardware-fma-p)
-                               `(,(find-symbol (concatenate 'string prefix "-FMADD") "SB-SIMD-FMA")
-                                 ,@packed))
                               (t
                                (let ((lanes (loop for nil in operands
                                                   collect (loop repeat width collect (gensym "LANE")))))
@@ -309,7 +303,13 @@ SPILL/RELOAD use a register and slot; other operands name registers or inputs."
                                         `(,(find-symbol (concatenate 'string "MAKE-" prefix) package)
                                           ,@(loop for i below width
                                                   collect `(fma ,@(mapcar (lambda (group) (nth i group)) lanes))))))))))))
-                     (emit result form)
+                     (emit result
+                           (if (and (eq kind :fma) hardware-fma)
+                               `(if ,hardware-fma
+                                    (,(find-symbol (concatenate 'string prefix "-FMADD") "SB-SIMD-FMA")
+                                     ,@packed)
+                                    ,form)
+                               form))
                      (dolist (operand operands)
                        (when (and (member operand temporaries) (not (eq operand result)))
                          (push operand free)))
@@ -340,6 +340,7 @@ SPILL/RELOAD use a register and slot; other operands name registers or inputs."
                (declare (type (simple-array ,(kernel-element-type type) (*)) ,@variables)
                         (type fixnum ,count ,@(when destination (list d-offset)) ,@offsets))
                (let ((,index 0)
+                     ,@(when hardware-fma `((,hardware-fma (sbcl-fma-enabled-p))))
                      ,@(unless destination
                          `((,sum ,(coerce 0 (kernel-element-type type))) (,sum-pack (,cast 0)))))
                  (declare (type fixnum ,index)
