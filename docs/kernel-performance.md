@@ -63,9 +63,21 @@ microseconds per call from the SBCL profiling job are:
 | double-float | 32 | 0.114 | 0.068 |
 | double-float | 65,536 | 190.000 | 95.627 |
 
-These timings come from the GitHub Linux x86-64 profiling runner; they are not
-comparable to the M1 table above. The C profile disables hardware dispatch in
-its software executable; the platform math library may itself use hardware FMA.
+These timings come from GitHub Linux x86-64 profiling runners; they are not
+comparable to the M1 table above.[^x86-fma]
+
+SBCL 2.6.9 on an AMD EPYC 9V74 GitHub runner measures the shared SIMD kernel
+with exact lane FMA and automatic packed FMA:
+
+| Type | Elements | Exact lane FMA | Packed hardware FMA |
+|---|---:|---:|---:|
+| single-float | 32 | 9.277 | 0.149 |
+| single-float | 65,536 | 18,749.750 | 140.623 |
+| double-float | 32 | 11.596 | 0.221 |
+| double-float | 65,536 | 23,749.750 | 308.586 |
+
+Two trials show the gain for elementwise and sum kernels at all three sizes.
+
 
 ## Sum of products
 
@@ -124,3 +136,7 @@ interpreted call setup when helper compilation is unavailable.
 The first native call for the eval definition takes about 320 ms, including
 helper compilation. The helper is reused for later calls. See
 [kernel limitations](kernels.md#limitations) for cold-start work.
+
+[^x86-fma]: The C profile disables hardware dispatch in its software executable;
+    the platform math library may itself use hardware FMA. The first C table
+    uses a separate GitHub profiling job from the SBCL SIMD table.

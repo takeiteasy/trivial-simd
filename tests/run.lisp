@@ -18,4 +18,6 @@
              (not (string-equal expected
                                 (symbol-name (trivial-simd:backend)))))
     (error "Expected backend ~A, got ~A" expected (trivial-simd:backend))))
+(when (find-package :ql)
+  (uiop:symbol-call :ql :quickload "trivial-simd/tests"))
 (asdf:test-system "trivial-simd")

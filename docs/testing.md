@@ -1,5 +1,6 @@
 # Testing
 
+The runner loads declared test dependencies through Quicklisp when available.
 The FiveAM suite checks the Lisp reference and every locally available SIMD
 backend for both float types, empty vectors, SIMD tails, aliasing, and errors.
 Direct copy tests check both precisions, round trips, empty ranges, and partial
