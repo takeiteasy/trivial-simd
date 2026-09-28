@@ -12,28 +12,10 @@
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (load-benchmark-system))
 
-(defvar *benchmark-result* nil)
-
-(defun benchmark-batch (function iterations)
-  (let ((result nil)
-        (start (get-internal-real-time)))
-    (dotimes (i iterations)
-      (setf result (funcall function)))
-    (let ((elapsed (- (get-internal-real-time) start)))
-      (setf *benchmark-result* result)
-      elapsed)))
-
-(defun benchmark-time (function)
-  (funcall function)
-  (let ((iterations 1))
-    (loop while (< (benchmark-batch function iterations)
-                   (max 1 (ceiling (* 0.05d0 internal-time-units-per-second))))
-          do (setf iterations (* 2 iterations)))
-    (second
-     (sort (loop repeat 3 collect
-             (/ (* 1000000.0d0 (benchmark-batch function iterations))
-                internal-time-units-per-second iterations))
-           #'<))))
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (load #.(merge-pathnames "benchmark-timing.lisp"
+                          (uiop:pathname-directory-pathname
+                           (or *compile-file-truename* *load-truename*)))))
 
 (macrolet ((define-scalar-loops (type add multiply-add dot zero)
              `(progn
@@ -209,21 +191,24 @@
 (trivial-simd:define-kernel kernel-dot (a b) (trivial-simd:sum (* a b)))
 
 (format t "~%Kernel sum(a*b)~%")
-(dolist (length '(32 1024 65536))
-  (let ((a (make-array length :element-type 'single-float :initial-element 1.0))
-        (b (make-array length :element-type 'single-float :initial-element 2.0))
-        (out (make-array length :element-type 'single-float)))
-    (dolist (backend (append '(:lisp)
-                             (when trivial-simd::*native-available-p* '(:native))
-                             (when trivial-simd::*sbcl-simd-available-p* '(:sbcl))))
-      (let ((trivial-simd::*backend* backend))
-        (dolist (case (list (cons "sum kernel" (lambda () (kernel-dot a b)))
-                           (cons "multiply+sum" (lambda () (trivial-simd:multiply! out a b)
-                                                        (trivial-simd:sum out)))
-                           (cons "bulk dot" (lambda () (trivial-simd:dot a b)))))
-          (format t "~7D elements ~7A ~14A ~,3F us/call~%"
-                  length backend (car case)
-                  (benchmark-time (cdr case))))))))
+(dolist (type '(single-float double-float))
+  (dolist (length '(32 1024 65536))
+    (let ((a (make-array length :element-type type :initial-element (coerce 1 type)))
+          (b (make-array length :element-type type :initial-element (coerce 2 type)))
+          (out (make-array length :element-type type)))
+      (dolist (backend (append '(:lisp)
+                               (when trivial-simd::*native-available-p* '(:native))
+                               (when trivial-simd::*sbcl-simd-available-p* '(:sbcl))))
+        (let ((trivial-simd::*backend* backend))
+          (dolist (case (list (cons "sum kernel" (lambda () (kernel-dot a b)))
+                             (cons "multiply+sum" (lambda () (trivial-simd:multiply! out a b)
+                                                          (trivial-simd:sum out)))
+                             (cons "bulk dot" (lambda () (trivial-simd:dot a b)))))
+            (unless (= (funcall (cdr case)) (coerce (* 2 length) type))
+              (error "Reduction benchmark result mismatch"))
+            (format t "~12A ~7D elements ~7A ~14A ~,3F us/call~%"
+                    type length backend (car case)
+                    (benchmark-time (cdr case)))))))))
 
 #+ecl
 (when trivial-simd::*native-available-p*

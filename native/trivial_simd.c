@@ -4,6 +4,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#pragma STDC FP_CONTRACT OFF
+
 #if !defined(TS_SCALAR) && (defined(__aarch64__) || defined(_M_ARM64))
 #include <arm_neon.h>
 #define TS_F32_WIDTH 4
@@ -171,6 +173,16 @@ enum {
         store(destination + i, vector_op(load(left + i), load(right + i))); \
     for (; i < m; ++i) destination[i] = left[i] scalar_op right[i]
 
+/* Preserve ts_sum's lane and tail order without materialising an output block. */
+#define TS_KERNEL_REDUCE(type, width, store, add, vector_value, scalar_value) \
+    do { \
+        for (; i + width <= m; i += width) lanes = add(lanes, vector_value); \
+        type values[width]; \
+        store(values, lanes); \
+        for (size_t lane = 0; lane < width; ++lane) result += values[lane]; \
+        for (; i < m; ++i) result += scalar_value; \
+    } while (0)
+
 /*
  * Code is 4-byte instructions: opcode, destination, operand a, operand b.
  * A destination is a register (0-7) or TS_KERNEL_OUTPUT. An operand below
@@ -179,20 +191,18 @@ enum {
  * SPILL/RELOAD use a register and a little-endian 16-bit scratch index.
  * FMA uses a register destination as its addend.
  */
-/* TODO: sums materialise 256-element output blocks; reduce final VM instructions directly (#56). */
-#define TS_KERNEL(suffix, type, width, load, store, zero, add, sub, mul, div, \
-                  sqrtv, absv, minv, maxv, fmav, sqrts, abss, fmas) \
-static int ts_kernel_run_##suffix(const uint8_t *code, size_t code_length, \
+#define TS_KERNEL_RUN(suffix, mode, sum, type, width, load, store, zero, add, sub, mul, div, \
+                      sqrtv, absv, minv, maxv, fmav, sqrts, abss, fmas) \
+static int ts_kernel_run_##mode##_##suffix(const uint8_t *code, size_t code_length, \
                         const type *constants, const type *const *inputs, \
-                        type *out, size_t n, size_t scratch_count, int sum) { \
+                        type *out, size_t n, size_t scratch_count, type *scratch) { \
     if (n == 0) { if (sum) *out = 0; return 0; } \
     if (scratch_count > SIZE_MAX / TS_KERNEL_BLOCK / sizeof(type)) return -1; \
-    type *scratch = scratch_count ? malloc(scratch_count * TS_KERNEL_BLOCK * sizeof(type)) : NULL; \
-    if (scratch_count && !scratch) return -1; \
     type registers[TS_KERNEL_REGISTERS][TS_KERNEL_BLOCK]; \
-    type block_output[TS_KERNEL_BLOCK], result = 0; \
+    type result = 0; \
     for (size_t base = 0; base < n; base += TS_KERNEL_BLOCK) { \
         size_t m = n - base < TS_KERNEL_BLOCK ? n - base : TS_KERNEL_BLOCK; \
+        type block_result = 0; \
         for (size_t pc = 0; pc < code_length; pc += 4) { \
             if (code[pc] == TS_OP_SPILL || code[pc] == TS_OP_RELOAD) { \
                 size_t slot = (size_t)code[pc + 2] | ((size_t)code[pc + 3] << 8); \
@@ -202,18 +212,27 @@ static int ts_kernel_run_##suffix(const uint8_t *code, size_t code_length, \
                 else memcpy(reg, block, m * sizeof(type)); \
                 continue; \
             } \
+            int reduce = sum && code[pc + 1] == TS_KERNEL_OUTPUT; \
             type *destination = code[pc + 1] == TS_KERNEL_OUTPUT \
-                ? (sum ? block_output : out + base) : registers[code[pc + 1] & (TS_KERNEL_REGISTERS - 1)]; \
+                ? out + (sum ? 0 : base) : registers[code[pc + 1] & (TS_KERNEL_REGISTERS - 1)]; \
             size_t i = 0; \
             if (code[pc] == TS_OP_CONSTANT) { \
                 type value = constants[code[pc + 2]]; \
-                for (; i < m; ++i) destination[i] = value; \
+                if (reduce) { \
+                    int status = ts_kernel_reduce_##suffix(TS_OP_CONSTANT, NULL, NULL, value, m, &block_result); \
+                    if (status) return status; \
+                } else for (; i < m; ++i) destination[i] = value; \
                 continue; \
             } \
             const type *left = code[pc + 2] < TS_KERNEL_REGISTERS \
                 ? registers[code[pc + 2]] : inputs[code[pc + 2] - TS_KERNEL_REGISTERS] + base; \
             const type *right = code[pc + 3] < TS_KERNEL_REGISTERS \
                 ? registers[code[pc + 3]] : inputs[code[pc + 3] - TS_KERNEL_REGISTERS] + base; \
+            if (reduce) { \
+                int status = ts_kernel_reduce_##suffix(code[pc], left, right, 0, m, &block_result); \
+                if (status) return status; \
+                continue; \
+            } \
             switch (code[pc]) { \
             case TS_OP_COPY: \
                 for (; i < m; ++i) destination[i] = left[i]; \
@@ -224,7 +243,7 @@ static int ts_kernel_run_##suffix(const uint8_t *code, size_t code_length, \
             case TS_OP_DIVIDE: TS_KERNEL_LOOP(width, load, store, div, /); break; \
             case TS_OP_SQRT: \
                 for (size_t j = 0; j < m; ++j) { \
-                    if (left[j] < 0) { free(scratch); return -2; } \
+                    if (left[j] < 0) return -2; \
                 } \
                 for (; i + width <= m; i += width) store(destination + i, sqrtv(load(left + i))); \
                 for (; i < m; ++i) { \
@@ -270,26 +289,105 @@ static int ts_kernel_run_##suffix(const uint8_t *code, size_t code_length, \
                 break; \
             } \
         } \
-        if (sum) result += ts_sum_##suffix(block_output, m); \
+        if (sum) result += block_result; \
     } \
-    free(scratch); \
     if (sum) *out = result; \
     return 0; \
+}
+
+#define TS_KERNEL(suffix, type, vector_type, width, load, store, zero, add, sub, mul, div, \
+                  sqrtv, absv, minv, maxv, fmav, sqrts, abss, fmas) \
+static int ts_kernel_reduce_##suffix(uint8_t op, const type *left, const type *right, \
+                                    type constant, size_t m, type *out) { \
+    vector_type lanes = zero(); \
+    type result = 0; \
+    size_t i = 0; \
+    switch (op) { \
+    case TS_OP_CONSTANT: { \
+        type repeated[width]; \
+        for (size_t lane = 0; lane < width; ++lane) repeated[lane] = constant; \
+        TS_KERNEL_REDUCE(type, width, store, add, load(repeated), constant); \
+        break; \
+    } \
+    case TS_OP_COPY: \
+        TS_KERNEL_REDUCE(type, width, store, add, load(left + i), left[i]); \
+        break; \
+    case TS_OP_ADD: \
+        TS_KERNEL_REDUCE(type, width, store, add, add(load(left + i), load(right + i)), left[i] + right[i]); \
+        break; \
+    case TS_OP_SUBTRACT: \
+        TS_KERNEL_REDUCE(type, width, store, add, sub(load(left + i), load(right + i)), left[i] - right[i]); \
+        break; \
+    case TS_OP_MULTIPLY: \
+        TS_KERNEL_REDUCE(type, width, store, add, mul(load(left + i), load(right + i)), left[i] * right[i]); \
+        break; \
+    case TS_OP_DIVIDE: \
+        TS_KERNEL_REDUCE(type, width, store, add, div(load(left + i), load(right + i)), left[i] / right[i]); \
+        break; \
+    case TS_OP_SQRT: \
+        for (size_t j = 0; j < m; ++j) if (left[j] < 0) return -2; \
+        TS_KERNEL_REDUCE(type, width, store, add, sqrtv(load(left + i)), (left[i] == 0 ? left[i] : sqrts(left[i]))); \
+        break; \
+    case TS_OP_ABS: \
+        TS_KERNEL_REDUCE(type, width, store, add, absv(load(left + i)), abss(left[i])); \
+        break; \
+    case TS_OP_MIN: \
+        TS_KERNEL_REDUCE(type, width, store, add, minv(load(left + i), load(right + i)), (left[i] <= right[i] ? left[i] : right[i])); \
+        break; \
+    case TS_OP_MAX: \
+        TS_KERNEL_REDUCE(type, width, store, add, maxv(load(left + i), load(right + i)), (left[i] >= right[i] ? left[i] : right[i])); \
+        break; \
+    case TS_OP_NEGATE: \
+        TS_KERNEL_REDUCE(type, width, store, add, sub(zero(), load(left + i)), (type)0 - left[i]); \
+        break; \
+    default: return -1; \
+    } \
+    *out = result; \
+    return 0; \
+} \
+TS_KERNEL_RUN(suffix, elementwise, 0, type, width, load, store, zero, add, sub, mul, div, \
+              sqrtv, absv, minv, maxv, fmav, sqrts, abss, fmas) \
+TS_KERNEL_RUN(suffix, sum, 1, type, width, load, store, zero, add, sub, mul, div, \
+              sqrtv, absv, minv, maxv, fmav, sqrts, abss, fmas) \
+static int ts_kernel_allocate_##suffix(const uint8_t *code, size_t code_length, \
+                       const type *constants, const type *const *inputs, \
+                       type *out, size_t n, size_t scratch_count, int sum) { \
+    if (n == 0) { if (sum) *out = 0; return 0; } \
+    if (scratch_count > SIZE_MAX / TS_KERNEL_BLOCK / sizeof(type)) return -1; \
+    type *scratch = scratch_count ? malloc(scratch_count * TS_KERNEL_BLOCK * sizeof(type)) : NULL; \
+    if (scratch_count && !scratch) return -1; \
+    int status = sum \
+        ? ts_kernel_run_sum_##suffix(code, code_length, constants, inputs, out, n, scratch_count, scratch) \
+        : ts_kernel_run_elementwise_##suffix(code, code_length, constants, inputs, out, n, scratch_count, scratch); \
+    free(scratch); \
+    return status; \
 } \
 int ts_kernel_##suffix(const uint8_t *code, size_t code_length, \
                        const type *constants, const type *const *inputs, \
                        type *out, size_t n, size_t scratch_count) { \
-    return ts_kernel_run_##suffix(code, code_length, constants, inputs, out, n, scratch_count, 0); \
+    return ts_kernel_allocate_##suffix(code, code_length, constants, inputs, out, n, scratch_count, 0); \
 } \
 int ts_kernel_sum_##suffix(const uint8_t *code, size_t code_length, \
                            const type *constants, const type *const *inputs, \
                            type *out, size_t n, size_t scratch_count) { \
-    return ts_kernel_run_##suffix(code, code_length, constants, inputs, out, n, scratch_count, 1); \
+    return ts_kernel_allocate_##suffix(code, code_length, constants, inputs, out, n, scratch_count, 1); \
+} \
+int ts_kernel_with_scratch_##suffix(const uint8_t *code, size_t code_length, \
+                       const type *constants, const type *const *inputs, \
+                       type *out, size_t n, size_t scratch_count, type *scratch, size_t capacity) { \
+    if (n && scratch_count && (!scratch || capacity < scratch_count)) return -1; \
+    return ts_kernel_run_elementwise_##suffix(code, code_length, constants, inputs, out, n, scratch_count, scratch); \
+} \
+int ts_kernel_sum_with_scratch_##suffix(const uint8_t *code, size_t code_length, \
+                       const type *constants, const type *const *inputs, \
+                       type *out, size_t n, size_t scratch_count, type *scratch, size_t capacity) { \
+    if (n && scratch_count && (!scratch || capacity < scratch_count)) return -1; \
+    return ts_kernel_run_sum_##suffix(code, code_length, constants, inputs, out, n, scratch_count, scratch); \
 }
 
-TS_KERNEL(f32, float, TS_F32_WIDTH, TS_F32_LOAD, TS_F32_STORE, TS_F32_ZERO,
+TS_KERNEL(f32, float, TS_F32_VECTOR, TS_F32_WIDTH, TS_F32_LOAD, TS_F32_STORE, TS_F32_ZERO,
           TS_F32_ADD, TS_F32_SUB, TS_F32_MUL, TS_F32_DIV,
           TS_F32_SQRT, TS_F32_ABS, TS_F32_MIN, TS_F32_MAX, TS_F32_FMA, sqrtf, fabsf, fmaf)
-TS_KERNEL(f64, double, TS_F64_WIDTH, TS_F64_LOAD, TS_F64_STORE, TS_F64_ZERO,
+TS_KERNEL(f64, double, TS_F64_VECTOR, TS_F64_WIDTH, TS_F64_LOAD, TS_F64_STORE, TS_F64_ZERO,
           TS_F64_ADD, TS_F64_SUB, TS_F64_MUL, TS_F64_DIV,
           TS_F64_SQRT, TS_F64_ABS, TS_F64_MIN, TS_F64_MAX, TS_F64_FMA, sqrt, fabs, fma)

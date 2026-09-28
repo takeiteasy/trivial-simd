@@ -48,6 +48,10 @@ ctest --test-dir build -C Release --output-on-failure
 The native harness runs SIMD and scalar C checks for both float types. It covers
 scratch indexes through 65,535, partial blocks, math operators, scalar reductions,
 allocation failure, size overflow, and cleanup after successful or failed calls.
+Final-output checks compare every supported reduction operation bit-for-bit
+with materialised block sums, including cancellation-sensitive inputs. Borrowed
+scratch checks cover capacity, overflow, zero-length calls, ownership, and recovery
+after domain errors.
 GitHub Actions and sourcehut builds run it alongside the Lisp suite.
 
 ## Benchmark
@@ -93,9 +97,48 @@ until a batch lasts at least 50 ms, and reports the median of three further
 batches.[^timing] Speedup is a measurement, not a pass/fail threshold.
 
 Separate sections compare ordinary multiply-add kernels with two bulk calls,
-true FMA, and `sum(a*b)` implementations. Compile the benchmark on ECL so the
-measurement loop and ordinary kernel definitions use compiled code.[^compilation]
+true FMA, and both float types for `sum(a*b)` implementations. Compile the
+benchmark on ECL so the measurement loop and ordinary kernel definitions use
+compiled code.[^compilation]
 Results depend on the Lisp implementation, compiler, CPU, and array access cost.
+
+## Kernel profiling
+
+The optional profile measures identical native bytecode with per-call allocation
+and explicitly owned reusable scratch. It reports complete Lisp calls separately
+from C execution, with instructions, spills/reloads, scratch slots, and bytes.
+It also checks overlapping calls using four workers. See
+[spill measurements](kernel-spilling.md).
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_KERNEL_PROFILE=ON
+cmake --build build --config Release
+TRIVIAL_SIMD_PROFILE_LIBRARY="$PWD/build/libnative_kernel_profile.dylib" \
+  sbcl --script tests/kernel-profile.lisp
+```
+
+Use `.so` on Linux or `native_kernel_profile.dll` on Windows. On CCL/ECL,
+compile and load `tests/kernel-profile.lisp`, following the benchmark commands
+above. The profile is opt-in and does not run in ASDF tests or CI.
+Set `TRIVIAL_SIMD_PROFILE_SHORT=1` to measure only 32/1,024-element cases for
+repeated scratch-cache trials.
+
+For a before/after comparison, export an earlier native source and configure
+the matching baseline library:
+
+```sh
+git show 6289ec4:native/trivial_simd.c > /tmp/trivial-simd-baseline.c
+cmake -S . -B build -DBUILD_KERNEL_PROFILE=ON \
+  -DKERNEL_PROFILE_BASELINE_SOURCE=/tmp/trivial-simd-baseline.c
+cmake --build build --config Release
+TRIVIAL_SIMD_PROFILE_LIBRARY="$PWD/build/libnative_kernel_profile.dylib" \
+TRIVIAL_SIMD_PROFILE_BASELINE="$PWD/build/libnative_kernel_profile_baseline.dylib" \
+  sbcl --script tests/kernel-profile.lisp
+```
+
+The profile reports warmed median timings.[^profile] Its Lisp cache is a
+benchmark-only prototype with explicit cleanup; normal calls retain per-call
+allocation.
 
 [^scalar]: Scalar functions are specialized for each float type and compiled
     explicitly when necessary. The Lisp compiler may choose SIMD instructions;
@@ -109,3 +152,9 @@ Results depend on the Lisp implementation, compiler, CPU, and array access cost.
     and load from `/tmp`. The ECL section separately measures an `eval`-defined
     kernel and reports its first native call, including helper compilation,
     before warmed timings.
+
+[^profile]: Direct C timings use calibrated CPU-time batches; Lisp timings use
+    the shared benchmark timer. Both report the median of three batches after
+    calibration. Baseline symbols have distinct names because some Lisp
+    implementations resolve foreign symbols globally. The Lisp baseline uses
+    a cached-pointer wrapper; direct C columns compare equivalent call paths.

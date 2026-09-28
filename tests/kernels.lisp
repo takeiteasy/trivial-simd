@@ -275,6 +275,19 @@
 
 (simd:define-kernel kernel-sum (a) (simd:sum a))
 (simd:define-kernel kernel-dot (a b) (simd:sum (* a b)))
+(test kernel-reduction-product-rounding
+  (dolist (type '(single-float double-float))
+    (let* ((epsilon (if (eq type 'single-float) (expt 2 -23) (expt 2 -52)))
+           (a (make-array 3 :element-type type :initial-contents
+                          (mapcar (lambda (x) (coerce x type)) (list -1 0 (+ 1 epsilon)))))
+           (b (make-array 3 :element-type type :initial-contents
+                          (mapcar (lambda (x) (coerce x type)) (list 1 1 (- 1 epsilon))))))
+      (dolist (backend (available-backends))
+        (with-backend (backend)
+          (let ((result (kernel-dot a b)))
+            (is (typep result type))
+            (is (zerop result))))))))
+
 (simd:define-kernel kernel-sum-fma (a b c) (simd:sum (simd:fma a b c)))
 (simd:define-kernel kernel-root-sum (a) (simd:sum (sqrt (abs a))))
 (simd:define-kernel kernel-sum-constant (a) (simd:sum 3))

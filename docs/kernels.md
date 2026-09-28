@@ -117,10 +117,10 @@ for measurements and [FMA fallback limitations](#limitations).
   this limit signals an error when defining the kernel. See the
   [scratch addressing ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/50).
 - Spilling kernels allocate scratch storage on each native call. See the
-  [spill performance ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/49).
-- Native sums materialise bounded output blocks and may cost more than separate
-  calls for short vectors. See the
-  [sum performance ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/56).
+  [spill storage evaluation](https://todo.sr.ht/~takeiteasy/trivial-simd/49).
+- Native call setup dominates short reductions; specialised bulk `dot` may
+  be faster for `sum(a*b)`. See the
+  [call setup ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/59).
 - Reductions are top-level sums only. Nested reductions and additional reducers
   are unsupported. See the
   [additional reductions ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/42).
@@ -135,7 +135,8 @@ for measurements and [FMA fallback limitations](#limitations).
 [^vm]: Instructions are four bytes: opcode, destination, and two operands. An
     operand names a register (0-7) or an input vector; the last instruction
     writes to `destination` directly for elementwise kernels. Sum kernels
-    write into a 256-element block, then accumulate it into a scalar result.
+    evaluate the final instruction into lane accumulators, followed by the
+    scalar tail, and add each block total to the result.
     FMA uses its register destination as the addend before writing the result.
     Spill/reload instructions encode an opcode,
     a register, and a little-endian 16-bit scratch index.
@@ -160,8 +161,10 @@ for measurements and [FMA fallback limitations](#limitations).
 [^sum]: Lisp sums elements in order; SBCL accumulates SIMD lanes before adding
     the scalar tail; native C sums SIMD lanes within each 256-element block,
     then adds block totals. The native reduction makes one foreign call and
-    uses bounded register, output-block, and spill storage. Allocation and
+    uses bounded register, lane, and spill storage. Allocation and
     square-root domain errors signal Lisp errors without returning a sum.
+    Native builds disable implicit multiply/add contraction; explicit FMA keeps
+    its single-rounding behavior.
 
 [^ownership]: `trivial-garbage` finalizers release foreign buffers without retaining
     their owning program. Partial initialization frees completed allocations,

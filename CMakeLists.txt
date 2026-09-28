@@ -1,23 +1,41 @@
 cmake_minimum_required(VERSION 3.20)
 project(trivial_simd LANGUAGES C)
 
-add_library(trivial_simd SHARED native/trivial_simd.c)
-set_target_properties(trivial_simd PROPERTIES
-  C_STANDARD 11
-  C_STANDARD_REQUIRED YES
-  WINDOWS_EXPORT_ALL_SYMBOLS YES)
-if(MSVC)
-  target_compile_options(trivial_simd PRIVATE /O2 /fp:strict)
-else()
-  target_compile_options(trivial_simd PRIVATE -O3)
-  target_link_libraries(trivial_simd PRIVATE m)
-endif()
+function(configure_native_library target)
+  set_target_properties(${target} PROPERTIES
+    C_STANDARD 11 C_STANDARD_REQUIRED YES WINDOWS_EXPORT_ALL_SYMBOLS YES)
+  if(MSVC)
+    target_compile_options(${target} PRIVATE /O2 /fp:strict)
+  else()
+    target_compile_options(${target} PRIVATE -O3 -ffp-contract=off)
+    target_link_libraries(${target} PRIVATE m)
+  endif()
+  foreach(config DEBUG RELEASE RELWITHDEBINFO MINSIZEREL)
+    set_target_properties(${target} PROPERTIES
+      LIBRARY_OUTPUT_DIRECTORY_${config} "${PROJECT_BINARY_DIR}"
+      RUNTIME_OUTPUT_DIRECTORY_${config} "${PROJECT_BINARY_DIR}")
+  endforeach()
+endfunction()
 
-foreach(config DEBUG RELEASE RELWITHDEBINFO MINSIZEREL)
-  set_target_properties(trivial_simd PROPERTIES
-    LIBRARY_OUTPUT_DIRECTORY_${config} "${PROJECT_BINARY_DIR}"
-    RUNTIME_OUTPUT_DIRECTORY_${config} "${PROJECT_BINARY_DIR}")
-endforeach()
+add_library(trivial_simd SHARED native/trivial_simd.c)
+configure_native_library(trivial_simd)
+
+option(BUILD_KERNEL_PROFILE "Build the optional kernel profiling library" OFF)
+set(KERNEL_PROFILE_BASELINE_SOURCE "" CACHE FILEPATH "Native VM source for profiling a baseline")
+if(BUILD_KERNEL_PROFILE)
+  set(profile_targets native_kernel_profile)
+  if(KERNEL_PROFILE_BASELINE_SOURCE)
+    list(APPEND profile_targets native_kernel_profile_baseline)
+  endif()
+  foreach(target IN LISTS profile_targets)
+    add_library(${target} SHARED tests/kernel-profile.c)
+    configure_native_library(${target})
+  endforeach()
+  if(KERNEL_PROFILE_BASELINE_SOURCE)
+    target_compile_definitions(native_kernel_profile_baseline PRIVATE
+      TS_PROFILE_BASELINE TS_PROFILE_VM="${KERNEL_PROFILE_BASELINE_SOURCE}")
+  endif()
+endif()
 
 include(CTest)
 if(BUILD_TESTING)
@@ -27,6 +45,7 @@ if(BUILD_TESTING)
     if(MSVC)
       target_compile_options(${target} PRIVATE /fp:strict)
     else()
+      target_compile_options(${target} PRIVATE -ffp-contract=off)
       target_link_libraries(${target} PRIVATE m)
     endif()
   endforeach()

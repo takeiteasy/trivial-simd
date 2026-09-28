@@ -350,6 +350,7 @@ SPILL/RELOAD use a register and slot; other operands name registers or inputs."
                    (incf ,index))
                  ,@(unless destination (list sum))))))))))
 
+;; TODO: pointer/output setup dominates short kernels; specialize runners if worthwhile (#59).
 (defun native-kernel-form (program foreign destination arguments d-offset offsets count)
   (let ((pointers (loop for nil in arguments collect (gensym "POINTER")))
         (output (gensym "OUTPUT")) (table (gensym "TABLE")))

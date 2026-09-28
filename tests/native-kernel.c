@@ -152,10 +152,87 @@ static void check_math_##suffix(void) { \
 CHECK_MATH(f32, float, 0x1p-23f, sqrtf, fabsf, fmaf)
 CHECK_MATH(f64, double, 0x1p-52, sqrt, fabs, fma)
 
+#define CHECK_FINAL_OUTPUT(suffix, type, width, epsilon) \
+static void check_final_output_##suffix(void) { \
+    type a[600], b[600], out[600], scratch[TS_KERNEL_BLOCK], constants[] = {(type)1.25}; \
+    const type *inputs[] = {a, b}; \
+    size_t lengths[] = {0, 1, 2, 3, 4, 5, 255, 256, 257, 600}; \
+    for (uint8_t op = TS_OP_COPY; op <= TS_OP_FMA; ++op) { \
+        if (op == TS_OP_SPILL || op == TS_OP_RELOAD) continue; \
+        uint8_t code[] = {TS_OP_COPY, 0, 8, 0, TS_OP_SPILL, 0, 0, 0, \
+                          TS_OP_RELOAD, 1, 0, 0, op, TS_KERNEL_OUTPUT, 8, 9}; \
+        if (op == TS_OP_CONSTANT) code[14] = 0; \
+        if (op == TS_OP_FMA) { \
+            code[12] = TS_OP_FMA; code[13] = 1; \
+        } \
+        uint8_t fma_code[20]; \
+        memcpy(fma_code, code, sizeof(code)); \
+        fma_code[16] = TS_OP_COPY; fma_code[17] = TS_KERNEL_OUTPUT; \
+        fma_code[18] = 1; fma_code[19] = 0; \
+        const uint8_t *program = op == TS_OP_FMA ? fma_code : code; \
+        size_t size = op == TS_OP_FMA ? sizeof(fma_code) : sizeof(code); \
+        for (size_t i = 0; i < 600; ++i) { \
+            a[i] = i % 3 == 0 ? (type)0x1p30 : (i % 3 == 1 ? (type)-0x1p30 : (type)0.125); \
+            if (op == TS_OP_SQRT) a[i] = (type)(i % 17); \
+            b[i] = (type)(1 + i % 7); \
+        } \
+        for (size_t l = 0; l < sizeof(lengths) / sizeof(lengths[0]); ++l) { \
+            size_t n = lengths[l], before = allocations; \
+            assert(ts_kernel_with_scratch_##suffix(program, size, constants, inputs, out, n, 1, scratch, 1) == 0); \
+            type expected = 0, actual[2] = {-1, -9}; \
+            for (size_t base = 0; base < n; base += TS_KERNEL_BLOCK) { \
+                size_t count = n - base < TS_KERNEL_BLOCK ? n - base : TS_KERNEL_BLOCK; \
+                expected += ts_sum_##suffix(out + base, count); \
+            } \
+            assert(ts_kernel_sum_with_scratch_##suffix(program, size, constants, inputs, actual, n, 1, scratch, 1) == 0); \
+            assert(memcmp(actual, &expected, sizeof(type)) == 0 && actual[1] == -9); \
+            actual[0] = -1; \
+            assert(ts_kernel_sum_##suffix(program, size, constants, inputs, actual, n, 1) == 0); \
+            assert(memcmp(actual, &expected, sizeof(type)) == 0); \
+            assert(allocations == before + (n != 0) && allocations == releases); \
+        } \
+    } \
+    uint8_t copy[] = {TS_OP_COPY, TS_KERNEL_OUTPUT, 8, 0}; \
+    type scalar = -1; \
+    size_t before = allocations; \
+    assert(ts_kernel_sum_with_scratch_##suffix(copy, sizeof(copy), NULL, inputs, &scalar, 1, 1, scratch, 0) == -1); \
+    assert(scalar == -1); \
+    assert(ts_kernel_with_scratch_##suffix(copy, sizeof(copy), NULL, inputs, out, 1, 1, NULL, 1) == -1); \
+    assert(ts_kernel_sum_with_scratch_##suffix(NULL, 0, NULL, NULL, &scalar, 0, SIZE_MAX, NULL, 0) == 0); \
+    assert(scalar == 0); \
+    scalar = -1; \
+    assert(ts_kernel_sum_with_scratch_##suffix(copy, sizeof(copy), NULL, inputs, &scalar, 1, SIZE_MAX, scratch, SIZE_MAX) == -1); \
+    assert(scalar == -1); \
+    uint8_t root[] = {TS_OP_SQRT, TS_KERNEL_OUTPUT, 8, 0}; \
+    for (size_t i = 0; i < 600; ++i) a[i] = 1; \
+    a[599] = -1; \
+    assert(ts_kernel_sum_with_scratch_##suffix(root, sizeof(root), NULL, inputs, &scalar, 600, 1, scratch, 1) == -2); \
+    assert(scalar == -1 && allocations == before); \
+    a[599] = 1; \
+    assert(ts_kernel_sum_with_scratch_##suffix(root, sizeof(root), NULL, inputs, &scalar, 600, 1, scratch, 1) == 0); \
+    assert(scalar == 600 && allocations == before); \
+    uint8_t product[] = {TS_OP_MULTIPLY, TS_KERNEL_OUTPUT, 8, 9}; \
+    size_t rounding_lengths[] = {3, 2 * width}; \
+    for (size_t l = 0; l < 2; ++l) { \
+        size_t n = rounding_lengths[l]; \
+        for (size_t i = 0; i < n; ++i) { a[i] = 0; b[i] = 1; } \
+        a[0] = -1; \
+        size_t last = l == 0 ? n - 1 : width; \
+        a[last] = (type)(1 + epsilon); b[last] = (type)(1 - epsilon); \
+        assert(ts_kernel_sum_##suffix(product, sizeof(product), NULL, inputs, &scalar, n, 0) == 0); \
+        assert(scalar == 0); \
+    } \
+}
+
+CHECK_FINAL_OUTPUT(f32, float, TS_F32_WIDTH, 0x1p-23f)
+CHECK_FINAL_OUTPUT(f64, double, TS_F64_WIDTH, 0x1p-52)
+
 int main(void) {
     check_f32();
     check_f64();
     check_math_f32();
     check_math_f64();
+    check_final_output_f32();
+    check_final_output_f64();
     return 0;
 }

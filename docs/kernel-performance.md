@@ -5,8 +5,10 @@ separate Lisp bulk operations in these measurements; native kernels perform
 similarly to native bulk operations for simple expressions. Native reductions
 may cost more at small sizes.
 
-Microseconds per call on Apple M1, SBCL 2.6.8, `single-float` vectors.
+Microseconds per call on Apple M1, SBCL 2.6.8; `single-float` unless a type is listed.
 Run [the benchmark](testing.md#benchmark) for your workload.
+See [spill profiling](kernel-spilling.md) for register-heavy kernels and scratch
+storage measurements.
 
 ## Multiply-add
 
@@ -37,11 +39,19 @@ costs substantially more than ordinary multiplication and addition; see
 `multiply+sum` uses a reusable output vector followed by `sum`. Bulk `dot`
 performs the same calculation with a specialised implementation.
 
-| Elements | Lisp sum kernel | Lisp multiply+sum | Native sum kernel | Native multiply+sum | Native dot |
-|---|---|---|---|---|---|
-| 32 | 0.06 | 1.07 | 0.31 | 0.14 | 0.07 |
-| 1,024 | 1.25 | 30.98 | 0.60 | 0.50 | 0.30 |
-| 65,536 | 77.70 | 2,004.30 | 21.00 | 24.55 | 16.35 |
+| Type | Elements | Lisp sum kernel | Lisp multiply+sum | Native sum kernel | Native multiply+sum | Native dot |
+|---|---:|---:|---:|---:|---:|---:|
+| single-float | 32 | 0.06 | 1.05 | 0.11 | 0.15 | 0.07 |
+| single-float | 1,024 | 1.21 | 31.21 | 0.27 | 0.49 | 0.30 |
+| single-float | 65,536 | 75.03 | 1952.59 | 10.72 | 23.75 | 15.44 |
+| double-float | 32 | 0.07 | 1.23 | 0.12 | 0.15 | 0.07 |
+| double-float | 1,024 | 1.22 | 39.02 | 0.46 | 0.82 | 0.53 |
+| double-float | 65,536 | 75.72 | 2790.75 | 21.67 | 47.22 | 32.50 |
+
+Native sums evaluate final instructions directly into lane accumulators. Each
+256-element block retains its lane, tail, and block addition order, without an
+output-block store/read. Short calls still include pointer and scalar-output
+setup; see [kernel limitations](kernels.md#limitations).
 
 ## Native copy mode
 
