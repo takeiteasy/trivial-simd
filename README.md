@@ -30,6 +30,22 @@ and `cmake --build build --config Release`. The Lisp fallback loads without it.
 - [Testing and benchmarks](docs/testing.md)
 - [CI](docs/ci.md)
 
+## Benchmarks
+
+Apple M1, SBCL 2.6.8, native NEON with pointer access: speedups over typed
+scalar Lisp loops for 1,024-element arrays.
+
+| Operation | Single-float | Double-float |
+|---|---:|---:|
+| Add | 4.80x | 3.16x |
+| Multiply-add | 3.09x | 2.00x |
+| Dot | 3.17x | 1.77x |
+
+Native `sum(a*b)` kernels take 10.72 µs for 65,536 single-float elements,
+versus 23.75 µs for separate multiply and sum calls. Scalar loops win at
+32 elements; reusable spill scratch does not meet the 10% improvement gate.
+See [full results and measurement details](docs/benchmarks.md).
+
 ## Limitations
 
 The planned backends below are **not supported yet**. A backend is supported

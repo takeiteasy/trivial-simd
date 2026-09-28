@@ -7,6 +7,8 @@ may cost more at small sizes.
 
 Microseconds per call on Apple M1, SBCL 2.6.8; `single-float` unless a type is listed.
 Run [the benchmark](testing.md#benchmark) for your workload.
+See [benchmark results](benchmarks.md) for typed scalar comparisons and the
+native reduction baseline.
 See [spill profiling](kernel-spilling.md) for register-heavy kernels and scratch
 storage measurements.
 
@@ -17,9 +19,9 @@ storage measurements.
 
 | Elements | Lisp kernel | Lisp two ops | Native kernel | Native two ops |
 |---|---|---|---|---|
-| 32 | 0.13 | 1.37 | 0.14 | 0.19 |
-| 1,024 | 2.84 | 39.57 | 0.36 | 0.41 |
-| 65,536 | 178.85 | 2,564.35 | 16.55 | 16.50 |
+| 32 | 0.13 | 1.39 | 0.17 | 0.38 |
+| 1,024 | 4.53 | 69.07 | 0.63 | 0.41 |
+| 65,536 | 172.57 | 2,476.16 | 16.39 | 16.05 |
 
 ## True FMA
 
@@ -29,9 +31,9 @@ costs substantially more than ordinary multiplication and addition; see
 
 | Elements | Lisp FMA kernel | Native FMA kernel |
 |---|---|---|
-| 32 | 3.96 | 0.13 |
-| 1,024 | 121.74 | 0.35 |
-| 65,536 | 7,805.40 | 18.55 |
+| 32 | 3.97 | 0.32 |
+| 1,024 | 183.17 | 0.39 |
+| 65,536 | 7,573.75 | 18.36 |
 
 ## Sum of products
 

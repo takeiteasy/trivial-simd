@@ -33,6 +33,38 @@ at least 10% improvement, with no reproducible regression above 5% outside
 measurement noise in other cases. Direct C timings separate allocation costs
 from VM execution; complete Lisp timings include borrowing and foreign setup.
 
+## Results
+
+Across five independent SBCL runs, the geometric mean cache result is 0.26%
+slower for the spilling 32/1,024-element cases. Individual runs range from
+0.32% faster to 0.56% slower. The 10% adoption gate is not met.
+
+Median microseconds per call across the five runs, for depth-10 stress kernels:
+
+| Type | Elements | Mode | Complete allocated | Complete cache | C allocated | C reused |
+|---|---:|---|---:|---:|---:|---:|
+| single-float | 32 | elementwise | 8.000 | 8.116 | 7.989 | 8.069 |
+| single-float | 32 | sum | 7.273 | 7.185 | 6.943 | 6.911 |
+| single-float | 1,024 | elementwise | 119.957 | 120.605 | 120.379 | 119.686 |
+| single-float | 1,024 | sum | 132.895 | 131.625 | 120.371 | 120.586 |
+| double-float | 32 | elementwise | 10.031 | 10.059 | 9.883 | 9.959 |
+| double-float | 32 | sum | 10.182 | 10.302 | 10.071 | 10.075 |
+| double-float | 1,024 | elementwise | 248.023 | 248.176 | 247.590 | 248.090 |
+| double-float | 1,024 | sum | 247.219 | 247.156 | 245.930 | 247.430 |
+
+CCL and ECL also fall below the adoption gate. Their figures come from one
+complete profile each; SBCL's gate result uses the five independent trials.
+
+| Lisp | Cache change for spilling calls | Four workers: allocated | Four workers: cache |
+|---|---:|---:|---:|
+| SBCL 2.6.8 | 0.26% slower | 1.037 µs/call | 1.068 µs/call |
+| CCL 1.13 | 3.58% slower | 1.021 µs/call | 1.442 µs/call |
+| ECL 26.5.5 | 1.01% slower | 2.314 µs/call | 2.963 µs/call |
+
+Four-worker overlap checks return correct results in both storage modes.
+These timings include private buffers when the cache is busy.
+See [benchmark results](benchmarks.md) for the terminal-reduction comparison.
+
 ## Reproducing
 
 See [kernel profiling commands](testing.md#kernel-profiling). Each profile run

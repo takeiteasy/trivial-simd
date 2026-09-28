@@ -56,6 +56,9 @@ GitHub Actions and sourcehut builds run it alongside the Lisp suite.
 
 ## Benchmark
 
+See [measured results](benchmarks.md) for array comparisons, sum kernels, and
+the scratch-storage evaluation.
+
 ```sh
 sbcl --script tests/bench.lisp
 ccl --no-init --batch --eval '(load (compile-file "tests/bench.lisp" :output-file "/tmp/trivial-simd-bench.fasl"))' --eval '(quit)'
