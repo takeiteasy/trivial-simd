@@ -61,14 +61,51 @@ ecl --eval '(load (compile-file "tests/bench.lisp" :output-file "/tmp/trivial-si
 Run this script explicitly when you want measurements. The ASDF test system
 and GitHub Actions do not invoke it.
 
-The benchmark reports microseconds per vector-add call for 32, 1,024, and
-65,536 elements of both float types on the available Lisp, native C, and SBCL
-backends. It also compares separate-operation `a*b+c`, true FMA, and `sum(a*b)`
-kernels, and reports `NATIVE-COPY` for the copying fallback.
+The array comparison measures addition, ordinary multiply-add (`a*b+c`), and
+dot products against compiled, typed scalar Lisp loops. All cases use identical
+typed arrays at 32, 1,024, and 65,536 elements, for both float types. The table
+includes the Lisp fallback and available SIMD backends; `NATIVE-COPY` includes
+the copying fallback's costs.
 
-Each timing is the median of three warmed batches. Compile the benchmark on ECL
-so the measurement loop and ordinary kernel definitions use compiled code. The
-ECL section separately measures an `eval`-defined kernel and reports its first
-native call, including helper compilation, before warmed timings. Compiled
-benchmark artifacts retain the source-system location and can load from `/tmp`.
+| Output | Meaning |
+|---|---|
+| `SCALAR` | Typed Lisp loop without explicit SIMD[^scalar] |
+| `us/call` | Median microseconds per complete operation |
+| `Speedup` | Scalar time divided by this implementation's time |
+
+Illustrative output:
+
+```text
+Operation    Type         Elements Implementation us/call    Speedup
+ADD          SINGLE-FLOAT     1024 SCALAR              2.000      1.00x
+ADD          SINGLE-FLOAT     1024 NATIVE              0.500      4.00x
+```
+
+A value below `1.00x` means the implementation takes longer than the scalar
+loop. The header identifies the Lisp version, machine type, selected backend,
+and native array-access mode.
+
+Arrays are allocated and initialized outside timing, and output buffers are
+reused. Result checks run before measurement, including empty and SIMD-tail
+arrays. Timings include library dispatch and array-access costs, and exclude
+compilation and first-use setup. Each case warms up, doubles its iteration count
+until a batch lasts at least 50 ms, and reports the median of three further
+batches.[^timing] Speedup is a measurement, not a pass/fail threshold.
+
+Separate sections compare ordinary multiply-add kernels with two bulk calls,
+true FMA, and `sum(a*b)` implementations. Compile the benchmark on ECL so the
+measurement loop and ordinary kernel definitions use compiled code.[^compilation]
 Results depend on the Lisp implementation, compiler, CPU, and array access cost.
+
+[^scalar]: Scalar functions are specialized for each float type and compiled
+    explicitly when necessary. The Lisp compiler may choose SIMD instructions;
+    the label describes source-level loops, not a guarantee about machine code.
+
+[^timing]: Calibration uses `get-internal-real-time`. Each measured batch retains
+    its final result outside the timed interval so reduction results remain
+    observable. Existing diagnostic sections use the same calibrated timing.
+
+[^compilation]: Compiled benchmark artifacts retain the source-system location
+    and load from `/tmp`. The ECL section separately measures an `eval`-defined
+    kernel and reports its first native call, including helper compilation,
+    before warmed timings.
