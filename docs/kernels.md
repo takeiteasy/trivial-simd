@@ -89,6 +89,14 @@ Native code and constant buffers are allocated lazily and reclaimed when their
 kernel function becomes unreachable. Retained references to an older function
 remain callable after redefinition. Reclamation follows garbage collection.[^ownership]
 
+On ECL, the first native call compiles a helper for foreign-call setup; later
+calls reuse it. This also accelerates kernels defined through `eval`. If helper
+compilation fails, calls use the interpreted setup without retrying compilation.
+Lisp-only calls do not compile a helper. Each invocation owns its pointer table
+and reduction output storage, so concurrent calls use separate mutable buffers.
+See [ECL measurements](kernel-performance.md#ecl-native-calls) and
+[cold-start limitations](#limitations).
+
 See the [runnable examples](../examples/kernels.lisp) for a balanced expression
 that uses spilling.
 
@@ -116,8 +124,9 @@ for measurements and [FMA fallback limitations](#limitations).
 - Reductions are top-level sums only. Nested reductions and additional reducers
   are unsupported. See the
   [additional reductions ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/42).
-- ECL native kernel calls cost more than two bulk calls at small sizes. See the
-  [ECL overhead ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/38).
+- ECL compiles a helper per kernel on first native use, costing hundreds of
+  milliseconds. See the
+  [helper reuse ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/58).
 - Element types are `single-float` and `double-float`. See the
   [integer ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/39).
 - SBCL kernels are generated only on x86-64 with `sb-simd`.

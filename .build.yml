@@ -11,7 +11,7 @@ tasks:
       curl -fsSL --retry 5 -o quicklisp.lisp https://beta.quicklisp.org/quicklisp.lisp
       sbcl --non-interactive --load quicklisp.lisp \
            --eval '(quicklisp-quickstart:install)' \
-           --eval '(ql:quickload (list :cffi :fiveam :trivial-garbage))'
+           --eval '(ql:quickload (list :cffi :fiveam :trivial-garbage :bordeaux-threads))'
   - build: |
       cd trivial-simd
       cmake -S . -B build -DCMAKE_BUILD_TYPE=Release

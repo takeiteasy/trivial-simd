@@ -14,7 +14,7 @@
   :in-order-to ((asdf:test-op (asdf:test-op "trivial-simd/tests"))))
 
 (asdf:defsystem "trivial-simd/tests"
-  :depends-on ("trivial-simd" "fiveam")
+  :depends-on ("trivial-simd" "fiveam" "bordeaux-threads")
   :serial t
   :components ((:file "tests/package")
                (:file "tests/operations")

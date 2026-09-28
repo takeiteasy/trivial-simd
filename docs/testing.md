@@ -4,8 +4,10 @@ The FiveAM suite checks the Lisp reference and every locally available SIMD
 backend for both float types, empty vectors, SIMD tails, aliasing, and errors.
 Direct copy tests check both precisions, round trips, empty ranges, and partial
 copy-back. Native program tests check partial-initialization cleanup, finalization,
-and retained functions after redefinition. Kernel tests also cover register spilling, scratch-slot reuse, and encoding
-boundaries, square-root domain errors, signed zeros, single-rounding FMA, and
+retained functions after redefinition, and collection during active native calls.
+Threaded tests exercise concurrent first use with private call buffers. ECL tests
+also check helper compilation, reuse, and compiler-failure fallback. Kernel
+tests cover register spilling, scratch-slot reuse, encoding boundaries, square-root domain errors, signed zeros, single-rounding FMA, and
 scalar-returning sums with slices and spilling. ECL also exercises interpreted
 spilling and reduction definitions.
 
@@ -52,6 +54,8 @@ GitHub Actions and sourcehut builds run it alongside the Lisp suite.
 
 ```sh
 sbcl --script tests/bench.lisp
+ccl --no-init --batch --eval '(load (compile-file "tests/bench.lisp" :output-file "/tmp/trivial-simd-bench.fasl"))' --eval '(quit)'
+ecl --eval '(load (compile-file "tests/bench.lisp" :output-file "/tmp/trivial-simd-bench.fas"))' --eval '(quit)'
 ```
 
 Run this script explicitly when you want measurements. The ASDF test system
@@ -60,5 +64,11 @@ and GitHub Actions do not invoke it.
 The benchmark reports microseconds per vector-add call for 32, 1,024, and
 65,536 elements of both float types on the available Lisp, native C, and SBCL
 backends. It also compares separate-operation `a*b+c`, true FMA, and `sum(a*b)`
-kernels, and reports `NATIVE-COPY` for the copying fallback. Results depend on
-the Lisp implementation, compiler, CPU, and array access cost.
+kernels, and reports `NATIVE-COPY` for the copying fallback.
+
+Each timing is the median of three warmed batches. Compile the benchmark on ECL
+so the measurement loop and ordinary kernel definitions use compiled code. The
+ECL section separately measures an `eval`-defined kernel and reports its first
+native call, including helper compilation, before warmed timings. Compiled
+benchmark artifacts retain the source-system location and can load from `/tmp`.
+Results depend on the Lisp implementation, compiler, CPU, and array access cost.

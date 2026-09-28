@@ -40,3 +40,12 @@
   (assert (= -2056.0 (kernel-dot a b)))
   (assert (= 514.0 (root-sum a)))
   (assert (= -72.0 (kernel-dot a b :end 9 :a-start 11))))
+
+#+ecl
+(progn
+  (eval '(trivial-simd:define-kernel eval-multiply-add (a b c) (+ (* a b) c)))
+  (let ((a (make-array 5 :element-type 'single-float :initial-element 2.0))
+        (out (make-array 5 :element-type 'single-float)))
+    (dotimes (i 2)
+      (eval-multiply-add out a a a)
+      (assert (every (lambda (value) (= value 6.0)) out)))))

@@ -184,7 +184,8 @@ of forms, is the part copied back."
             (%native-dot-f64 a b count))))))
 
 (defstruct (native-program (:constructor %make-native-program))
-  code code-length f32-constants f64-constants scratch-count)
+  code code-length f32-constants f64-constants scratch-count
+  #+ecl runner)
 
 (declaim (notinline foreign-copy free-native-program-buffers))
 

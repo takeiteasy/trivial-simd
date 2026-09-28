@@ -350,24 +350,41 @@ SPILL/RELOAD use a register and slot; other operands name registers or inputs."
                    (incf ,index))
                  ,@(unless destination (list sum))))))))))
 
-(defun native-kernel-form (program type destination arguments d-offset offsets count)
+(defun native-kernel-form (program foreign destination arguments d-offset offsets count)
   (let ((pointers (loop for nil in arguments collect (gensym "POINTER")))
-        (output (gensym "OUTPUT")) (table (gensym "TABLE")) (foreign (gensym "FOREIGN")))
-    `(let ((,foreign (if (eq ,type :f32) :float :double)))
-       (with-native-vectors (,foreign (,@(when destination `((,output ,destination)))
-                                       ,@(mapcar #'list pointers arguments))
-                             :outputs ,(when destination (list output))
-                             :range ,(when destination (list d-offset count)))
-         (cffi:with-foreign-object (,table :pointer ,(max 1 (length arguments)))
-           ,@(loop for pointer in pointers for offset in offsets for index from 0
-                   collect `(setf (cffi:mem-aref ,table :pointer ,index)
-                                  (element-pointer ,pointer ,foreign ,offset)))
-           ,(if destination
-                `(call-native-kernel ,program ,foreign ,table
-                                     (element-pointer ,output ,foreign ,d-offset) ,count)
-                `(cffi:with-foreign-object (,output ,foreign)
-                   (call-native-kernel ,program ,foreign ,table ,output ,count :sum-p t)
-                   (cffi:mem-ref ,output ,foreign))))))))
+        (output (gensym "OUTPUT")) (table (gensym "TABLE")))
+    `(with-native-vectors (,foreign (,@(when destination `((,output ,destination)))
+                                    ,@(mapcar #'list pointers arguments))
+                          :outputs ,(when destination (list output))
+                          :range ,(when destination (list d-offset count)))
+       (cffi:with-foreign-object (,table :pointer ,(max 1 (length arguments)))
+         ,@(loop for pointer in pointers for offset in offsets for index from 0
+                 collect `(setf (cffi:mem-aref ,table :pointer ,index)
+                                (element-pointer ,pointer ,foreign ,offset)))
+         ,(if destination
+              `(call-native-kernel ,program ,foreign ,table
+                                   (element-pointer ,output ,foreign ,d-offset) ,count)
+              `(cffi:with-foreign-object (,output ,foreign)
+                 (call-native-kernel ,program ,foreign ,table ,output ,count :sum-p t)
+                 (cffi:mem-ref ,output ,foreign)))))))
+
+#+ecl
+(declaim (notinline compile-native-kernel-runner))
+;; TODO: per-kernel compilation costs hundreds of ms; share runners by signature (#58).
+#+ecl
+(defun compile-native-kernel-runner (form fallback)
+  (handler-case
+      (let ((*compile-verbose* nil) (*compile-print* nil))
+        (multiple-value-bind (function warnings failure) (compile nil form)
+          (declare (ignore warnings))
+          (if failure fallback function)))
+    (error () fallback)))
+
+#+ecl
+(defun ensure-native-kernel-runner (program form fallback)
+  (or (native-program-runner program)
+      (setf (native-program-runner program)
+            (compile-native-kernel-runner form fallback))))
 
 (defmacro define-kernel (name (&rest arguments) expression)
   "Define an elementwise destination kernel or a scalar (SUM expression) kernel.
@@ -390,8 +407,15 @@ Both accept START, END, and per-input start keywords. Experimental."
                (vectors (if destination (cons destination arguments) arguments))
                (all-starts (if destination (cons 'destination-start starts) starts))
                (all-offsets (if destination (cons d-offset offsets) offsets))
-               (bytes (kernel-bytes instructions)))
-          `(let ((,program nil))
+               (bytes (kernel-bytes instructions))
+               (native-form `(if (eq ,type :f32)
+                                 ,(native-kernel-form program :float destination arguments d-offset offsets count)
+                                 ,(native-kernel-form program :double destination arguments d-offset offsets count)))
+               #+ecl (runner (gensym "RUNNER"))
+               #+ecl (runner-arguments (append (list program type count) vectors all-offsets))
+               #+ecl (runner-form `(lambda ,runner-arguments ,native-form)))
+          `(let ((,program nil)
+                 #+ecl (,runner ,runner-form))
              (defun ,name (,@vectors &key start end ,@all-starts)
                ,(if reduction-p "Return the sum of the kernel expression over the input slice."
                     "Compute the kernel expression into destination and return it.")
@@ -415,5 +439,7 @@ Both accept START, END, and per-input start keywords. Experimental."
                      (:native
                       (let ((,program (or ,program
                                           (setf ,program (make-native-program ',bytes ',constants ,scratch-count)))))
-                        ,(native-kernel-form program type destination arguments d-offset offsets count)))))
+                        #+ecl (funcall (ensure-native-kernel-runner ,program ',runner-form ,runner)
+                                       ,@runner-arguments)
+                        #-ecl ,native-form))))
                  ,@(when destination (list destination))))))))))

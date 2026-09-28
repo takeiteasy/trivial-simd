@@ -57,3 +57,19 @@ SBCL is 2.6.8, CCL is 1.13, and ECL is 26.5.5.
 
 Copying still depends on implementation-specific foreign memory access. Small
 slices also copy whole input vectors; see [array access](backends.md#array-access).
+
+## ECL native calls
+
+ECL 26.5.5 on Apple M1, `single-float` multiply-add kernels. Values are median
+microseconds per warmed call across three batches. The fallback column uses
+interpreted call setup when helper compilation is unavailable.
+
+| Elements | Compiled definition | Eval definition | Eval with fallback | Two bulk calls |
+|---|---:|---:|---:|---:|
+| 32 | 1.18 | 1.76 | 5.45 | 1.47 |
+| 1,024 | 1.31 | 2.08 | 5.61 | 1.88 |
+| 65,536 | 17.87 | 18.36 | 22.38 | 18.33 |
+
+The first native call for the eval definition takes about 320 ms, including
+helper compilation. The helper is reused for later calls. See
+[kernel limitations](kernels.md#limitations) for cold-start work.
