@@ -76,14 +76,33 @@
 (defun foreign-type (vector)
   (if (typep vector '(simple-array single-float (*))) :float :double))
 
-;; TODO: generic per-element copy is ~3000x slower than pinned access (ticket #33).
+(macrolet ((define-copy-loops (element foreign to from)
+             `(progn
+                (defun ,to (vector pointer)
+                  (declare (type (simple-array ,element (*)) vector)
+                           (optimize (speed 3)))
+                  (dotimes (index (length vector))
+                    (setf (cffi:mem-aref pointer ,foreign index)
+                          (aref vector index))))
+                (defun ,from (pointer vector start count)
+                  (declare (type (simple-array ,element (*)) vector)
+                           (type fixnum start count)
+                           (optimize (speed 3)))
+                  (loop for index of-type fixnum from start below (+ start count)
+                        do (setf (aref vector index)
+                                 (cffi:mem-aref pointer ,foreign index)))))))
+  (define-copy-loops single-float :float copy-to-f32 copy-from-f32)
+  (define-copy-loops double-float :double copy-to-f64 copy-from-f64))
+
 (defun copy-to-foreign (vector pointer type)
-  (dotimes (index (length vector))
-    (setf (cffi:mem-aref pointer type index) (aref vector index))))
+  (ecase type
+    (:float (copy-to-f32 vector pointer))
+    (:double (copy-to-f64 vector pointer))))
 
 (defun copy-from-foreign (pointer vector type start count)
-  (loop for index from start below (+ start count)
-        do (setf (aref vector index) (cffi:mem-aref pointer type index))))
+  (ecase type
+    (:float (copy-from-f32 pointer vector start count))
+    (:double (copy-from-f64 pointer vector start count))))
 
 (defmacro with-pinned-pointers ((&rest bindings) &body body)
   #+(or sbcl ccl ecl)
@@ -95,6 +114,7 @@
   (progn bindings body
          '(error "Pinned array access is unsupported on this implementation")))
 
+;; TODO: whole-vector buffers cost O(length); use slice-sized transfers (#57).
 (defmacro with-copied-pointers ((&rest bindings) type outputs range &body body)
   `(cffi:with-foreign-objects
        ,(loop for (pointer vector) in bindings

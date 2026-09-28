@@ -42,3 +42,18 @@ performs the same calculation with a specialised implementation.
 | 32 | 0.06 | 1.07 | 0.31 | 0.14 | 0.07 |
 | 1,024 | 1.25 | 30.98 | 0.60 | 0.50 | 0.30 |
 | 65,536 | 77.70 | 2,004.30 | 21.00 | 24.55 | 16.35 |
+
+## Native copy mode
+
+Copy mode uses typed loops and separate input buffers. These measurements are
+microseconds per 1,024-element `add!` call on Apple M1, using three repeated runs.
+SBCL is 2.6.8, CCL is 1.13, and ECL is 26.5.5.
+
+| Implementation | Single-float | Double-float |
+|---|---:|---:|
+| SBCL | 3.03 | 3.09 |
+| CCL | 13.52 | 13.61 |
+| ECL | 642 | 685 |
+
+Copying still depends on implementation-specific foreign memory access. Small
+slices also copy whole input vectors; see [array access](backends.md#array-access).

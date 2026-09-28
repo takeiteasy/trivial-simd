@@ -144,3 +144,23 @@
     (signals error (simd:add! a a b :start 0 :end 4 :left-start -1))
     (signals error (simd:sum a :start 0 :end 4 :input-start 5))
     (signals error (simd:add! a a (values-for 9 'single-float 1)))))
+
+(test native-copy-round-trips
+  (dolist (type '(single-float double-float))
+    (dolist (length '(0 1 5 257 1024))
+      (let* ((input (values-for length type -4))
+             (output (values-for length type 100))
+             (foreign (simd::foreign-type input)))
+        (cffi:with-foreign-object (pointer foreign (max 1 length))
+          (simd::copy-to-foreign input pointer foreign)
+          (simd::copy-from-foreign pointer output foreign 0 length)
+          (is (equalp input output))
+          (when (> length 1)
+            (fill output (coerce 100 type))
+            (simd::copy-from-foreign pointer output foreign 1 (1- length))
+            (is (= 100 (aref output 0)))
+            (loop for index from 1 below length
+                  do (is (= (aref input index) (aref output index)))))
+          (let ((before (copy-seq output)))
+            (simd::copy-from-foreign pointer output foreign length 0)
+            (is (equalp before output))))))))

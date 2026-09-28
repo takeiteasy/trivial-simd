@@ -2,7 +2,8 @@
 
 The FiveAM suite checks the Lisp reference and every locally available SIMD
 backend for both float types, empty vectors, SIMD tails, aliasing, and errors.
-Kernel tests also cover register spilling, scratch-slot reuse, and encoding
+Direct copy tests check both precisions, round trips, empty ranges, and partial
+copy-back. Kernel tests also cover register spilling, scratch-slot reuse, and encoding
 boundaries, square-root domain errors, signed zeros, single-rounding FMA, and
 scalar-returning sums with slices and spilling. ECL also exercises interpreted
 spilling and reduction definitions.
@@ -56,7 +57,7 @@ Run this script explicitly when you want measurements. The ASDF test system
 and GitHub Actions do not invoke it.
 
 The benchmark reports microseconds per vector-add call for 32, 1,024, and
-65,536 `single-float` elements on the available Lisp, native C, and SBCL
+65,536 elements of both float types on the available Lisp, native C, and SBCL
 backends. It also compares separate-operation `a*b+c`, true FMA, and `sum(a*b)`
 kernels, and reports `NATIVE-COPY` for the copying fallback. Results depend on
 the Lisp implementation, compiler, CPU, and array access cost.
