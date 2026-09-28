@@ -218,14 +218,20 @@ SPILL/RELOAD use a register and slot; other operands name registers or inputs."
              ,result))))))
 
 (defun lisp-kernel-form (tree type destination arguments d-offset offsets count)
-  (let ((index (gensym "I"))
-        (variables (cons destination arguments)))
+  (let ((index (gensym "I")) (sum (gensym "SUM"))
+        (element (kernel-element-type type))
+        (variables (if destination (cons destination arguments) arguments)))
     `(let ,(mapcar (lambda (variable) (list variable variable)) variables)
-       (declare (type (simple-array ,(kernel-element-type type) (*)) ,@variables)
-                (type fixnum ,count ,d-offset ,@offsets))
-       (dotimes (,index ,count)
-         (setf (aref ,destination (+ ,d-offset ,index))
-               ,(scalar-kernel-form tree type arguments offsets index))))))
+       (declare (type (simple-array ,element (*)) ,@variables)
+                (type fixnum ,count ,@(when destination (list d-offset)) ,@offsets))
+       ,(if destination
+            `(dotimes (,index ,count)
+               (setf (aref ,destination (+ ,d-offset ,index))
+                     ,(scalar-kernel-form tree type arguments offsets index)))
+            `(let ((,sum ,(coerce 0 element)))
+               (declare (type ,element ,sum))
+               (dotimes (,index ,count ,sum)
+                 (incf ,sum ,(scalar-kernel-form tree type arguments offsets index))))))))
 
 #+(and sbcl x86-64)
 (defun sbcl-kernel-form (tree type destination arguments d-offset offsets count)
@@ -235,13 +241,14 @@ SPILL/RELOAD use a register and slot; other operands name registers or inputs."
              (or (find-symbol (concatenate 'string prefix suffix) package)
                  (error "sb-simd symbol ~A~A is missing" prefix suffix))))
       (let ((index (gensym "I"))
-            (variables (cons destination arguments))
+            (variables (if destination (cons destination arguments) arguments))
             (aref (symbol-for "-AREF"))
             (cast (symbol-for ""))
             (assignments '())
             (temporaries '())
             (free '())
-            (inputs (make-array (length arguments) :initial-element nil)))
+            (inputs (make-array (length arguments) :initial-element nil))
+            (sum (gensym "SUM")) (sum-pack (gensym "SUM-PACK")))
         (labels ((allocate ()
                    (or (pop free)
                        (let ((name (gensym "PACK")))
@@ -313,90 +320,100 @@ SPILL/RELOAD use a register and slot; other operands name registers or inputs."
                                  (list (walk (third node)) (walk (fourth node)))))))))
           ;; A long LET* also exhausts SBCL's compiler stack; use flat assignments.
           (let* ((result (walk tree))
-                 (packs (append (remove nil (coerce inputs 'list)) temporaries)))
+                 (packs (append (remove nil (coerce inputs 'list)) temporaries))
+                 (lanes (loop repeat width collect (gensym "LANE"))))
             `(let ,(mapcar (lambda (variable) (list variable variable)) variables)
                (declare (type (simple-array ,(kernel-element-type type) (*)) ,@variables)
-                        (type fixnum ,count ,d-offset ,@offsets))
-               (let ((,index 0))
-                 (declare (type fixnum ,index))
+                        (type fixnum ,count ,@(when destination (list d-offset)) ,@offsets))
+               (let ((,index 0)
+                     ,@(unless destination
+                         `((,sum ,(coerce 0 (kernel-element-type type))) (,sum-pack (,cast 0)))))
+                 (declare (type fixnum ,index)
+                          ,@(unless destination
+                              `((type ,(kernel-element-type type) ,sum) (type ,cast ,sum-pack))))
                  (loop while (<= (+ ,index ,width) ,count) do
                    (let ,(loop for name in packs collect `(,name (,cast 0)))
                      ,@(when packs `((declare (type ,cast ,@packs))))
                      ,@(nreverse assignments)
-                     (setf (,aref ,destination (+ ,d-offset ,index)) (,cast ,result)))
+                     ,(if destination
+                          `(setf (,aref ,destination (+ ,d-offset ,index)) (,cast ,result))
+                          `(setf ,sum-pack (,(symbol-for "+") ,sum-pack (,cast ,result)))))
                    (incf ,index ,width))
+                 ,@(unless destination
+                     `((multiple-value-bind ,lanes (,(symbol-for "-VALUES") ,sum-pack)
+                         (setf ,sum (+ ,@lanes)))))
                  (loop while (< ,index ,count) do
-                   (setf (aref ,destination (+ ,d-offset ,index))
-                         ,(scalar-kernel-form tree type arguments offsets index))
-                   (incf ,index))))))))))
+                   ,(if destination
+                        `(setf (aref ,destination (+ ,d-offset ,index))
+                               ,(scalar-kernel-form tree type arguments offsets index))
+                        `(incf ,sum ,(scalar-kernel-form tree type arguments offsets index)))
+                   (incf ,index))
+                 ,@(unless destination (list sum))))))))))
 
 (defun native-kernel-form (program type destination arguments d-offset offsets count)
   (let ((pointers (loop for nil in arguments collect (gensym "POINTER")))
-        (output (gensym "OUTPUT"))
-        (table (gensym "TABLE"))
-        (foreign (gensym "FOREIGN")))
+        (output (gensym "OUTPUT")) (table (gensym "TABLE")) (foreign (gensym "FOREIGN")))
     `(let ((,foreign (if (eq ,type :f32) :float :double)))
-       (with-native-vectors (,foreign ((,output ,destination)
+       (with-native-vectors (,foreign (,@(when destination `((,output ,destination)))
                                        ,@(mapcar #'list pointers arguments))
-                             :outputs (,output)
-                             :range (,d-offset ,count))
+                             :outputs ,(when destination (list output))
+                             :range ,(when destination (list d-offset count)))
          (cffi:with-foreign-object (,table :pointer ,(max 1 (length arguments)))
-           ,@(loop for pointer in pointers
-                   for offset in offsets
-                   for index from 0
+           ,@(loop for pointer in pointers for offset in offsets for index from 0
                    collect `(setf (cffi:mem-aref ,table :pointer ,index)
                                   (element-pointer ,pointer ,foreign ,offset)))
-           (call-native-kernel ,program ,foreign ,table
-                               (element-pointer ,output ,foreign ,d-offset)
-                               ,count))))))
+           ,(if destination
+                `(call-native-kernel ,program ,foreign ,table
+                                     (element-pointer ,output ,foreign ,d-offset) ,count)
+                `(cffi:with-foreign-object (,output ,foreign)
+                   (call-native-kernel ,program ,foreign ,table ,output ,count :sum-p t)
+                   (cffi:mem-ref ,output ,foreign))))))))
 
 (defmacro define-kernel (name (&rest arguments) expression)
-  "Define NAME as (NAME destination ,@ARGUMENTS &key start end ...) computing
-EXPRESSION elementwise from ARGUMENTS into DESTINATION. Experimental."
+  "Define an elementwise destination kernel or a scalar (SUM expression) kernel.
+Both accept START, END, and per-input start keywords. Experimental."
   (when (> (length arguments) +kernel-max-arguments+)
     (error "A kernel takes at most ~D arguments" +kernel-max-arguments+))
-  (let ((tree (parse-kernel-expression expression arguments)))
-    (multiple-value-bind (instructions constants scratch-count) (lower-kernel tree)
-      (let* ((destination (gensym "DESTINATION"))
-             (count (gensym "COUNT"))
-             (d-offset (gensym "D-OFFSET"))
-             (offsets (loop for nil in arguments collect (gensym "OFFSET")))
-             (program (gensym "PROGRAM"))
-             (type (gensym "TYPE"))
-             (offsets-variable (gensym "OFFSETS"))
-             (starts (mapcar (lambda (argument)
-                               (intern (format nil "~A-START" argument)))
-                             arguments))
-             (bytes (kernel-bytes instructions)))
-        `(let ((,program nil))
-           (defun ,name (,destination ,@arguments
-                         &key start end destination-start ,@starts)
-             (multiple-value-bind (,type ,count ,offsets-variable)
-                 (resolve-slice (list ,destination ,@arguments)
-                                (list destination-start ,@starts) start end)
-               (destructuring-bind (,d-offset ,@offsets) ,offsets-variable
-                 (declare (type fixnum ,d-offset ,@offsets))
-                 (ecase *backend*
-                   (:lisp (if (eq ,type :f32)
-                              ,(lisp-kernel-form tree :f32 destination arguments
-                                                 d-offset offsets count)
-                              ,(lisp-kernel-form tree :f64 destination arguments
-                                                 d-offset offsets count)))
-                   (:sbcl
-                    ,(if (and (boundp '*sbcl-simd-available-p*) *sbcl-simd-available-p*)
-                         #+(and sbcl x86-64)
-                         `(if (eq ,type :f32)
-                              ,(sbcl-kernel-form tree :f32 destination arguments
-                                                 d-offset offsets count)
-                              ,(sbcl-kernel-form tree :f64 destination arguments
-                                                 d-offset offsets count))
-                         #-(and sbcl x86-64)
-                         '(error "SBCL SIMD is unavailable on this platform")
-                         '(error "SBCL SIMD is unavailable on this platform")))
-                   (:native
-                    (let ((,program (or ,program
-                                        (setf ,program
-                                              (make-native-program ',bytes ',constants ,scratch-count)))))
-                      ,(native-kernel-form program type destination arguments
-                                           d-offset offsets count))))))
-             ,destination))))))
+  (let* ((reduction-p (and (consp expression) (eq (first expression) 'sum)))
+         (destination (unless reduction-p (gensym "DESTINATION"))))
+    (when reduction-p
+      (unless (and arguments (= 2 (length expression)))
+        (error "A sum kernel needs input vectors and one expression")))
+    (let ((tree (parse-kernel-expression (if reduction-p (second expression) expression) arguments)))
+      (multiple-value-bind (instructions constants scratch-count) (lower-kernel tree)
+        (let* ((count (gensym "COUNT"))
+               (d-offset (when destination (gensym "D-OFFSET")))
+               (offsets (loop for nil in arguments collect (gensym "OFFSET")))
+               (program (gensym "PROGRAM")) (type (gensym "TYPE"))
+               (offsets-variable (gensym "OFFSETS"))
+               (starts (mapcar (lambda (argument) (intern (format nil "~A-START" argument))) arguments))
+               (vectors (if destination (cons destination arguments) arguments))
+               (all-starts (if destination (cons 'destination-start starts) starts))
+               (all-offsets (if destination (cons d-offset offsets) offsets))
+               (bytes (kernel-bytes instructions)))
+          `(let ((,program nil))
+             (defun ,name (,@vectors &key start end ,@all-starts)
+               ,(if reduction-p "Return the sum of the kernel expression over the input slice."
+                    "Compute the kernel expression into destination and return it.")
+               (multiple-value-bind (,type ,count ,offsets-variable)
+                   (resolve-slice (list ,@vectors) (list ,@all-starts) start end)
+                 (destructuring-bind ,all-offsets ,offsets-variable
+                   (declare (type fixnum ,@all-offsets))
+                   (ecase *backend*
+                     (:lisp (if (eq ,type :f32)
+                                ,(lisp-kernel-form tree :f32 destination arguments d-offset offsets count)
+                                ,(lisp-kernel-form tree :f64 destination arguments d-offset offsets count)))
+                     (:sbcl
+                      ,(if (and (boundp '*sbcl-simd-available-p*) *sbcl-simd-available-p*)
+                           #+(and sbcl x86-64)
+                           `(if (eq ,type :f32)
+                                ,(sbcl-kernel-form tree :f32 destination arguments d-offset offsets count)
+                                ,(sbcl-kernel-form tree :f64 destination arguments d-offset offsets count))
+                           #-(and sbcl x86-64)
+                           '(error "SBCL SIMD is unavailable on this platform")
+                           '(error "SBCL SIMD is unavailable on this platform")))
+                     (:native
+                      (let ((,program (or ,program
+                                          (setf ,program (make-native-program ',bytes ',constants ,scratch-count)))))
+                        ,(native-kernel-form program type destination arguments d-offset offsets count)))))
+                 ,@(when destination (list destination))))))))))

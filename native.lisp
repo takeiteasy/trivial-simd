@@ -61,6 +61,13 @@
   (code :pointer) (code-length :size) (constants :pointer)
   (inputs :pointer) (output :pointer) (length :size) (scratch-count :size))
 
+(define-native ("ts_kernel_sum_f32" %native-kernel-sum-f32) :int
+  (code :pointer) (code-length :size) (constants :pointer)
+  (inputs :pointer) (output :pointer) (length :size) (scratch-count :size))
+(define-native ("ts_kernel_sum_f64" %native-kernel-sum-f64) :int
+  (code :pointer) (code-length :size) (constants :pointer)
+  (inputs :pointer) (output :pointer) (length :size) (scratch-count :size))
+
 (defvar *native-array-access*
   #+(or sbcl ccl ecl) :pointer
   #-(or sbcl ccl ecl) :copy
@@ -174,8 +181,10 @@ of forms, is the part copied back."
                         :f32-constants (foreign-copy constants :float 'single-float)
                         :f64-constants (foreign-copy constants :double 'double-float)))
 
-(defun call-native-kernel (program type inputs output count)
-  (case (funcall (if (eq type :float) #'%native-kernel-f32 #'%native-kernel-f64)
+(defun call-native-kernel (program type inputs output count &key sum-p)
+  (case (funcall (if sum-p
+                    (if (eq type :float) #'%native-kernel-sum-f32 #'%native-kernel-sum-f64)
+                    (if (eq type :float) #'%native-kernel-f32 #'%native-kernel-f64))
                  (native-program-code program) (native-program-code-length program)
                  (if (eq type :float)
                      (native-program-f32-constants program)

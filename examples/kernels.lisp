@@ -31,3 +31,12 @@
   (assert (every (lambda (value) (= value 2.0)) out))
   (rounded-multiply-add out a a a)
   (assert (every (lambda (value) (= value 12.0)) out)))
+
+(trivial-simd:define-kernel kernel-dot (a b) (trivial-simd:sum (* a b)))
+(trivial-simd:define-kernel root-sum (a) (trivial-simd:sum (sqrt (abs a))))
+
+(let ((a (make-array 257 :element-type 'single-float :initial-element -4.0))
+      (b (make-array 257 :element-type 'single-float :initial-element 2.0)))
+  (assert (= -2056.0 (kernel-dot a b)))
+  (assert (= 514.0 (root-sum a)))
+  (assert (= -72.0 (kernel-dot a b :end 9 :a-start 11))))

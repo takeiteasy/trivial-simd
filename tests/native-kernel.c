@@ -43,9 +43,24 @@ static void check_##suffix(void) { \
             assert(allocations == before + (n != 0)); \
             assert(allocations == releases); \
             for (size_t i = 0; i < 600; ++i) assert(out[i] == (i < n ? 42 : -1)); \
+            type sum_out[2] = {-1, -9}; \
+            before = allocations; \
+            assert(ts_kernel_sum_##suffix(code, sizeof(code), constants, NULL, sum_out, n, slot + 1) == 0); \
+            assert(sum_out[0] == (type)(42 * n) && sum_out[1] == -9); \
+            assert(allocations == before + (n != 0) && allocations == releases); \
         } \
     } \
     uint8_t constant[] = {TS_OP_CONSTANT, TS_KERNEL_OUTPUT, 0, 0}; \
+    type scalar = -1; \
+    size_t sum_before = allocations; \
+    assert(ts_kernel_sum_##suffix(NULL, 0, NULL, NULL, &scalar, 0, SIZE_MAX) == 0); \
+    assert(scalar == 0 && allocations == sum_before); \
+    scalar = -1; \
+    assert(ts_kernel_sum_##suffix(constant, sizeof(constant), constants, NULL, &scalar, 600, 0) == 0); \
+    assert(scalar == 25200 && allocations == sum_before); \
+    scalar = -1; \
+    assert(ts_kernel_sum_##suffix(constant, sizeof(constant), constants, NULL, &scalar, 1, SIZE_MAX) != 0); \
+    assert(scalar == -1 && allocations == sum_before); \
     size_t before = allocations; \
     assert(ts_kernel_##suffix(constant, sizeof(constant), constants, NULL, out, 1, 0) == 0); \
     assert(allocations == before); \
@@ -55,6 +70,10 @@ static void check_##suffix(void) { \
     fail_allocation = 1; \
     assert(ts_kernel_##suffix(constant, sizeof(constant), constants, NULL, out, 1, 1) != 0); \
     assert(allocations == before + 1 && releases == before && out[0] == -1); \
+    --allocations; \
+    scalar = -1; \
+    assert(ts_kernel_sum_##suffix(constant, sizeof(constant), constants, NULL, &scalar, 1, 1) != 0); \
+    assert(scalar == -1 && allocations == before + 1 && releases == before); \
     --allocations; \
     fail_allocation = 0; \
 }
@@ -84,6 +103,10 @@ static void check_math_##suffix(void) { \
         for (size_t i = 0; i < n; ++i) assert(out[i] == (a[i] >= b[i] ? a[i] : b[i])); \
         assert(ts_kernel_##suffix(fma_code, sizeof(fma_code), NULL, inputs, out, n, 0) == 0); \
         for (size_t i = 0; i < n; ++i) assert(out[i] == fused(a[i], b[i], c[i])); \
+        type expected = 0, scalar[2] = {-1, -9}; \
+        for (size_t i = 0; i < n; ++i) expected += fused(a[i], b[i], c[i]); \
+        assert(ts_kernel_sum_##suffix(fma_code, sizeof(fma_code), NULL, inputs, scalar, n, 0) == 0); \
+        assert(scalar[0] == expected && scalar[1] == -9); \
     } \
     for (size_t i = 0; i < 600; ++i) a[i] = -(type)i; \
     assert(ts_kernel_##suffix(abs_code, sizeof(abs_code), NULL, inputs, out, 600, 0) == 0); \
@@ -103,6 +126,9 @@ static void check_math_##suffix(void) { \
         a[errors[e]] = -1; \
         assert(ts_kernel_##suffix(sqrt_code, sizeof(sqrt_code), NULL, inputs, out, 600, 1) == -2); \
         assert(allocations == releases); \
+        type scalar = -1; \
+        assert(ts_kernel_sum_##suffix(sqrt_code, sizeof(sqrt_code), NULL, inputs, &scalar, 600, 1) == -2); \
+        assert(scalar == -1 && allocations == releases); \
         a[errors[e]] = 0; \
     } \
 }

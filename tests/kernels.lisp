@@ -272,3 +272,114 @@
           (kernel-math-spills a a b c :end 601 :destination-start 5 :a-start 11))
         (dotimes (i 620)
           (is (= (aref a i) (if (<= 5 i 605) expected (coerce 2 type)))))))))
+
+(simd:define-kernel kernel-sum (a) (simd:sum a))
+(simd:define-kernel kernel-dot (a b) (simd:sum (* a b)))
+(simd:define-kernel kernel-sum-fma (a b c) (simd:sum (simd:fma a b c)))
+(simd:define-kernel kernel-root-sum (a) (simd:sum (sqrt (abs a))))
+(simd:define-kernel kernel-sum-constant (a) (simd:sum 3))
+
+(defun check-kernel-reduction (kernel reference type length inputs)
+  (let ((expected (coerce 0 type)) (before (mapcar #'copy-seq inputs)))
+    (dotimes (i length)
+      (incf expected (apply reference (mapcar (lambda (input) (aref input i)) inputs))))
+    (dolist (backend (available-backends))
+      (with-backend (backend)
+        (let ((actual (apply kernel inputs)))
+          (is (typep actual type))
+          (is (close-enough-p actual expected type))))
+      (is (every #'equalp inputs before)))))
+
+(test kernel-reductions-across-backends
+  (dolist (type '(single-float double-float))
+    (dolist (length '(0 1 3 4 5 9 255 256 257 600 1001))
+      (let ((a (values-for length type 1))
+            (b (values-for length type 2))
+            (c (values-for length type 3)))
+        (check-kernel-reduction #'kernel-sum #'identity type length (list a))
+        (check-kernel-reduction #'kernel-dot #'* type length (list a b))
+        (check-kernel-reduction #'kernel-sum-fma (lambda (a b c) (+ (* a b) c))
+                                type length (list a b c))
+        (check-kernel-reduction #'kernel-root-sum (lambda (a) (sqrt (abs a)))
+                                type length (list a))
+        (check-kernel-reduction #'kernel-sum-constant (lambda (a) (declare (ignore a)) (coerce 3 type))
+                                type length (list a))))))
+
+(test kernel-reduction-slices
+  (dolist (type '(single-float double-float))
+    (dolist (backend (available-backends))
+      (let ((a (values-for 640 type 1)) (b (values-for 630 type 2)))
+        (with-backend (backend)
+          (let ((expected (coerce 0 type)))
+            (dotimes (i 601)
+              (incf expected (* (aref a (+ 11 i)) (aref b (+ 5 i)))))
+            (is (close-enough-p (kernel-dot a b :start 2 :end 603 :a-start 11 :b-start 5)
+                                expected type)))
+          (is (zerop (kernel-dot a b :start 4 :end 4 :a-start 640 :b-start 630)))
+          (let ((expected (coerce 0 type)))
+            (loop for i from 7 below 608 do (incf expected (aref a i)))
+            (is (close-enough-p (kernel-sum a :start 7 :end 608) expected type)))
+          (is (close-enough-p (kernel-dot a a :end 9)
+                              (coerce (loop for i below 9 sum (* (aref a i) (aref a i))) type) type)))))))
+
+(simd:define-kernel kernel-sqrt-sum (a) (simd:sum (sqrt a)))
+
+(test kernel-reduction-errors
+  (dolist (definition '((simd:define-kernel bad (a) (simd:sum))
+                        (simd:define-kernel bad (a) (simd:sum a a))
+                        (simd:define-kernel bad () (simd:sum 3))
+                        (simd:define-kernel bad (a) (simd:sum (simd:sum a)))
+                        (simd:define-kernel bad (a) (+ a (simd:sum a)))
+                        (simd:define-kernel bad (a) (product a))))
+    (signals error (macroexpand-1 definition)))
+  (dolist (backend (available-backends))
+    (let ((a (values-for 8 'single-float 1)))
+      (with-backend (backend)
+        (signals error (kernel-dot a (values-for 7 'single-float 1)))
+        (signals error (kernel-dot a (values-for 8 'double-float 1)))
+        (signals type-error (kernel-sum #(1 2 3)))
+        (signals error (kernel-sum a :start -1))
+        (signals error (kernel-sum a :start 5 :end 4))
+        (signals error (kernel-sum a :end 4 :a-start 5))
+        (signals error (apply #'kernel-sum (list a :destination-start 0)))
+        (setf (aref a 3) -1.0)
+        (signals error (kernel-root-sum a :end 9))
+        (signals error (kernel-sqrt-sum a))))))
+
+(macrolet ((define-reduction-spills ()
+             (let ((a (balanced-expression 9))
+                   (b (subst 'b 'a (balanced-expression 9)))
+                   (c (subst 'c 'a (balanced-expression 9))))
+               `(simd:define-kernel kernel-reduction-spills (a b c)
+                  (simd:sum (simd:fma (sqrt ,a) (abs ,b) (min ,c ,a)))))))
+  (define-reduction-spills))
+
+(test kernel-spilling-reductions
+  (dolist (type '(single-float double-float))
+    (dolist (length '(0 1 5 255 256 257 600))
+      (check-kernel-reduction #'kernel-reduction-spills
+                              (lambda (a b c) (declare (ignore a b c)) (coerce 17408 type))
+                              type length
+                              (list (make-array length :element-type type :initial-element (coerce 2 type))
+                                    (make-array length :element-type type :initial-element (coerce -1 type))
+                                    (make-array length :element-type type :initial-element (coerce 3 type)))))))
+
+(test native-reduction-allocation-errors
+  (when simd::*native-available-p*
+    (dolist (type '(:float :double))
+      (cffi:with-foreign-object (output type)
+        (setf (cffi:mem-ref output type) (if (eq type :float) 17.0 17.0d0))
+        (let ((program (simd::%make-native-program
+                        :code (cffi:null-pointer) :code-length 0
+                        :f32-constants (cffi:null-pointer) :f64-constants (cffi:null-pointer)
+                        :scratch-count (1- (ash 1 (* 8 (cffi:foreign-type-size :size)))))))
+          (signals error (simd::call-native-kernel program type (cffi:null-pointer) output 1 :sum-p t))
+          (is (= 17 (cffi:mem-ref output type))))))))
+
+#+ecl
+(test interpreted-reduction-kernel
+  (eval '(simd:define-kernel interpreted-sum-fma (a b c) (simd:sum (simd:fma a b c))))
+  (dolist (type '(single-float double-float))
+    (check-kernel-reduction 'interpreted-sum-fma (lambda (a b c) (+ (* a b) c))
+                            type 5 (list (values-for 5 type 1) (values-for 5 type 2)
+                                         (values-for 5 type 3)))))

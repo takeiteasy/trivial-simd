@@ -179,16 +179,18 @@ enum {
  * SPILL/RELOAD use a register and a little-endian 16-bit scratch index.
  * FMA uses a register destination as its addend.
  */
+/* TODO: sums materialise 256-element output blocks; reduce final VM instructions directly (#56). */
 #define TS_KERNEL(suffix, type, width, load, store, zero, add, sub, mul, div, \
                   sqrtv, absv, minv, maxv, fmav, sqrts, abss, fmas) \
-int ts_kernel_##suffix(const uint8_t *code, size_t code_length, \
+static int ts_kernel_run_##suffix(const uint8_t *code, size_t code_length, \
                         const type *constants, const type *const *inputs, \
-                        type *out, size_t n, size_t scratch_count) { \
-    if (n == 0) return 0; \
+                        type *out, size_t n, size_t scratch_count, int sum) { \
+    if (n == 0) { if (sum) *out = 0; return 0; } \
     if (scratch_count > SIZE_MAX / TS_KERNEL_BLOCK / sizeof(type)) return -1; \
     type *scratch = scratch_count ? malloc(scratch_count * TS_KERNEL_BLOCK * sizeof(type)) : NULL; \
     if (scratch_count && !scratch) return -1; \
     type registers[TS_KERNEL_REGISTERS][TS_KERNEL_BLOCK]; \
+    type block_output[TS_KERNEL_BLOCK], result = 0; \
     for (size_t base = 0; base < n; base += TS_KERNEL_BLOCK) { \
         size_t m = n - base < TS_KERNEL_BLOCK ? n - base : TS_KERNEL_BLOCK; \
         for (size_t pc = 0; pc < code_length; pc += 4) { \
@@ -201,7 +203,7 @@ int ts_kernel_##suffix(const uint8_t *code, size_t code_length, \
                 continue; \
             } \
             type *destination = code[pc + 1] == TS_KERNEL_OUTPUT \
-                ? out + base : registers[code[pc + 1] & (TS_KERNEL_REGISTERS - 1)]; \
+                ? (sum ? block_output : out + base) : registers[code[pc + 1] & (TS_KERNEL_REGISTERS - 1)]; \
             size_t i = 0; \
             if (code[pc] == TS_OP_CONSTANT) { \
                 type value = constants[code[pc + 2]]; \
@@ -253,9 +255,21 @@ int ts_kernel_##suffix(const uint8_t *code, size_t code_length, \
                 break; \
             } \
         } \
+        if (sum) result += ts_sum_##suffix(block_output, m); \
     } \
     free(scratch); \
+    if (sum) *out = result; \
     return 0; \
+} \
+int ts_kernel_##suffix(const uint8_t *code, size_t code_length, \
+                       const type *constants, const type *const *inputs, \
+                       type *out, size_t n, size_t scratch_count) { \
+    return ts_kernel_run_##suffix(code, code_length, constants, inputs, out, n, scratch_count, 0); \
+} \
+int ts_kernel_sum_##suffix(const uint8_t *code, size_t code_length, \
+                           const type *constants, const type *const *inputs, \
+                           type *out, size_t n, size_t scratch_count) { \
+    return ts_kernel_run_##suffix(code, code_length, constants, inputs, out, n, scratch_count, 1); \
 }
 
 TS_KERNEL(f32, float, TS_F32_WIDTH, TS_F32_LOAD, TS_F32_STORE, TS_F32_ZERO,
