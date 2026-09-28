@@ -4,11 +4,11 @@
 It is experimental.
 
 ```lisp
-(trivial-simd:define-kernel fused-multiply-add (a b c) (+ (* a b) c))
+(trivial-simd:define-kernel multiply-add (a b c) (+ (* a b) c))
 
-(fused-multiply-add out x y z)                        ; out[i] = x[i]*y[i] + z[i]
-(fused-multiply-add out x y z :start 0 :end 64)       ; same slice keywords as bulk operations
-(fused-multiply-add out x y z :a-start 8 :end 64)     ; per-argument starts: <argument>-start
+(multiply-add out x y z)                        ; out[i] = x[i]*y[i] + z[i]
+(multiply-add out x y z :start 0 :end 64)       ; same slice keywords as bulk operations
+(multiply-add out x y z :a-start 8 :end 64)     ; per-argument starts: <argument>-start
 ```
 
 The kernel takes `destination`, one vector per argument, and the
@@ -24,9 +24,29 @@ It returns `destination`.
 | `(+ x y ...)`, `(* x y ...)` | N-ary, folded left |
 | `(- x y ...)`, `(/ x y ...)` | N-ary, folded left |
 | `(- x)`, `(/ x)` | Negation, reciprocal |
+| `(sqrt x)`, `(abs x)` | Square root, absolute value |
+| `(min x ...)`, `(max x ...)` | Minimum, maximum; folded left |
+| `(trivial-simd:fma a b c)` | `a*b+c` with one rounding step |
 
 Anything else signals an error when the kernel is defined. Vectors share one
 `single-float` or `double-float` element type, chosen per call.
+
+## Numerical behavior
+
+`sqrt` signals an error for a negative operand on every backend; negative zero
+is valid. An arithmetic error may leave part of `destination` updated.
+`min` and `max` retain the left operand on equal values, including signed zeros.
+
+`fma` uses round-to-nearest-even for finite operands with finite results,
+including subnormals. `(+ (* a b) c)` performs separate multiplication and
+addition. The exported scalar `fma` function takes three floats of the same type.
+An exact cancellation returns positive zero; a negative-zero product plus
+negative zero returns negative zero.[^fma]
+
+```lisp
+(trivial-simd:define-kernel rounded-multiply-add (a b c)
+  (trivial-simd:fma a b c))
+```
 
 ## Backends
 
@@ -56,16 +76,19 @@ Microseconds per call for `(+ (* a b) c)` on `single-float` vectors (Apple M1;
 | 1,024 | 2.6 | 38 | 0.35 | 0.40 | 0.68 | 7.8 |
 | 65,536 | 165 | 2,470 | 16 | 16 | 17 | 23 |
 
-- The native kernel matches two native bulk calls for a single fused
-  expression; the gain is avoiding intermediate arrays for longer expressions.
+- The native kernel matches two native bulk calls for `a*b+c`; the gain is avoiding intermediate arrays for longer expressions.
 - The Lisp kernel beats separate Lisp bulk calls by 10x or more.
 
 Slice keywords add roughly 35 ns per call.
 
 ## Limitations
 
-- Experimental; the operator set is `+ - * /`.[^ops] See the
-  [operators ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/36).
+- Experimental. `+`, `*`, `min`, and `max` with one operand return it unchanged.
+- NaNs, infinities, non-default rounding modes, and floating-point traps may
+  behave differently by backend. See the
+  [IEEE consistency ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/53).
+- Lisp and SBCL FMA use an exact integer fallback, applied per SIMD lane on
+  SBCL. See the [FMA performance ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/54).
 - A native program supports at most 65,536 simultaneous scratch slots; exceeding
   this limit signals an error when defining the kernel. See the
   [scratch addressing ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/50).
@@ -86,7 +109,6 @@ Slice keywords add roughly 35 ns per call.
     operand names a register (0-7) or an input vector; the last instruction
     writes to `destination` directly. Spill/reload instructions encode an opcode,
     a register, and a little-endian 16-bit scratch index.
-[^ops]: `+` and `*` with one operand return it unchanged.
 
 [^scratch]: Each scratch slot holds 256 elements: 1 KiB for `single-float` or
     2 KiB for `double-float`. Storage depends on peak live spills, not vector
@@ -97,4 +119,10 @@ Slice keywords add roughly 35 ns per call.
     nested expressions out of operator macro arguments during compilation. Each
     input pack is loaded once per iteration; temporary variables are reused after
     their values are consumed. Scalar loops and SIMD tails also load each input
-    element once per iteration.
+    element once per iteration and use flat assignments with reused typed
+    temporaries to bound generated compiler scopes.
+
+[^fma]: The portable helper aligns decoded integer significands, computes the
+    product and sum exactly, then rounds once to the vector precision. Native
+    ARM64 uses NEON FMA; SSE2 uses scalar `fma`/`fmaf` per lane. Rebuild the
+    native library after updating the kernel implementation.

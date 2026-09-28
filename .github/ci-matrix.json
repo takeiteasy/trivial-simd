@@ -1,7 +1,7 @@
 {
   "paths": {
     "docs": "^(docs/|.*\\.md$|LICENSE$|\\.hut\\.scfg$|\\.builds?/|\\.build\\.yml$|examples/)",
-    "focus": "^(native/|native\\.lisp$|CMakeLists\\.txt$|backends\\.lisp$|kernel\\.lisp$)"
+    "focus": "^(native/|native\\.lisp$|CMakeLists\\.txt$|backends\\.lisp$|kernel(-math)?\\.lisp$)"
   },
   "entries": [
     { "name": "SBCL / Linux", "os": "ubuntu-latest", "lisp": "sbcl-bin", "backend": "sbcl", "family": ["linux"], "tier": 1, "when": "any" },

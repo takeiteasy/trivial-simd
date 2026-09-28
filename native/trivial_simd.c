@@ -1,9 +1,10 @@
+#include <math.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
-#if defined(__aarch64__) || defined(_M_ARM64)
+#if !defined(TS_SCALAR) && (defined(__aarch64__) || defined(_M_ARM64))
 #include <arm_neon.h>
 #define TS_F32_WIDTH 4
 #define TS_F64_WIDTH 2
@@ -23,7 +24,17 @@
 #define TS_F64_MUL(a, b) vmulq_f64(a, b)
 #define TS_F32_DIV(a, b) vdivq_f32(a, b)
 #define TS_F64_DIV(a, b) vdivq_f64(a, b)
-#elif defined(__x86_64__) || defined(_M_X64)
+#define TS_F32_SQRT(a) vsqrtq_f32(a)
+#define TS_F64_SQRT(a) vsqrtq_f64(a)
+#define TS_F32_ABS(a) vabsq_f32(a)
+#define TS_F64_ABS(a) vabsq_f64(a)
+#define TS_F32_MIN(a, b) vbslq_f32(vcleq_f32(a, b), a, b)
+#define TS_F64_MIN(a, b) vbslq_f64(vcleq_f64(a, b), a, b)
+#define TS_F32_MAX(a, b) vbslq_f32(vcgeq_f32(a, b), a, b)
+#define TS_F64_MAX(a, b) vbslq_f64(vcgeq_f64(a, b), a, b)
+#define TS_F32_FMA(a, b, c) vfmaq_f32(c, a, b)
+#define TS_F64_FMA(a, b, c) vfmaq_f64(c, a, b)
+#elif !defined(TS_SCALAR) && (defined(__x86_64__) || defined(_M_X64))
 #include <emmintrin.h>
 #include <xmmintrin.h>
 #define TS_F32_WIDTH 4
@@ -44,6 +55,29 @@
 #define TS_F64_MUL(a, b) _mm_mul_pd(a, b)
 #define TS_F32_DIV(a, b) _mm_div_ps(a, b)
 #define TS_F64_DIV(a, b) _mm_div_pd(a, b)
+#define TS_F32_SQRT(a) _mm_sqrt_ps(a)
+#define TS_F64_SQRT(a) _mm_sqrt_pd(a)
+#define TS_F32_ABS(a) _mm_andnot_ps(_mm_set1_ps(-0.0f), a)
+#define TS_F64_ABS(a) _mm_andnot_pd(_mm_set1_pd(-0.0), a)
+#define TS_F32_MIN(a, b) _mm_min_ps(b, a)
+#define TS_F64_MIN(a, b) _mm_min_pd(b, a)
+#define TS_F32_MAX(a, b) _mm_max_ps(b, a)
+#define TS_F64_MAX(a, b) _mm_max_pd(b, a)
+/* TODO: SSE2 FMA is per-lane; select hardware FMA at runtime (#54). */
+static __m128 ts_fma_f32(__m128 a, __m128 b, __m128 c) {
+    float left[4], right[4], addend[4];
+    _mm_storeu_ps(left, a); _mm_storeu_ps(right, b); _mm_storeu_ps(addend, c);
+    for (size_t i = 0; i < 4; ++i) addend[i] = fmaf(left[i], right[i], addend[i]);
+    return _mm_loadu_ps(addend);
+}
+static __m128d ts_fma_f64(__m128d a, __m128d b, __m128d c) {
+    double left[2], right[2], addend[2];
+    _mm_storeu_pd(left, a); _mm_storeu_pd(right, b); _mm_storeu_pd(addend, c);
+    for (size_t i = 0; i < 2; ++i) addend[i] = fma(left[i], right[i], addend[i]);
+    return _mm_loadu_pd(addend);
+}
+#define TS_F32_FMA(a, b, c) ts_fma_f32(a, b, c)
+#define TS_F64_FMA(a, b, c) ts_fma_f64(a, b, c)
 #else
 #define TS_F32_WIDTH 1
 #define TS_F64_WIDTH 1
@@ -63,6 +97,16 @@
 #define TS_F64_MUL(a, b) ((a) * (b))
 #define TS_F32_DIV(a, b) ((a) / (b))
 #define TS_F64_DIV(a, b) ((a) / (b))
+#define TS_F32_SQRT(a) sqrtf(a)
+#define TS_F64_SQRT(a) sqrt(a)
+#define TS_F32_ABS(a) fabsf(a)
+#define TS_F64_ABS(a) fabs(a)
+#define TS_F32_MIN(a, b) ((a) <= (b) ? (a) : (b))
+#define TS_F64_MIN(a, b) ((a) <= (b) ? (a) : (b))
+#define TS_F32_MAX(a, b) ((a) >= (b) ? (a) : (b))
+#define TS_F64_MAX(a, b) ((a) >= (b) ? (a) : (b))
+#define TS_F32_FMA(a, b, c) fmaf(a, b, c)
+#define TS_F64_FMA(a, b, c) fma(a, b, c)
 #endif
 
 #define TS_BINARY(name, suffix, type, width, load, store, vector_op, scalar_op) \
@@ -114,7 +158,8 @@ TS_REDUCTIONS(f64, double, TS_F64_WIDTH, TS_F64_VECTOR, TS_F64_LOAD, TS_F64_STOR
 
 enum {
     TS_OP_COPY, TS_OP_CONSTANT, TS_OP_ADD, TS_OP_SUBTRACT,
-    TS_OP_MULTIPLY, TS_OP_DIVIDE, TS_OP_NEGATE, TS_OP_SPILL, TS_OP_RELOAD
+    TS_OP_MULTIPLY, TS_OP_DIVIDE, TS_OP_NEGATE, TS_OP_SPILL, TS_OP_RELOAD,
+    TS_OP_SQRT, TS_OP_ABS, TS_OP_MIN, TS_OP_MAX, TS_OP_FMA
 };
 
 #define TS_KERNEL_BLOCK 256
@@ -132,8 +177,10 @@ enum {
  * TS_KERNEL_REGISTERS is a register; otherwise it is input (operand - 8).
  * TS_OP_CONSTANT reads operand a as a constant index.
  * SPILL/RELOAD use a register and a little-endian 16-bit scratch index.
+ * FMA uses a register destination as its addend.
  */
-#define TS_KERNEL(suffix, type, width, load, store, zero, add, sub, mul, div) \
+#define TS_KERNEL(suffix, type, width, load, store, zero, add, sub, mul, div, \
+                  sqrtv, absv, minv, maxv, fmav, sqrts, abss, fmas) \
 int ts_kernel_##suffix(const uint8_t *code, size_t code_length, \
                         const type *constants, const type *const *inputs, \
                         type *out, size_t n, size_t scratch_count) { \
@@ -173,6 +220,32 @@ int ts_kernel_##suffix(const uint8_t *code, size_t code_length, \
             case TS_OP_SUBTRACT: TS_KERNEL_LOOP(width, load, store, sub, -); break; \
             case TS_OP_MULTIPLY: TS_KERNEL_LOOP(width, load, store, mul, *); break; \
             case TS_OP_DIVIDE: TS_KERNEL_LOOP(width, load, store, div, /); break; \
+            case TS_OP_SQRT: \
+                for (size_t j = 0; j < m; ++j) { \
+                    if (left[j] < 0) { free(scratch); return -2; } \
+                } \
+                for (; i + width <= m; i += width) store(destination + i, sqrtv(load(left + i))); \
+                for (; i < m; ++i) destination[i] = sqrts(left[i]); \
+                break; \
+            case TS_OP_ABS: \
+                for (; i + width <= m; i += width) store(destination + i, absv(load(left + i))); \
+                for (; i < m; ++i) destination[i] = abss(left[i]); \
+                break; \
+            case TS_OP_MIN: \
+                for (; i + width <= m; i += width) \
+                    store(destination + i, minv(load(left + i), load(right + i))); \
+                for (; i < m; ++i) destination[i] = left[i] <= right[i] ? left[i] : right[i]; \
+                break; \
+            case TS_OP_MAX: \
+                for (; i + width <= m; i += width) \
+                    store(destination + i, maxv(load(left + i), load(right + i))); \
+                for (; i < m; ++i) destination[i] = left[i] >= right[i] ? left[i] : right[i]; \
+                break; \
+            case TS_OP_FMA: \
+                for (; i + width <= m; i += width) \
+                    store(destination + i, fmav(load(left + i), load(right + i), load(destination + i))); \
+                for (; i < m; ++i) destination[i] = fmas(left[i], right[i], destination[i]); \
+                break; \
             case TS_OP_NEGATE: \
                 for (; i + width <= m; i += width) \
                     store(destination + i, sub(zero(), load(left + i))); \
@@ -186,6 +259,8 @@ int ts_kernel_##suffix(const uint8_t *code, size_t code_length, \
 }
 
 TS_KERNEL(f32, float, TS_F32_WIDTH, TS_F32_LOAD, TS_F32_STORE, TS_F32_ZERO,
-          TS_F32_ADD, TS_F32_SUB, TS_F32_MUL, TS_F32_DIV)
+          TS_F32_ADD, TS_F32_SUB, TS_F32_MUL, TS_F32_DIV,
+          TS_F32_SQRT, TS_F32_ABS, TS_F32_MIN, TS_F32_MAX, TS_F32_FMA, sqrtf, fabsf, fmaf)
 TS_KERNEL(f64, double, TS_F64_WIDTH, TS_F64_LOAD, TS_F64_STORE, TS_F64_ZERO,
-          TS_F64_ADD, TS_F64_SUB, TS_F64_MUL, TS_F64_DIV)
+          TS_F64_ADD, TS_F64_SUB, TS_F64_MUL, TS_F64_DIV,
+          TS_F64_SQRT, TS_F64_ABS, TS_F64_MIN, TS_F64_MAX, TS_F64_FMA, sqrt, fabs, fma)

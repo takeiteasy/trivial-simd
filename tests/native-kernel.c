@@ -62,8 +62,58 @@ static void check_##suffix(void) { \
 CHECK_KERNEL(f32, float)
 CHECK_KERNEL(f64, double)
 
+#define CHECK_MATH(suffix, type, epsilon, root, absolute, fused) \
+static void check_math_##suffix(void) { \
+    type a[600], b[600], c[600], out[600]; \
+    const type *inputs[] = {a, b, c}; \
+    uint8_t sqrt_code[] = {TS_OP_SQRT, TS_KERNEL_OUTPUT, 8, 0}; \
+    uint8_t abs_code[] = {TS_OP_ABS, TS_KERNEL_OUTPUT, 8, 0}; \
+    uint8_t min_code[] = {TS_OP_MIN, TS_KERNEL_OUTPUT, 8, 9}; \
+    uint8_t max_code[] = {TS_OP_MAX, TS_KERNEL_OUTPUT, 8, 9}; \
+    uint8_t fma_code[] = {TS_OP_COPY, 0, 10, 0, TS_OP_FMA, 0, 8, 9, \
+                          TS_OP_COPY, TS_KERNEL_OUTPUT, 0, 0}; \
+    size_t lengths[] = {0, 1, 3, 4, 5, 255, 256, 257, 600}; \
+    for (size_t i = 0; i < 600; ++i) { a[i] = (type)(i + 1); b[i] = 42; c[i] = -3; } \
+    for (size_t l = 0; l < sizeof(lengths) / sizeof(lengths[0]); ++l) { \
+        size_t n = lengths[l]; \
+        assert(ts_kernel_##suffix(sqrt_code, sizeof(sqrt_code), NULL, inputs, out, n, 0) == 0); \
+        for (size_t i = 0; i < n; ++i) assert(out[i] == root(a[i])); \
+        assert(ts_kernel_##suffix(min_code, sizeof(min_code), NULL, inputs, out, n, 0) == 0); \
+        for (size_t i = 0; i < n; ++i) assert(out[i] == (a[i] <= b[i] ? a[i] : b[i])); \
+        assert(ts_kernel_##suffix(max_code, sizeof(max_code), NULL, inputs, out, n, 0) == 0); \
+        for (size_t i = 0; i < n; ++i) assert(out[i] == (a[i] >= b[i] ? a[i] : b[i])); \
+        assert(ts_kernel_##suffix(fma_code, sizeof(fma_code), NULL, inputs, out, n, 0) == 0); \
+        for (size_t i = 0; i < n; ++i) assert(out[i] == fused(a[i], b[i], c[i])); \
+    } \
+    for (size_t i = 0; i < 600; ++i) a[i] = -(type)i; \
+    assert(ts_kernel_##suffix(abs_code, sizeof(abs_code), NULL, inputs, out, 600, 0) == 0); \
+    for (size_t i = 0; i < 600; ++i) assert(out[i] == absolute(a[i]) && !signbit(out[i])); \
+    for (size_t i = 0; i < 600; ++i) { a[i] = (type)(1 + epsilon); b[i] = (type)(1 - epsilon); c[i] = -1; } \
+    assert(ts_kernel_##suffix(fma_code, sizeof(fma_code), NULL, inputs, out, 600, 0) == 0); \
+    for (size_t i = 0; i < 600; ++i) assert(out[i] == -(type)(epsilon * epsilon)); \
+    for (size_t i = 0; i < 600; ++i) { a[i] = -(type)0.0; b[i] = 0; c[i] = -(type)0.0; } \
+    assert(ts_kernel_##suffix(sqrt_code, sizeof(sqrt_code), NULL, inputs, out, 600, 0) == 0); \
+    for (size_t i = 0; i < 600; ++i) assert(signbit(out[i])); \
+    assert(ts_kernel_##suffix(min_code, sizeof(min_code), NULL, inputs, out, 600, 0) == 0); \
+    for (size_t i = 0; i < 600; ++i) assert(signbit(out[i])); \
+    assert(ts_kernel_##suffix(max_code, sizeof(max_code), NULL, inputs, out, 600, 0) == 0); \
+    for (size_t i = 0; i < 600; ++i) assert(signbit(out[i])); \
+    size_t errors[] = {0, 3, 256, 599}; \
+    for (size_t e = 0; e < sizeof(errors) / sizeof(errors[0]); ++e) { \
+        a[errors[e]] = -1; \
+        assert(ts_kernel_##suffix(sqrt_code, sizeof(sqrt_code), NULL, inputs, out, 600, 1) == -2); \
+        assert(allocations == releases); \
+        a[errors[e]] = 0; \
+    } \
+}
+
+CHECK_MATH(f32, float, 0x1p-23f, sqrtf, fabsf, fmaf)
+CHECK_MATH(f64, double, 0x1p-52, sqrt, fabs, fma)
+
 int main(void) {
     check_f32();
     check_f64();
+    check_math_f32();
+    check_math_f64();
     return 0;
 }

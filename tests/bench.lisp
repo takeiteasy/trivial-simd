@@ -24,7 +24,9 @@
                   (/ (* 1000000.0 (- (get-internal-real-time) start))
                      internal-time-units-per-second iterations)))))))
 
-(trivial-simd:define-kernel fused-multiply-add (a b c) (+ (* a b) c))
+(trivial-simd:define-kernel multiply-add (a b c) (+ (* a b) c))
+
+(trivial-simd:define-kernel rounded-multiply-add (a b c) (trivial-simd:fma a b c))
 
 (format t "~%Kernel a*b+c~%")
 (dolist (length '(32 1024 65536))
@@ -45,7 +47,9 @@
                                (when trivial-simd::*sbcl-simd-available-p* '(:sbcl))))
         (let ((trivial-simd::*backend* backend))
           (time-call (format nil "~A kernel" backend)
-                  (lambda () (fused-multiply-add out a b c)))
+                  (lambda () (multiply-add out a b c)))
+          (time-call (format nil "~A true FMA" backend)
+                     (lambda () (rounded-multiply-add out a b c)))
           (time-call (format nil "~A two ops" backend)
                   (lambda ()
                     (trivial-simd:multiply! out a b)

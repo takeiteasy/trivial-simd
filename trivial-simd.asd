@@ -7,6 +7,7 @@
   :serial t
   :components ((:file "package")
                (:file "native")
+               (:file "kernel-math")
                (:file "backends")
                (:file "operations")
                (:file "kernel"))

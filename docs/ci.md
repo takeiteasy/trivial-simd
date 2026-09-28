@@ -56,6 +56,6 @@ Private repositories bill macOS minutes at about ten times and Windows at about
 twice the Linux rate; public repositories use standard runners for free.[^cost]
 
 [^focus]: Paths matching `native/`, `native.lisp`, `backends.lisp`,
-    `kernel.lisp`, or `CMakeLists.txt`. The path lists are in the `paths`
+    `kernel.lisp`, `kernel-math.lisp`, or `CMakeLists.txt`. The path lists are in the `paths`
     section of the matrix file.
 [^cost]: GitHub's current rates are in its Actions billing documentation.
