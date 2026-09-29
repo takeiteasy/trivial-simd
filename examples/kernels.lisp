@@ -23,6 +23,14 @@
   (assert (every (lambda (value) (= value 512.0)) out)))
 
 (trivial-simd:define-kernel rounded-multiply-add (a b c) (trivial-simd:fma a b c))
+(dolist (type '(single-float double-float))
+  (let* ((epsilon (coerce (if (eq type 'single-float) (expt 2 -23) (expt 2 -52)) type))
+         (a (make-array 3 :element-type type :initial-element (+ (coerce 1 type) epsilon)))
+         (b (make-array 3 :element-type type :initial-element (- (coerce 1 type) epsilon)))
+         (c (make-array 3 :element-type type :initial-element (coerce -1 type)))
+         (out (make-array 3 :element-type type)))
+    (rounded-multiply-add out a b c)
+    (assert (every (lambda (value) (= value (- (* epsilon epsilon)))) out))))
 (trivial-simd:define-kernel magnitude-root (a) (sqrt (abs a)))
 
 (let* ((a (make-array 5 :element-type 'single-float :initial-element -4.0))

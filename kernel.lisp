@@ -180,7 +180,7 @@ SPILL/RELOAD use a register and slot; other operands name registers or inputs."
 (defun kernel-element-type (type)
   (ecase type (:f32 'single-float) (:f64 'double-float)))
 
-(defun scalar-kernel-form (node type arguments offsets index)
+(defun scalar-kernel-form (node type arguments offsets index &optional (fma-operator 'fma))
   (let ((element (kernel-element-type type))
         (inputs (loop for nil in arguments collect (gensym "ELEMENT")))
         (temporaries '()) (free '()) (assignments '()))
@@ -202,7 +202,7 @@ SPILL/RELOAD use a register and slot; other operands name registers or inputs."
                  (:negate (operation '- (list (walk (second node)))))
                  (:unary (operation (if (eq (second node) :sqrt) 'kernel-sqrt 'abs)
                                     (list (walk (third node)))))
-                 (:fma (operation 'fma (mapcar #'walk (rest node))))
+                 (:fma (operation fma-operator (mapcar #'walk (rest node))))
                  (:operation
                   (operation (case (second node)
                                (:min 'kernel-min) (:max 'kernel-max)
@@ -217,7 +217,8 @@ SPILL/RELOAD use a register and slot; other operands name registers or inputs."
              ,@(nreverse assignments)
              ,result))))))
 
-(defun lisp-kernel-form (tree type destination arguments d-offset offsets count)
+(defun lisp-kernel-form (tree type destination arguments d-offset offsets count
+                       &optional (fma-operator 'fma))
   (let ((index (gensym "I")) (sum (gensym "SUM"))
         (element (kernel-element-type type))
         (variables (if destination (cons destination arguments) arguments)))
@@ -227,11 +228,22 @@ SPILL/RELOAD use a register and slot; other operands name registers or inputs."
        ,(if destination
             `(dotimes (,index ,count)
                (setf (aref ,destination (+ ,d-offset ,index))
-                     ,(scalar-kernel-form tree type arguments offsets index)))
+                     ,(scalar-kernel-form tree type arguments offsets index fma-operator)))
             `(let ((,sum ,(coerce 0 element)))
                (declare (type ,element ,sum))
                (dotimes (,index ,count ,sum)
-                 (incf ,sum ,(scalar-kernel-form tree type arguments offsets index))))))))
+                 (incf ,sum ,(scalar-kernel-form tree type arguments offsets index fma-operator))))))))
+
+(defun selected-lisp-kernel-form (tree type destination arguments d-offset offsets count)
+  (let ((fallback (lisp-kernel-form tree type destination arguments d-offset offsets count)))
+    (labels ((fma-p (node)
+               (and (consp node) (or (eq (first node) :fma) (some #'fma-p node)))))
+      (if (and *arm64-fma-compiler-p* (fma-p tree))
+          `(if (arm64-fma-enabled-p ',(kernel-element-type type))
+               ,(lisp-kernel-form tree type destination arguments d-offset offsets count
+                                  (ecase type (:f32 'arm64-fma-f32) (:f64 'arm64-fma-f64)))
+               ,fallback)
+          fallback))))
 
 #+(and sbcl x86-64)
 (defun sbcl-kernel-form (tree type destination arguments d-offset offsets count)
@@ -441,8 +453,8 @@ Both accept START, END, and per-input start keywords. Experimental."
                    (declare (type fixnum ,@all-offsets))
                    (ecase *backend*
                      (:lisp (if (eq ,type :f32)
-                                ,(lisp-kernel-form tree :f32 destination arguments d-offset offsets count)
-                                ,(lisp-kernel-form tree :f64 destination arguments d-offset offsets count)))
+                                ,(selected-lisp-kernel-form tree :f32 destination arguments d-offset offsets count)
+                                ,(selected-lisp-kernel-form tree :f64 destination arguments d-offset offsets count)))
                      (:sbcl
                       ,(if (and (boundp '*sbcl-simd-available-p*) *sbcl-simd-available-p*)
                            #+(and sbcl x86-64)

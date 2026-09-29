@@ -42,9 +42,10 @@ system loads with its Lisp backend. Set `TRIVIAL_SIMD_BACKEND` to `auto`
 (default), `lisp`, `native`, or `sbcl` before starting Lisp to select a backend;
 requesting an unavailable backend signals an error.
 
-Scalar FMA uses optional correctly rounded native helpers when SBCL hardware
-FMA is unavailable. Loading without the native library retains exact portable
-FMA. A library built without those helpers also retains the portable path.
+Scalar FMA uses guarded SBCL x86 hardware instructions and
+[ARM64 compiler adapters](arm64-fma.md). These paths work without the native
+library. Other configurations use optional correctly rounded native helpers,
+then exact portable arithmetic when the helpers are absent.
 
 ## Limitations
 

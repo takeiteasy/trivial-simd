@@ -66,6 +66,8 @@ its exact portable fallback. `(+ (* a b) c)` performs separate multiplication an
 addition. The exported scalar `fma` function takes three floats of the same type.
 An exact cancellation returns positive zero; a negative-zero product plus
 negative zero returns negative zero.[^fma]
+ARM64 Lisp kernels use [in-process scalar FMA](arm64-fma.md) without requiring
+the native library.
 
 ```lisp
 (trivial-simd:define-kernel rounded-multiply-add (a b c)
@@ -112,9 +114,8 @@ for measurements and [FMA fallback limitations](#limitations).
 - NaNs, infinities, non-default rounding modes, and floating-point traps may
   behave differently by backend. See the
   [IEEE consistency ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/53).
-- ARM64 Lisp FMA uses scalar foreign calls when the native library is available;
-  otherwise it uses exact integer arithmetic. In-process scalar acceleration is
-  tracked by the [ARM64 FMA ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/60).
+- ARM64 scalar FMA uses guarded compiler versions; other versions use optional
+  C helpers or exact arithmetic. See [ARM64 FMA limitations](arm64-fma.md#limitations).
 - A native program supports at most 65,536 simultaneous scratch slots; exceeding
   this limit signals an error when defining the kernel. See the
   [scratch addressing ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/50).
@@ -159,8 +160,8 @@ for measurements and [FMA fallback limitations](#limitations).
     product and sum exactly, then rounds once to the vector precision. Native
     ARM64 uses NEON FMA. Native x86 selects packed FMA when the CPU and OS
     support it, retaining per-lane `fma`/`fmaf` otherwise. SBCL x86 selects
-    scalar and packed `sb-simd` FMA with an OS AVX-state guard. Other scalar
-    paths use optional native helpers or exact integer arithmetic. Rebuild the
+    scalar and packed `sb-simd` FMA with an OS AVX-state guard. ARM64 Lisp uses guarded scalar compiler
+    adapters. Other scalar paths use optional native helpers or exact integer arithmetic. Rebuild the
     native library after updating the kernel implementation.
 
 [^sum]: Lisp sums elements in order; SBCL accumulates SIMD lanes before adding

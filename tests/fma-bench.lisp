@@ -22,6 +22,13 @@
   (load-benchmark-system))
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
+  (let ((baseline (uiop:getenv "TRIVIAL_SIMD_FMA_BASELINE")))
+    (when baseline
+      (load (compile-file baseline :output-file
+                          (compile-file-pathname
+                           (merge-pathnames "fma-baseline.lisp" (uiop:temporary-directory))))))))
+
+(eval-when (:compile-toplevel :load-toplevel :execute)
   (load #.(merge-pathnames "benchmark-timing.lisp"
                           (uiop:pathname-directory-pathname
                            (or *compile-file-truename* *load-truename*)))))
@@ -35,6 +42,9 @@
         (lisp-implementation-version) (machine-type)
         (asdf:system-source-directory "trivial-simd"))
 (format t "Hardware FMA: ~S~%" (trivial-simd::hardware-fma-available-p))
+(format t "ARM64 in-process FMA: ~S~%" trivial-simd::*arm64-fma-available-p*)
+(when (uiop:getenv "TRIVIAL_SIMD_FMA_BASELINE")
+  (format t "Baseline scalar FMA: ~A~%" (uiop:getenv "TRIVIAL_SIMD_FMA_BASELINE")))
 (format t "Type Elements Backend FMA-mode Kernel-us Sum-us~%")
 (dolist (type '(single-float double-float))
   (dolist (count '(32 1024 65536))
@@ -43,10 +53,17 @@
           (c (make-array count :element-type type :initial-element (coerce -0.5 type)))
           (out (make-array count :element-type type)))
       (dolist (backend (append '(:lisp)
-                               (when trivial-simd::*sbcl-simd-available-p* '(:sbcl))
-                               (when trivial-simd::*native-available-p* '(:native))))
-        (dolist (mode (if (eq backend :native) '(:auto) '(:portable :native :auto)))
-          (let ((trivial-simd::*backend* backend) (trivial-simd::*fma-mode* mode))
+                               (unless (uiop:getenv "TRIVIAL_SIMD_FMA_GATE_ONLY")
+                                 (append (when trivial-simd::*sbcl-simd-available-p* '(:sbcl))
+                                         (when trivial-simd::*native-available-p* '(:native))))))
+        (dolist (mode (if (eq backend :native) '(:auto)
+                         (append (if (uiop:getenv "TRIVIAL_SIMD_FMA_GATE_ONLY") '(:auto)
+                                     '(:portable :native :auto))
+                                 (when trivial-simd::*arm64-fma-available-p* '(:in-process)))))
+          (let ((trivial-simd::*backend* backend) (trivial-simd::*fma-mode* mode)
+                (trivial-simd::*arm64-fma-auto-types*
+                  (unless (uiop:getenv "TRIVIAL_SIMD_FMA_BASELINE")
+                    trivial-simd::*arm64-fma-auto-types*)))
             (profile-fma out a b c)
             (unless (and (every (lambda (v) (= v 2.625)) out)
                          (= (profile-fma-sum a b c) (* count 2.625)))

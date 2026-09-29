@@ -25,31 +25,12 @@ storage measurements.
 
 ## True FMA
 
-`(trivial-simd:fma a b c)` guarantees one rounding step. SBCL x86 uses guarded
-scalar and packed FMA instructions. Scalar Lisp kernels use bundled C helpers
-when available; the exact integer implementation remains the fallback.
-Native ARM64 uses NEON FMA; native x86 selects hardware FMA at runtime.
-See [kernel limitations](kernels.md#limitations) for remaining scalar-call costs.
-
-Representative warmed elementwise Lisp kernel timings on Apple M1, in
-microseconds per call. SBCL is 2.6.8, CCL is 1.13, and ECL is 26.5.5.
-Both complete runs use calibrated medians; the C helper wins at small and large
-sizes in both precisions. See [FMA profiling](testing.md#fma-profiling).
-
-| Lisp | Type | Elements | Exact fallback | C helper |
-|---|---|---:|---:|---:|
-| SBCL | single-float | 32 | 6.45 | 2.80 |
-| SBCL | single-float | 65,536 | 13,123.50 | 5,768.75 |
-| SBCL | double-float | 32 | 8.52 | 3.04 |
-| SBCL | double-float | 65,536 | 17,924.50 | 6,039.94 |
-| CCL | single-float | 32 | 194.22 | 3.70 |
-| CCL | single-float | 65,536 | 399,568.00 | 7,164.88 |
-| CCL | double-float | 32 | 219.53 | 4.15 |
-| CCL | double-float | 65,536 | 456,420.00 | 7,894.38 |
-| ECL | single-float | 32 | 43.66 | 21.67 |
-| ECL | single-float | 65,536 | 90,330.00 | 43,076.50 |
-| ECL | double-float | 32 | 45.01 | 21.35 |
-| ECL | double-float | 65,536 | 87,696.00 | 40,339.00 |
+`(trivial-simd:fma a b c)` guarantees one rounding step. ARM64 Lisp kernels use
+in-process scalar FMA on guarded SBCL, CCL, and ECL versions. See
+[ARM64 FMA](arm64-fma.md) for compiler support, the five-process performance gate,
+and complete elementwise and sum measurements. Unsupported versions use optional
+scalar C helpers or exact integer arithmetic. SBCL x86 uses guarded scalar and
+packed FMA; native ARM64 uses NEON and native x86 selects hardware FMA at runtime.
 
 Native x86-64 Linux profiling compares identical FMA bytecode with per-lane
 `fma`/`fmaf` and runtime-selected packed hardware FMA. Both repeated trials

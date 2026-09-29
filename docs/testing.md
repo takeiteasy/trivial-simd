@@ -200,10 +200,11 @@ ecl --norc --eval '(load (compile-file "tests/slice-bench.lisp" :output-file "/t
 
 ## FMA profiling
 
-`tests/fma-bench.lisp` compares exact portable FMA, scalar C helpers, and automatic
+`tests/fma-bench.lisp` compares exact portable FMA, scalar C helpers, in-process ARM64 FMA, and automatic
 selection for elementwise and sum kernels, in both precisions at 32, 1,024,
 and 65,536 elements. Correctness checks precede warmed calibrated medians.
-`Hardware FMA` reports guarded x86 availability; ARM64 native kernels use NEON.
+`Hardware FMA` reports guarded hardware availability; ARM64 native kernels use NEON.
+The profile also reports ARM64 adapter availability.
 
 ```sh
 sbcl --script tests/fma-bench.lisp
@@ -222,3 +223,9 @@ The manual **FMA profile** GitHub workflow runs native and Lisp checks, then two
 measurement trials on x86-64 Linux for SBCL, CCL, and ECL. The runner exits
 with a failure status on Lisp errors. Benchmarks remain
 outside the normal test suite.
+
+For an isolated ARM64 gate comparison, set `TRIVIAL_SIMD_FMA_GATE_ONLY=1`.
+Set `TRIVIAL_SIMD_FMA_BASELINE` to a baseline `kernel-math.lisp` source file to
+compile and load its scalar helper before profiling. Baseline `:auto` disables
+the new adapter; `:in-process` uses the candidate loop. Run five fresh processes
+for each Lisp. See [ARM64 FMA measurements](arm64-fma.md#performance-gate).

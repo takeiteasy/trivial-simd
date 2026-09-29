@@ -8,6 +8,7 @@
   :components ((:file "package")
                (:file "native")
                (:file "kernel-math")
+               (:file "kernel-fma-arm64")
                (:file "backends")
                (:file "operations")
                (:file "kernel"))

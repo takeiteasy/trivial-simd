@@ -39,6 +39,7 @@
                   (if (minusp exact) (- result) result)))))))))
 
 (defvar *fma-mode* :auto)
+(defvar *arm64-fma-available-p* nil)
 (defvar *sbcl-fma-available-p* nil)
 (defvar *sbcl-fma-f32* nil)
 (defvar *sbcl-fma-f64* nil)
@@ -69,7 +70,7 @@
   (pushnew 'refresh-sbcl-fma sb-ext:*init-hooks*))
 
 (defun hardware-fma-available-p ()
-  (or *sbcl-fma-available-p*
+  (or *arm64-fma-available-p* *sbcl-fma-available-p*
       (and *native-fma-available-p* (plusp (%native-fma-supported)))))
 
 (defun sbcl-fma-enabled-p ()
@@ -81,9 +82,12 @@
          (type (if single 'single-float 'double-float)))
     (unless (and (typep a type) (typep b type) (typep c type))
       (error "FMA needs three floats of the same type"))
-    (cond ((sbcl-fma-enabled-p)
+    (cond
+          #+(or (and sbcl arm64) (and ccl arm64-target) (and ecl aarch64))
+          ((and *arm64-fma-available-p* (arm64-fma-enabled-p type))
+           (if single (arm64-fma-f32 a b c) (arm64-fma-f64 a b c)))
+          ((sbcl-fma-enabled-p)
            (funcall (if single *sbcl-fma-f32* *sbcl-fma-f64*) a b c))
-          ;; TODO: per-element foreign calls limit ARM64 Lisp FMA; use in-process primitives (#60).
           ((and (member *fma-mode* '(:auto :native)) *native-fma-available-p*)
            (if single (%native-fma-f32 a b c) (%native-fma-f64 a b c)))
           (t (portable-fma a b c)))))
