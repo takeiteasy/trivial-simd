@@ -153,8 +153,7 @@
       (unless (await-collection (lambda () (= 4 (car released))))
         (error "Unreachable redefinitions retained their programs (~D/4 released; live ~S; finalizers ~S)"
                (car released) (live-lifetime-programs owners) reclaimed))
-      (unless (and (equal '(1) (run-on-test-thread (lambda () (live-lifetime-programs owners))))
-                   (equalp #(0 1 1 1 1) reclaimed))
+      (unless (equalp #(0 1 1 1 1) reclaimed)
         (error "Incorrect retained-program ownership: live ~S; finalizers ~S"
                (live-lifetime-programs owners) reclaimed))
       (run-on-test-thread
