@@ -285,6 +285,36 @@ CHECK_INTEGER(u32, uint32_t, UINT32_MAX, 0)
 CHECK_INTEGER(s64, uint64_t, UINT64_MAX, UINT64_C(0x8000000000000000))
 CHECK_INTEGER(u64, uint64_t, UINT64_MAX, 0)
 
+static void check_integer_mul_add_64(void) {
+    uint8_t code[] = {TS_OP_MULTIPLY, 0, 8, 9,
+                      TS_OP_CONSTANT, 1, 0, 0,
+                      TS_OP_ADD, TS_KERNEL_OUTPUT, 0, 1};
+    uint64_t constants[] = {UINT64_MAX};
+    uint64_t a[258], b[257], out[257];
+    const uint64_t *inputs[] = {a, b};
+    for (size_t i = 0; i < 257; ++i) {
+        a[i] = UINT64_MAX - i;
+        b[i] = i + 2;
+    }
+    a[257] = 17;
+    assert(ts_mul_add_constant_pattern(code, sizeof(code)));
+    assert(ts_kernel_u64(code, sizeof(code), constants, inputs, out, 257, 0) == 0);
+    for (size_t i = 0; i < 257; ++i)
+        assert(out[i] == a[i] * b[i] + constants[0]);
+    assert(ts_kernel_s64(code, sizeof(code), constants, inputs, out, 257, 0) == 0);
+    for (size_t i = 0; i < 257; ++i)
+        assert(out[i] == a[i] * b[i] + constants[0]);
+    assert(ts_kernel_u64(code, sizeof(code), constants, inputs, a, 257, 0) == 0);
+    for (size_t i = 0; i < 257; ++i)
+        assert(a[i] == (UINT64_MAX - i) * b[i] + constants[0]);
+    for (size_t i = 0; i < 257; ++i) a[i] = UINT64_MAX - i;
+    assert(ts_kernel_u64(code, sizeof(code), constants, inputs, a + 1, 257, 0) == 0);
+    assert(a[1] == UINT64_MAX * b[0] + constants[0]);
+    assert(a[257] == a[256] * b[256] + constants[0]);
+    code[4] = TS_OP_COPY;
+    assert(!ts_mul_add_constant_pattern(code, sizeof(code)));
+}
+
 int main(void) {
     check_integer_s8();
     check_integer_u8();
@@ -294,6 +324,7 @@ int main(void) {
     check_integer_u32();
     check_integer_s64();
     check_integer_u64();
+    check_integer_mul_add_64();
     check_scalar_fma();
     check_f32();
     check_f64();

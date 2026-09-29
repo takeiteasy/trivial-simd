@@ -54,7 +54,22 @@ TS_INTEGER_VECTOR(u64, uint64_t)
 #endif
 #undef TS_INTEGER_VECTOR
 
-/* TODO: 64-bit kernel passes trail typed Lisp at large sizes; fuse VM passes (#66). */
+static int ts_mul_add_constant_pattern(const uint8_t *code, size_t length) {
+    return length == 12 && code[0] == TS_OP_MULTIPLY &&
+           code[1] < TS_KERNEL_REGISTERS &&
+           code[2] >= TS_KERNEL_REGISTERS && code[3] >= TS_KERNEL_REGISTERS &&
+           code[4] == TS_OP_CONSTANT && code[5] < TS_KERNEL_REGISTERS &&
+           code[5] != code[1] && code[8] == TS_OP_ADD &&
+           code[9] == TS_KERNEL_OUTPUT &&
+           ((code[10] == code[1] && code[11] == code[5]) ||
+            (code[10] == code[5] && code[11] == code[1]));
+}
+
+static int ts_partial_overlap(const void *out, const void *input, size_t bytes) {
+    uintptr_t a = (uintptr_t)out, b = (uintptr_t)input;
+    return a != b && (a > b ? a - b : b - a) < bytes;
+}
+
 #define TS_INTEGER(suffix, type, bits, signedp, vector) \
 static type ts_value_##suffix(unsigned op, type a, type b) { \
     const uint64_t sign = UINT64_C(1) << (bits - 1); \
@@ -122,6 +137,18 @@ static int ts_integer_kernel_##suffix(const uint8_t *code, size_t code_length, \
                   const type *constants, const type *const *inputs, type *out, size_t n, \
                   size_t scratch_count, int sum) { \
     if (!n) { if (sum) *out = 0; return 0; } \
+    if (bits == 64 && !sum && !scratch_count && n <= SIZE_MAX / sizeof(type) && \
+        ts_mul_add_constant_pattern(code, code_length)) { \
+        const type *a = inputs[code[2] - TS_KERNEL_REGISTERS]; \
+        const type *b = inputs[code[3] - TS_KERNEL_REGISTERS]; \
+        size_t bytes = n * sizeof(type); \
+        if (!ts_partial_overlap(out, a, bytes) && !ts_partial_overlap(out, b, bytes)) { \
+            type constant = constants[code[6]]; \
+            for (size_t i = 0; i < n; ++i) \
+                out[i] = (type)((uint64_t)a[i] * b[i] + constant); \
+            return 0; \
+        } \
+    } \
     if (scratch_count > SIZE_MAX / TS_KERNEL_BLOCK / sizeof(type)) return -1; \
     type *scratch = scratch_count ? malloc(scratch_count * TS_KERNEL_BLOCK * sizeof(type)) : NULL; \
     if (scratch_count && !scratch) return -1; \

@@ -54,6 +54,8 @@ in-place rules match the [bulk API](api.md#slices).
 The native backend uses scalar integer operations on other architectures.
 Copy mode supports all eight types. Integer division runs lane by lane on all
 backends. These fallback paths preserve the same wrapping results.[^reduction]
+Native 64-bit kernels evaluate `(+ (* a b) constant)` in one pass when the
+destination is disjoint from the inputs or uses the same range.
 
 ## Performance
 
@@ -62,20 +64,21 @@ per call, measured with three calibrated batches; values are the median of three
 
 | Type | Elements | Lisp add | Native add | Lisp dot | Native dot | Lisp kernel | Native kernel |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| signed 8-bit | 32 | 0.551 | 0.104 | 0.602 | 0.075 | 0.242 | 0.248 |
-| signed 8-bit | 1,024 | 14.827 | 0.129 | 15.544 | 0.133 | 2.170 | 0.332 |
-| signed 8-bit | 65,536 | 925.938 | 1.731 | 990.906 | 3.925 | 133.824 | 6.283 |
-| unsigned 64-bit | 32 | 0.556 | 0.144 | 0.588 | 0.124 | 0.334 | 0.416 |
-| unsigned 64-bit | 1,024 | 14.996 | 0.361 | 14.823 | 0.432 | 2.095 | 2.743 |
-| unsigned 64-bit | 65,536 | 926.250 | 16.457 | 848.586 | 20.710 | 116.881 | 155.270 |
+| signed 8-bit | 32 | 0.565 | 0.110 | 0.570 | 0.077 | 0.252 | 0.253 |
+| signed 8-bit | 1,024 | 15.236 | 0.134 | 18.271 | 0.134 | 2.261 | 0.342 |
+| signed 8-bit | 65,536 | 960.313 | 1.787 | 1039.859 | 4.063 | 132.750 | 6.535 |
+| unsigned 64-bit | 32 | 0.571 | 0.149 | 0.615 | 0.128 | 0.346 | 0.364 |
+| unsigned 64-bit | 1,024 | 15.545 | 0.376 | 13.364 | 0.447 | 2.168 | 0.704 |
+| unsigned 64-bit | 65,536 | 960.594 | 17.195 | 771.172 | 21.414 | 121.150 | 22.747 |
 
 ## Limitations
 
 The SBCL ARM64 backend is tracked separately; ARM64 currently uses native C
 or Lisp. See [the ARM64 SBCL ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/31).
 
-Large unsigned 64-bit native kernels can trail compiled Lisp kernels; see the
-[native kernel performance ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/66).
+Shifted overlap between an integer kernel's destination and input can produce
+backend-dependent results; see the
+[overlap semantics ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/67).
 
 [^dispatch]: A kernel can serve floats and integers. Type-dependent validation
     happens at call time, including for empty vectors. An integer type rejects
@@ -85,6 +88,7 @@ Large unsigned 64-bit native kernels can trail compiled Lisp kernels; see the
 
 [^benchmark]: Arrays contain 7 and 3. The benchmark calibrates each timed
     batch to at least 50 ms, repeats it three times, and retains the last result.
-    Two earlier independent runs showed the same performance ordering. The
-    [raw run](benchmark-runs/2026-09-29-integers-sbcl.txt) and
+    Two other post-change runs showed the same performance ordering. The
+    [raw run](benchmark-runs/2026-09-29-integers-sbcl-66.txt),
+    [pre-optimization run](benchmark-runs/2026-09-29-integers-sbcl.txt), and
     [benchmark script](../tests/integer-bench.lisp) are available for reproduction.
