@@ -414,7 +414,9 @@ SPILL/RELOAD use a register and slot; other operands name registers or inputs."
                                    ,output ,count)
               `(cffi:with-foreign-object (,output ,foreign)
                  (call-native-kernel ,program ,foreign ,table ,output ,count :sum-p t)
-                 (cffi:mem-ref ,output ,foreign)))))))
+                 ,(if (integer-type-p (first (find foreign *numeric-types* :key #'third)))
+                      `(native-integer-result ,output ,foreign)
+                      `(cffi:mem-ref ,output ,foreign))))))))
 
 #+ecl
 (declaim (notinline compile-native-kernel-runner))

@@ -105,6 +105,13 @@
     (-3 (error 'division-by-zero :operation 'truncate :operands nil))
     (otherwise (error "Unable to allocate native integer kernel scratch storage"))))
 
+(defmacro native-integer-result (pointer foreign)
+  (let* ((info (find foreign *numeric-types* :key #'third))
+         (value `(cffi:mem-ref ,pointer ,foreign)))
+    (if (fifth info)
+        `(,(integer-operation-symbol :wrap (first info)) ,value)
+        value)))
+
 (defvar *native-array-access*
   #+(or sbcl ccl ecl) :pointer
   #-(or sbcl ccl ecl) :copy
@@ -251,7 +258,7 @@
                                 ,(if (integer-type-p key)
                                      `(cffi:with-foreign-object (output ,foreign)
                                         (check-native-integer-status (,function a ,@(when dot-p '(b)) output count))
-                                        (cffi:mem-ref output ,foreign))
+                                        (native-integer-result output ,foreign))
                                      `(,function a ,@(when dot-p '(b)) count)))))))))))
 
 (define-native-reductions)

@@ -33,6 +33,11 @@
      (add! (+ a b)) (subtract! (- a b)) (multiply! (* a b))
      (divide! (truncate a b))) type))
 
+(test integer-native-signed-scalar
+  (cffi:with-foreign-object (value :uint8)
+    (setf (cffi:mem-ref value :uint8) 199)
+    (is (= -57 (simd::native-integer-result value :int8)))))
+
 (test integer-bulk-across-backends
   (dolist (type *integer-elements*)
     (multiple-value-bind (a b) (integer-samples type)
