@@ -2,7 +2,8 @@
 
 The runner loads declared test dependencies through Quicklisp when available.
 The FiveAM suite checks the Lisp reference and every locally available SIMD
-backend for both float types, empty vectors, SIMD tails, aliasing, and errors.
+backend for both float types and eight integer types, empty vectors, SIMD
+tails, aliasing, wrapping arithmetic, division errors, and type boundaries.
 Direct copy tests check both precisions, round trips, empty ranges, and partial
 copy-back, compact slice transfers, and overlapping copy-mode input snapshots. Native program tests check partial-initialization cleanup, finalization,
 retained functions after redefinition, and collection during active native calls.
@@ -47,7 +48,8 @@ cmake --build build --config Release
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-The native harness runs SIMD, scalar C, and forced software-FMA checks for both float types. It covers
+The native harness runs SIMD, scalar C, and forced software-FMA checks for floats,
+and arithmetic, division, and kernel checks for every integer type. It covers
 scratch indexes through 65,535, partial blocks, math operators, scalar reductions,
 allocation failure, size overflow, and cleanup after successful or failed calls.
 Final-output checks compare every supported reduction operation bit-for-bit

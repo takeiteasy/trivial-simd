@@ -9,7 +9,8 @@ The library selects the first available backend in this order:
 | `:lisp` | Any supported Common Lisp implementation | Direct Lisp array access |
 
 The C backend uses SSE2 on x86-64 and NEON on ARM64. Other architectures use
-scalar C loops. This library enables its SBCL backend only on x86-64.
+scalar C loops. This library enables its SBCL backend only on x86-64. Integer operations
+use the [per-backend paths](integers.md#backend-coverage).
 SBCL on ARM64 selects the C backend when built, or the Lisp fallback otherwise.
 
 ## Tested combinations
@@ -99,9 +100,9 @@ additional instruction sets above are not selected by it.
 
 ### Array access
 
-Direct float-vector access relies on the tested SBCL, ECL, and CCL CFFI
+Direct numeric-vector access relies on the tested SBCL, ECL, and CCL CFFI
 implementations; CFFI documents shareable byte vectors rather than a general
-float-vector guarantee.[^pointer] The native backend copies arrays on other
+numeric-vector guarantee.[^pointer] The native backend copies arrays on other
 Lisp implementations, using typed per-element loops.[^copy] Support
 for more implementations is tracked by their own tickets above. Small arrays may
 still run faster in Lisp; use the [benchmark](testing.md) for a workload.
@@ -111,7 +112,7 @@ Each input has separate storage, including repeated and aliased inputs.
 [^pointer]: CFFI's pointer macro maps to implementation-specific pinned or
     foreign views of specialized arrays on these three implementations.
 [^copy]: The suite also runs the native backend in copy mode on every tested
-    implementation. Copy mode dispatches once by float type and uses literal CFFI types
+    implementation. Copy mode dispatches once by element type and uses literal CFFI types
     in specialized loops. Foreign index zero corresponds to each vector’s requested
     start; output copy-back touches only the destination slice (`*native-array-access*` is `:copy`).
 [^ccl-arm]: ARM64 CI uses Clozure CL `v1.13-arm64-pre2` on Linux and macOS.

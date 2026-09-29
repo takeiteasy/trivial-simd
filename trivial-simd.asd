@@ -1,11 +1,13 @@
 (asdf:defsystem "trivial-simd"
-  :description "Bulk SIMD operations for Common Lisp float vectors"
+  :description "Bulk SIMD operations for Common Lisp numeric vectors"
   :author "George Watson"
   :license "MIT"
   :version "0.1.0"
   :depends-on ("cffi" "trivial-garbage")
   :serial t
   :components ((:file "package")
+               (:file "numeric-types")
+               (:file "integer-lisp")
                (:file "native")
                (:file "kernel-math")
                (:file "kernel-fma-arm64")
@@ -20,7 +22,8 @@
   :components ((:file "tests/package")
                (:file "tests/operations")
                (:file "tests/native")
-               (:file "tests/kernels"))
+               (:file "tests/kernels")
+               (:file "tests/integers"))
   :perform (asdf:test-op (operation component)
              (declare (ignore operation component))
              (unless (uiop:symbol-call :fiveam :run! :trivial-simd)

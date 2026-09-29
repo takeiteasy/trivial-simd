@@ -79,13 +79,39 @@
   (code :pointer) (code-length :size) (constants :pointer)
   (inputs :pointer) (output :pointer) (length :size) (scratch-count :size))
 
+(defmacro define-native-integers ()
+  `(progn
+     ,@(loop for (key) in *numeric-types* when (integer-type-p key)
+             append
+             (loop for operation in '(:add :subtract :multiply :divide :sum :dot :kernel :kernel-sum)
+                   for c-name = (format nil "ts_~A_~A" (substitute #\_ #\- (string-downcase operation))
+                                        (string-downcase key))
+                   for name = (intern (format nil "%NATIVE-~A-~A" operation key))
+                   collect
+                   `(define-native (,c-name ,name) :int
+                      ,@(case operation
+                          (:sum '((input :pointer) (output :pointer) (count :size)))
+                          (:dot '((left :pointer) (right :pointer) (output :pointer) (count :size)))
+                          ((:kernel :kernel-sum)
+                           '((code :pointer) (code-length :size) (constants :pointer)
+                             (inputs :pointer) (output :pointer) (count :size) (scratch-count :size)))
+                          (t '((output :pointer) (left :pointer) (right :pointer) (count :size)))))))))
+
+(define-native-integers)
+
+(defun check-native-integer-status (status)
+  (case status
+    (0 nil)
+    (-3 (error 'division-by-zero :operation 'truncate :operands nil))
+    (otherwise (error "Unable to allocate native integer kernel scratch storage"))))
+
 (defvar *native-array-access*
   #+(or sbcl ccl ecl) :pointer
   #-(or sbcl ccl ecl) :copy
-  "How native calls reach Lisp float vectors: :POINTER (pinned) or :COPY.")
+  "How native calls reach Lisp numeric vectors: :POINTER (pinned) or :COPY.")
 
 (defun foreign-type (vector)
-  (if (typep vector '(simple-array single-float (*))) :float :double))
+  (third (numeric-type (vector-type vector))))
 
 ;; Public callers validate slice bounds before these unchecked transfers.
 (macrolet ((define-copy-loops (element foreign to from)
@@ -107,19 +133,43 @@
                         do (setf (aref vector destination)
                                  (cffi:mem-aref pointer ,foreign index)))))))
   (define-copy-loops single-float :float copy-to-f32 copy-from-f32)
-  (define-copy-loops double-float :double copy-to-f64 copy-from-f64))
+  (define-copy-loops double-float :double copy-to-f64 copy-from-f64)
+  (define-copy-loops (signed-byte 8) :int8 copy-to-s8 copy-from-s8)
+  (define-copy-loops (unsigned-byte 8) :uint8 copy-to-u8 copy-from-u8)
+  (define-copy-loops (signed-byte 16) :int16 copy-to-s16 copy-from-s16)
+  (define-copy-loops (unsigned-byte 16) :uint16 copy-to-u16 copy-from-u16)
+  (define-copy-loops (signed-byte 32) :int32 copy-to-s32 copy-from-s32)
+  (define-copy-loops (unsigned-byte 32) :uint32 copy-to-u32 copy-from-u32)
+  (define-copy-loops (signed-byte 64) :int64 copy-to-s64 copy-from-s64)
+  (define-copy-loops (unsigned-byte 64) :uint64 copy-to-u64 copy-from-u64))
 
 (declaim (notinline copy-to-foreign))
 
 (defun copy-to-foreign (vector pointer type start count)
   (ecase type
     (:float (copy-to-f32 vector pointer start count))
-    (:double (copy-to-f64 vector pointer start count))))
+    (:double (copy-to-f64 vector pointer start count))
+    (:int8 (copy-to-s8 vector pointer start count))
+    (:uint8 (copy-to-u8 vector pointer start count))
+    (:int16 (copy-to-s16 vector pointer start count))
+    (:uint16 (copy-to-u16 vector pointer start count))
+    (:int32 (copy-to-s32 vector pointer start count))
+    (:uint32 (copy-to-u32 vector pointer start count))
+    (:int64 (copy-to-s64 vector pointer start count))
+    (:uint64 (copy-to-u64 vector pointer start count))))
 
 (defun copy-from-foreign (pointer vector type start count)
   (ecase type
     (:float (copy-from-f32 pointer vector start count))
-    (:double (copy-from-f64 pointer vector start count))))
+    (:double (copy-from-f64 pointer vector start count))
+    (:int8 (copy-from-s8 pointer vector start count))
+    (:uint8 (copy-from-u8 pointer vector start count))
+    (:int16 (copy-from-s16 pointer vector start count))
+    (:uint16 (copy-from-u16 pointer vector start count))
+    (:int32 (copy-from-s32 pointer vector start count))
+    (:uint32 (copy-from-u32 pointer vector start count))
+    (:int64 (copy-from-s64 pointer vector start count))
+    (:uint64 (copy-from-u64 pointer vector start count))))
 
 (defmacro with-pinned-pointers ((&rest bindings) &body body)
   #+(or sbcl ccl ecl)
@@ -156,13 +206,19 @@
          (:copy (with-copied-pointers ,bindings ,type-var ,outputs ,count
                   (,function ,@pointers)))))))
 
-(defun call-native-binary (operation type output a b length)
-  (funcall (ecase operation
-             (:add (if (eq type :float) #'%native-add-f32 #'%native-add-f64))
-             (:subtract (if (eq type :float) #'%native-subtract-f32 #'%native-subtract-f64))
-             (:multiply (if (eq type :float) #'%native-multiply-f32 #'%native-multiply-f64))
-             (:divide (if (eq type :float) #'%native-divide-f32 #'%native-divide-f64)))
-           output a b length))
+(defmacro define-native-binary-dispatch ()
+  `(defun call-native-binary (operation type output a b length)
+     (ecase type
+       ,@(loop for (key element foreign) in *numeric-types*
+               collect
+               `(,foreign
+                 ,(let ((call `(funcall (ecase operation
+                                         ,@(loop for op in '(:add :subtract :multiply :divide)
+                                                 collect `(,op #',(intern (format nil "%NATIVE-~A-~A" op key)))))
+                                       output a b length)))
+                    (if (integer-type-p key) `(check-native-integer-status ,call) call)))))))
+
+(define-native-binary-dispatch)
 
 (defun element-pointer (pointer type offset)
   (if (zerop offset)
@@ -178,22 +234,30 @@
       (call-native-binary operation type output a b count)))
   destination)
 
-(defun native-sum (input count offset)
-  (let ((type (foreign-type input)))
-    (with-native-vectors (type ((a input offset)) :count count)
-      (if (eq type :float)
-          (%native-sum-f32 a count)
-          (%native-sum-f64 a count)))))
+(defmacro define-native-reductions ()
+  `(progn
+     ,@(loop for dot-p in '(nil t)
+             for name = (if dot-p 'native-dot 'native-sum)
+             collect
+             `(defun ,name ,(if dot-p '(left right count left-offset right-offset) '(input count offset))
+                (let ((type (foreign-type ,(if dot-p 'left 'input))))
+                  (with-native-vectors
+                      (type ,(if dot-p '((a left left-offset) (b right right-offset)) '((a input offset))) :count count)
+                    (ecase type
+                      ,@(loop for (key element foreign) in *numeric-types*
+                              for function = (intern (format nil "%NATIVE-~A-~A" (if dot-p :dot :sum) key))
+                              collect
+                              `(,foreign
+                                ,(if (integer-type-p key)
+                                     `(cffi:with-foreign-object (output ,foreign)
+                                        (check-native-integer-status (,function a ,@(when dot-p '(b)) output count))
+                                        (cffi:mem-ref output ,foreign))
+                                     `(,function a ,@(when dot-p '(b)) count)))))))))))
 
-(defun native-dot (left right count left-offset right-offset)
-  (let ((type (foreign-type left)))
-    (with-native-vectors (type ((a left left-offset) (b right right-offset)) :count count)
-      (if (eq type :float)
-          (%native-dot-f32 a b count)
-          (%native-dot-f64 a b count)))))
+(define-native-reductions)
 
 (defstruct (native-program (:constructor %make-native-program))
-  code code-length f32-constants f64-constants scratch-count
+  code code-length f32-constants f64-constants constants constant-type scratch-count
   #+ecl runner)
 
 (declaim (notinline foreign-copy free-native-program-buffers))
@@ -231,7 +295,7 @@
            pointer)
       (unless complete (free-native-program-buffers buffers)))))
 
-(defun make-native-program (code constants scratch-count)
+(defun make-native-program (code constants scratch-count &optional type)
   (declare (notinline register-native-program-finalizer))
   (let ((buffers nil) (complete nil))
     (unwind-protect
@@ -243,8 +307,12 @@
                            :code (copy code :uint8 'integer)
                            :code-length (length code)
                            :scratch-count scratch-count
-                           :f32-constants (copy constants :float 'single-float)
-                           :f64-constants (copy constants :double 'double-float))))
+                           :constant-type type
+                           :constants (when type
+                                        (let ((info (numeric-type type)))
+                                          (copy constants (third info) (second info))))
+                           :f32-constants (unless type (copy constants :float 'single-float))
+                           :f64-constants (unless type (copy constants :double 'double-float)))))
              (register-native-program-finalizer program (native-program-finalizer buffers))
              (setf complete t)
              program))
@@ -255,17 +323,27 @@
 (defun keep-native-program-alive (program)
   (native-program-code program))
 
-(defun call-native-kernel (program type inputs output count &key sum-p)
-  (unwind-protect
-       (case (funcall (if sum-p
-                         (if (eq type :float) #'%native-kernel-sum-f32 #'%native-kernel-sum-f64)
-                         (if (eq type :float) #'%native-kernel-f32 #'%native-kernel-f64))
-                      (native-program-code program) (native-program-code-length program)
-                      (if (eq type :float)
-                          (native-program-f32-constants program)
-                          (native-program-f64-constants program))
-                      inputs output count (native-program-scratch-count program))
-         (0 nil)
-         (-2 (error "Negative kernel square root operand"))
-         (otherwise (error "Unable to allocate native kernel scratch storage")))
-    (keep-native-program-alive program)))
+(defmacro define-native-kernel-dispatch ()
+  `(defun call-native-kernel (program type inputs output count &key sum-p)
+     (unwind-protect
+          (let ((status
+                  (funcall
+                   (ecase type
+                     ,@(loop for (key element foreign) in *numeric-types*
+                             collect
+                             `(,foreign (if sum-p
+                                            #',(intern (format nil "%NATIVE-KERNEL-SUM-~A" key))
+                                            #',(intern (format nil "%NATIVE-KERNEL-~A" key))))))
+                   (native-program-code program) (native-program-code-length program)
+                   (or (native-program-constants program)
+                       (if (eq type :float) (native-program-f32-constants program)
+                           (native-program-f64-constants program)))
+                   inputs output count (native-program-scratch-count program))))
+            (case status
+              (0 nil)
+              (-2 (error "Negative kernel square root operand"))
+              (-3 (error 'division-by-zero :operation 'truncate :operands nil))
+              (otherwise (error "Unable to allocate native kernel scratch storage"))))
+       (keep-native-program-alive program))))
+
+(define-native-kernel-dispatch)

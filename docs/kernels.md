@@ -30,8 +30,9 @@ It returns `destination`.
 | `(trivial-simd:sum x)` | Top-level scalar sum |
 
 `+`, `*`, `min`, and `max` with one operand return it unchanged. Empty operand
-lists and unsupported forms signal an error when the kernel is defined. Vectors share one
-`single-float` or `double-float` element type, chosen per call.
+lists and unsupported forms signal an error when the kernel is defined. Vectors
+share one numeric element type, chosen per call. Integer expressions use
+[wrapping arithmetic](integers.md); `sqrt` and `fma` remain float-only.
 
 ## Sum kernels
 
@@ -49,7 +50,7 @@ The same vector-type and [slice checks](api.md#slices) apply.
 ```
 
 Sum kernels require at least one input vector, even for a constant expression.
-They return a float of the input element type and typed zero for an empty slice.
+They return a scalar of the input element type and typed zero for an empty slice.
 They leave inputs unchanged, use input precision for accumulation, and need no
 full-length intermediate result vector. Results may differ slightly by backend
 because the addition order differs.[^sum]
@@ -93,8 +94,8 @@ kernel function becomes unreachable. Retained references to an older function
 remain callable after redefinition. Reclamation follows garbage collection.[^ownership]
 
 On ECL, native calls share a compiled setup helper by input count and
-whether the kernel returns a sum. Different expressions, both float types, and
-pointer/copy access reuse the same helper. This includes `eval` definitions.
+whether the kernel returns a sum. Different expressions, numeric types, and pointer/copy access reuse
+the same helper. This includes `eval` definitions.
 The first native call for a signature compiles its helper; later definitions
 reuse it. Failed compilation selects each kernel's own interpreted fallback
 without retrying that signature until restart. Lisp-only calls do not initialize
@@ -134,11 +135,10 @@ for measurements and [FMA fallback limitations](#limitations).
   costing hundreds of milliseconds. Cold compilation for different signatures
   is serialized. See the
   [concurrent compilation ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/65).
-- Element types are `single-float` and `double-float`. See the
-  [integer ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/39).
 - SBCL kernels are generated only on x86-64 with `sb-simd`.
 
-[^constants]: Constants must be representable as `single-float`.
+[^constants]: Float constants must be representable as `single-float`.
+    Integer constants must be in range for the vector's element type.
 [^vm]: Instructions are four bytes: opcode, destination, and two operands. An
     operand names a register (0-7) or an input vector; the last instruction
     writes to `destination` directly for elementwise kernels. Sum kernels

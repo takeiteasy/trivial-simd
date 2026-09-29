@@ -1,12 +1,5 @@
 (in-package #:trivial-simd)
 
-(defun float-vector-type (vector)
-  (cond ((typep vector '(simple-array single-float (*))) :f32)
-        ((typep vector '(simple-array double-float (*))) :f64)
-        (t (error 'type-error :datum vector
-                  :expected-type '(or (simple-array single-float (*))
-                                      (simple-array double-float (*)))))))
-
 (defun zero-offsets (count)
   (case count
     (1 '(0))
@@ -16,10 +9,10 @@
 
 (defun resolve-whole (vectors)
   (let* ((first (first vectors))
-         (type (float-vector-type first))
+         (type (vector-type first))
          (length (length first)))
     (dolist (vector (rest vectors))
-      (unless (eq type (float-vector-type vector))
+      (unless (eq type (vector-type vector))
         (error "All vectors must have the same element type"))
       (unless (= length (length vector))
         (error "All vectors must have the same length")))
@@ -30,11 +23,11 @@
 STARTS holds each vector's own start or NIL to use START."
   (when (and (null start) (null end) (dolist (own starts t) (when own (return nil))))
     (return-from resolve-slice (resolve-whole vectors)))
-  (let* ((type (float-vector-type (first vectors)))
+  (let* ((type (vector-type (first vectors)))
          (length (length (first vectors)))
          (start (or start 0)))
     (dolist (vector (rest vectors))
-      (unless (eq type (float-vector-type vector))
+      (unless (eq type (vector-type vector))
         (error "All vectors must have the same element type")))
     (unless end
       (dolist (vector (rest vectors))

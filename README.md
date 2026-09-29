@@ -1,6 +1,6 @@
 # trivial-simd
 
-Bulk SIMD arithmetic for Common Lisp `single-float` and `double-float` vectors.
+Bulk SIMD arithmetic for Common Lisp float and fixed-width integer vectors.
 It uses SBCL SIMD where available, a small C library, or a pure Lisp fallback.
 
 ```lisp
@@ -25,6 +25,7 @@ Build the native library with `cmake -S . -B build -DCMAKE_BUILD_TYPE=Release`
 and `cmake --build build --config Release`. The Lisp fallback loads without it.
 
 - [API](docs/api.md)
+- [Integer vectors](docs/integers.md)
 - [Kernels](docs/kernels.md)
 - [Backends and build](docs/backends.md)
 - [Testing and benchmarks](docs/testing.md)

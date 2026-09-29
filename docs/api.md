@@ -1,8 +1,9 @@
 # API
 
 `trivial-simd` operates on whole, equal-length, simple vectors of
-`single-float` or `double-float`. Every vector in an operation has the same
-element type.
+`single-float`, `double-float`, or signed/unsigned 8/16/32/64-bit integers.
+Every vector in an operation has the same element type. Integer arithmetic
+[wraps at the vector width](integers.md).
 
 | Function | Result |
 |---|---|
@@ -15,7 +16,7 @@ element type.
 | `(backend)` | `:sbcl`, `:native`, or `:lisp` |
 
 The four `!` functions return `destination`. It may be the same vector as an
-input. `sum` and `dot` return a zero of the vector's float type for empty
+input. `sum` and `dot` return a zero of the vector's element type for empty
 vectors. Invalid element types and mismatched lengths signal an error.
 
 ## Slices
@@ -60,11 +61,11 @@ the addition order.[^order]
 ## Limitations
 
 The API does not expose SIMD packs; [kernels](kernels.md) compose operations
-instead. Only `single-float` and `double-float` vectors are supported.
+instead. The available integer operations and backend paths are described in
+[Integer vectors](integers.md).
 
 | Area | Ticket |
 |---|---|
-| Integer element types | [#39](https://todo.sr.ht/~takeiteasy/trivial-simd/39) |
 | Scalar operands, `axpy!`, `fma!` | [#40](https://todo.sr.ht/~takeiteasy/trivial-simd/40) |
 | Unary elementwise operations | [#41](https://todo.sr.ht/~takeiteasy/trivial-simd/41) |
 | More reductions | [#42](https://todo.sr.ht/~takeiteasy/trivial-simd/42) |

@@ -238,7 +238,62 @@ static void check_scalar_fma(void) {
 #endif
 }
 
+#define CHECK_INTEGER(suffix, type, high, low) \
+static void check_integer_##suffix(void) { \
+    type a[257], b[257], out[257], result = 0; \
+    const type *inputs[] = {a, b}; \
+    for (size_t i = 0; i < 257; ++i) { a[i] = high; b[i] = 1; out[i] = 0; } \
+    a[256] = low; \
+    assert(ts_add_##suffix(out, a, b, 257) == 0); \
+    assert(out[0] == (type)(high + 1) && out[256] == (type)(low + 1)); \
+    assert(ts_subtract_##suffix(out, a, b, 257) == 0); \
+    assert(out[0] == (type)(high - 1)); \
+    assert(ts_multiply_##suffix(out, a, b, 257) == 0); \
+    assert(out[256] == low); \
+    assert(ts_sum_##suffix(a, &result, 257) == 0); \
+    assert(result == (type)((uint64_t)high * 256 + low)); \
+    assert(ts_dot_##suffix(a, b, &result, 257) == 0); \
+    assert(result == (type)((uint64_t)high * 256 + low)); \
+    b[256] = 0; \
+    assert(ts_divide_##suffix(out, a, b, 257) == -3); \
+    uint8_t code[] = {TS_OP_DIVIDE, TS_KERNEL_OUTPUT, 8, 9}; \
+    assert(ts_kernel_##suffix(code, sizeof(code), NULL, inputs, out, 257, 0) == -3); \
+    b[256] = 1; \
+    assert(ts_kernel_##suffix(code, sizeof(code), NULL, inputs, out, 257, 0) == 0); \
+    assert(out[256] == low); \
+    assert(ts_kernel_sum_##suffix(code, sizeof(code), NULL, inputs, &result, 257, 0) == 0); \
+    assert(result == (type)((uint64_t)high * 256 + low)); \
+    uint8_t spill[] = {TS_OP_CONSTANT, 0, 0, 0, TS_OP_SPILL, 0, 0, 0, \
+                       TS_OP_RELOAD, 0, 0, 0, TS_OP_COPY, TS_KERNEL_OUTPUT, 0, 0}; \
+    type constant[] = {high}; \
+    size_t before = allocations; \
+    fail_allocation = 1; \
+    assert(ts_kernel_##suffix(spill, sizeof(spill), constant, inputs, out, 257, 1) == -1); \
+    assert(allocations == before + 1 && releases == before); \
+    --allocations; \
+    fail_allocation = 0; \
+    assert(ts_kernel_##suffix(spill, sizeof(spill), constant, inputs, out, 257, 1) == 0); \
+    assert(allocations == releases && out[256] == high); \
+}
+
+CHECK_INTEGER(s8, uint8_t, UINT8_MAX, 0x80)
+CHECK_INTEGER(u8, uint8_t, UINT8_MAX, 0)
+CHECK_INTEGER(s16, uint16_t, UINT16_MAX, 0x8000)
+CHECK_INTEGER(u16, uint16_t, UINT16_MAX, 0)
+CHECK_INTEGER(s32, uint32_t, UINT32_MAX, UINT32_C(0x80000000))
+CHECK_INTEGER(u32, uint32_t, UINT32_MAX, 0)
+CHECK_INTEGER(s64, uint64_t, UINT64_MAX, UINT64_C(0x8000000000000000))
+CHECK_INTEGER(u64, uint64_t, UINT64_MAX, 0)
+
 int main(void) {
+    check_integer_s8();
+    check_integer_u8();
+    check_integer_s16();
+    check_integer_u16();
+    check_integer_s32();
+    check_integer_u32();
+    check_integer_s64();
+    check_integer_u64();
     check_scalar_fma();
     check_f32();
     check_f64();

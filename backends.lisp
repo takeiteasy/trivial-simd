@@ -6,6 +6,7 @@
 (when (ignore-errors (require :sb-simd))
   (when (find-package :sb-simd-sse2)
     (load (asdf:system-relative-pathname "trivial-simd" "sbcl-simd.lisp"))
+    (load (asdf:system-relative-pathname "trivial-simd" "sbcl-integers.lisp"))
     (setf *sbcl-simd-available-p* t)
     (initialize-sbcl-fma)))
 
@@ -35,6 +36,10 @@
 
 (defun lisp-binary (operation destination left right count
                     destination-offset left-offset right-offset)
+  (let ((type (vector-type destination)))
+    (when (integer-type-p type)
+      (return-from lisp-binary (integer-binary type operation destination left right count
+                      destination-offset left-offset right-offset))))
   (ecase operation
     (:add (lisp-loop +))
     (:subtract (lisp-loop -))
@@ -43,11 +48,17 @@
   destination)
 
 (defun lisp-sum (input count offset)
+  (let ((type (vector-type input)))
+    (when (integer-type-p type)
+      (return-from lisp-sum (integer-sum type input count offset))))
   (let ((result (if (typep input '(simple-array single-float (*))) 0.0f0 0.0d0)))
     (dotimes (i count result)
       (incf result (aref input (+ offset i))))))
 
 (defun lisp-dot (left right count left-offset right-offset)
+  (let ((type (vector-type left)))
+    (when (integer-type-p type)
+      (return-from lisp-dot (integer-dot type left right count left-offset right-offset))))
   (let ((result (if (typep left '(simple-array single-float (*))) 0.0f0 0.0d0)))
     (dotimes (i count result)
       (incf result (* (aref left (+ left-offset i))
@@ -58,6 +69,11 @@
   #-(and sbcl x86-64)
   (declare (ignore operation destination left right count
                    destination-offset left-offset right-offset))
+  #+(and sbcl x86-64)
+  (when (integer-type-p (vector-type destination))
+    (return-from sbcl-binary
+      (sbcl-integer-binary (vector-type destination) operation destination left right count
+                           destination-offset left-offset right-offset)))
   #+(and sbcl x86-64)
   (funcall (ecase operation
              (:add (if (typep destination '(simple-array single-float (*)))
@@ -76,6 +92,9 @@
   #-(and sbcl x86-64)
   (declare (ignore input count offset))
   #+(and sbcl x86-64)
+  (when (integer-type-p (vector-type input))
+    (return-from sbcl-sum (sbcl-integer-sum (vector-type input) input count offset)))
+  #+(and sbcl x86-64)
   (if (typep input '(simple-array single-float (*)))
       (%sbcl-sum-f32 input count offset)
       (%sbcl-sum-f64 input count offset))
@@ -85,6 +104,9 @@
 (defun sbcl-dot (left right count left-offset right-offset)
   #-(and sbcl x86-64)
   (declare (ignore left right count left-offset right-offset))
+  #+(and sbcl x86-64)
+  (when (integer-type-p (vector-type left))
+    (return-from sbcl-dot (integer-dot (vector-type left) left right count left-offset right-offset)))
   #+(and sbcl x86-64)
   (if (typep left '(simple-array single-float (*)))
       (%sbcl-dot-f32 left right count left-offset right-offset)

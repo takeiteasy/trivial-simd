@@ -1,0 +1,22 @@
+(ql:quickload :trivial-simd)
+
+(trivial-simd:define-kernel integer-sum-of-products (a b)
+  (trivial-simd:sum (* a b)))
+
+(let* ((a (make-array 3 :element-type '(unsigned-byte 8)
+                       :initial-contents '(250 7 2)))
+       (b (make-array 3 :element-type '(unsigned-byte 8)
+                       :initial-contents '(10 3 4)))
+       (out (make-array 3 :element-type '(unsigned-byte 8))))
+  (trivial-simd:add! out a b)
+  (assert (equalp out #(4 10 6)))
+  (assert (= 225 (trivial-simd:dot a b)))
+  (assert (= 225 (integer-sum-of-products a b))))
+
+(let* ((a (make-array 2 :element-type '(signed-byte 8)
+                       :initial-contents '(-7 -128)))
+       (b (make-array 2 :element-type '(signed-byte 8)
+                       :initial-contents '(3 -1)))
+       (out (make-array 2 :element-type '(signed-byte 8))))
+  (trivial-simd:divide! out a b)
+  (assert (equalp out #(-2 -128))))

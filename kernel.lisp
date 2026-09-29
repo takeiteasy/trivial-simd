@@ -178,7 +178,7 @@ SPILL/RELOAD use a register and slot; other operands name registers or inputs."
                    (list (cdr (assoc op *kernel-opcodes*)) destination a b))))
 
 (defun kernel-element-type (type)
-  (ecase type (:f32 'single-float) (:f64 'double-float)))
+  (second (numeric-type type)))
 
 (defun scalar-kernel-form (node type arguments offsets index &optional (fma-operator 'fma))
   (let ((element (kernel-element-type type))
@@ -190,7 +190,14 @@ SPILL/RELOAD use a register and slot; other operands name registers or inputs."
              (operation (operator operands)
                (let ((result (or (find-if (lambda (operand) (member operand temporaries)) operands)
                                  (allocate))))
-                 (push `(setf ,result (,operator ,@operands)) assignments)
+                 (let ((operator (if (integer-type-p type)
+                                     (integer-operation-symbol
+                                      (case operator
+                                        (kernel-min :min) (kernel-max :max)
+                                        (- (if (= (length operands) 1) :negate :subtract))
+                                        (t (cdr (assoc operator *kernel-operators*)))) type)
+                                     operator)))
+                   (push `(setf ,result (,operator ,@operands)) assignments))
                  (dolist (operand operands)
                    (when (and (member operand temporaries) (not (eq operand result)))
                      (push operand free)))
@@ -232,7 +239,10 @@ SPILL/RELOAD use a register and slot; other operands name registers or inputs."
             `(let ((,sum ,(coerce 0 element)))
                (declare (type ,element ,sum))
                (dotimes (,index ,count ,sum)
-                 (incf ,sum ,(scalar-kernel-form tree type arguments offsets index fma-operator))))))))
+                 ,(if (integer-type-p type)
+                        `(setf ,sum (,(integer-operation-symbol :add type)
+                                     ,sum ,(scalar-kernel-form tree type arguments offsets index fma-operator)))
+                        `(incf ,sum ,(scalar-kernel-form tree type arguments offsets index fma-operator)))))))))
 
 (defun selected-lisp-kernel-form (tree type destination arguments d-offset offsets count)
   (let ((fallback (lisp-kernel-form tree type destination arguments d-offset offsets count)))
@@ -248,7 +258,10 @@ SPILL/RELOAD use a register and slot; other operands name registers or inputs."
 #+(and sbcl x86-64)
 (defun sbcl-kernel-form (tree type destination arguments d-offset offsets count)
   (destructuring-bind (package width prefix)
-      (ecase type (:f32 '("SB-SIMD-SSE" 4 "F32.4")) (:f64 '("SB-SIMD-SSE2" 2 "F64.2")))
+      (if (integer-type-p type)
+          (multiple-value-bind (package prefix width) (sbcl-integer-pack type)
+            (list package width prefix))
+          (ecase type (:f32 '("SB-SIMD-SSE" 4 "F32.4")) (:f64 '("SB-SIMD-SSE2" 2 "F64.2"))))
     (flet ((symbol-for (suffix)
              (or (find-symbol (concatenate 'string prefix suffix) package)
                  (error "sb-simd symbol ~A~A is missing" prefix suffix))))
@@ -368,12 +381,19 @@ SPILL/RELOAD use a register and slot; other operands name registers or inputs."
                    (incf ,index ,width))
                  ,@(unless destination
                      `((multiple-value-bind ,lanes (,(symbol-for "-VALUES") ,sum-pack)
-                         (setf ,sum (+ ,@lanes)))))
+                         (setf ,sum ,(if (integer-type-p type)
+                                          (reduce (lambda (value lane)
+                                                    `(,(integer-operation-symbol :add type) ,value ,lane))
+                                                  lanes :initial-value sum)
+                                          `(+ ,@lanes))))))
                  (loop while (< ,index ,count) do
                    ,(if destination
                         `(setf (aref ,destination (+ ,d-offset ,index))
                                ,(scalar-kernel-form tree type arguments offsets index))
-                        `(incf ,sum ,(scalar-kernel-form tree type arguments offsets index)))
+                        (if (integer-type-p type)
+                             `(setf ,sum (,(integer-operation-symbol :add type)
+                                          ,sum ,(scalar-kernel-form tree type arguments offsets index)))
+                             `(incf ,sum ,(scalar-kernel-form tree type arguments offsets index))))
                    (incf ,index))
                  ,@(unless destination (list sum))))))))))
 
@@ -427,6 +447,38 @@ SPILL/RELOAD use a register and slot; other operands name registers or inputs."
         #+threads (mp:with-lock (*native-kernel-runner-lock*) (initialize))
         #-threads (initialize))))
 
+(defun validate-integer-kernel (tree type)
+  (let ((element (kernel-element-type type)))
+    (labels ((walk (node)
+               (case (first node)
+                 (:constant
+                  (unless (typep (second node) element)
+                    (error 'type-error :datum (second node) :expected-type element)))
+                 (:argument nil)
+                 (:fma (error "FMA requires float vectors"))
+                 (:unary
+                  (when (eq (second node) :sqrt) (error "SQRT requires float vectors"))
+                  (walk (third node)))
+                 (:negate (walk (second node)))
+                 (:operation (walk (third node)) (walk (fourth node))))))
+      (walk tree))))
+
+(defun integer-kernel-function (cache tree type backend destination arguments count d-offset offsets)
+  (let ((slot (+ (* 2 (- (position type *numeric-types* :key #'first) 2))
+                 (if (eq backend :sbcl) 1 0))))
+    (or (aref cache slot)
+        (setf (aref cache slot)
+              (#+ecl eval #-ecl compile
+               #-ecl nil
+                       `(lambda (,@(when destination (list destination)) ,@arguments ,count
+                                 ,@(when destination (list d-offset)) ,@offsets)
+                          ,(if (eq backend :sbcl)
+                               #+(and sbcl x86-64)
+                               (sbcl-integer-kernel-form tree type destination arguments d-offset offsets count)
+                               #-(and sbcl x86-64)
+                               '(error "SBCL SIMD is unavailable on this platform")
+                               (lisp-kernel-form tree type destination arguments d-offset offsets count))))))))
+
 (defmacro define-kernel (name (&rest arguments) expression)
   "Define an elementwise destination kernel or a scalar (SUM expression) kernel.
 Both accept START, END, and per-input start keywords. Experimental."
@@ -442,44 +494,56 @@ Both accept START, END, and per-input start keywords. Experimental."
         (let* ((count (gensym "COUNT"))
                (d-offset (when destination (gensym "D-OFFSET")))
                (offsets (loop for nil in arguments collect (gensym "OFFSET")))
-               (program (gensym "PROGRAM")) (type (gensym "TYPE"))
+               (program (gensym "PROGRAM")) (programs (gensym "PROGRAMS"))
+               (integer-functions (gensym "INTEGER-FUNCTIONS")) (type (gensym "TYPE"))
                (offsets-variable (gensym "OFFSETS"))
                (starts (mapcar (lambda (argument) (intern (format nil "~A-START" argument))) arguments))
                (vectors (if destination (cons destination arguments) arguments))
                (all-starts (if destination (cons 'destination-start starts) starts))
                (all-offsets (if destination (cons d-offset offsets) offsets))
                (bytes (kernel-bytes instructions))
-               (native-form `(if (eq ,type :f32)
-                                 ,(native-kernel-form program :float destination arguments d-offset offsets count)
-                                 ,(native-kernel-form program :double destination arguments d-offset offsets count)))
+               (native-form `(ecase ,type
+                               ,@(loop for (key element foreign) in *numeric-types*
+                                       collect `(,key ,(native-kernel-form program foreign destination arguments
+                                                                           d-offset offsets count)))))
+               (integer-form
+                 `(funcall (integer-kernel-function ,integer-functions ',tree ,type *backend*
+                                                   ',destination ',arguments ',count ',d-offset ',offsets)
+                           ,@vectors ,count ,@all-offsets))
                #+ecl (runner (gensym "RUNNER"))
                #+ecl (runner-arguments (append (list program type count) vectors all-offsets))
                #+ecl (runner-form `(lambda ,runner-arguments ,native-form)))
-          `(let ((,program nil)
+          `(let ((,programs (make-array ,(length *numeric-types*) :initial-element nil))
+                 (,integer-functions (make-array 16 :initial-element nil))
                  #+ecl (,runner ,runner-form))
              (defun ,name (,@vectors &key start end ,@all-starts)
                ,(if reduction-p "Return the sum of the kernel expression over the input slice."
                     "Compute the kernel expression into destination and return it.")
                (multiple-value-bind (,type ,count ,offsets-variable)
                    (resolve-slice (list ,@vectors) (list ,@all-starts) start end)
+                 (when (integer-type-p ,type) (validate-integer-kernel ',tree ,type))
                  (destructuring-bind ,all-offsets ,offsets-variable
                    (declare (type fixnum ,@all-offsets))
                    (ecase *backend*
-                     (:lisp (if (eq ,type :f32)
-                                ,(selected-lisp-kernel-form tree :f32 destination arguments d-offset offsets count)
-                                ,(selected-lisp-kernel-form tree :f64 destination arguments d-offset offsets count)))
+                     (:lisp (if (integer-type-p ,type) ,integer-form
+                                (if (eq ,type :f32)
+                                    ,(selected-lisp-kernel-form tree :f32 destination arguments d-offset offsets count)
+                                    ,(selected-lisp-kernel-form tree :f64 destination arguments d-offset offsets count))))
                      (:sbcl
                       ,(if (and (boundp '*sbcl-simd-available-p*) *sbcl-simd-available-p*)
                            #+(and sbcl x86-64)
-                           `(if (eq ,type :f32)
-                                ,(sbcl-kernel-form tree :f32 destination arguments d-offset offsets count)
-                                ,(sbcl-kernel-form tree :f64 destination arguments d-offset offsets count))
+                           `(if (integer-type-p ,type) ,integer-form
+                                (if (eq ,type :f32)
+                                    ,(sbcl-kernel-form tree :f32 destination arguments d-offset offsets count)
+                                    ,(sbcl-kernel-form tree :f64 destination arguments d-offset offsets count)))
                            #-(and sbcl x86-64)
                            '(error "SBCL SIMD is unavailable on this platform")
                            '(error "SBCL SIMD is unavailable on this platform")))
                      (:native
-                      (let ((,program (or ,program
-                                          (setf ,program (make-native-program ',bytes ',constants ,scratch-count)))))
+                      (let* ((slot (position ,type *numeric-types* :key #'first))
+                             (,program (or (aref ,programs slot)
+                                           (setf (aref ,programs slot)
+                                                 (make-native-program ',bytes ',constants ,scratch-count ,type)))))
                         #+ecl (funcall (ensure-native-kernel-runner
                                        ,program ,(+ (* 2 (length arguments)) (if reduction-p 1 0))
                                        ',runner-form ,runner)
