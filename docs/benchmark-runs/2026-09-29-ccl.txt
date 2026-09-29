@@ -1,0 +1,138 @@
+Measured: 2026-09-29
+Implementation commit: 8dd1cdb10cee6bcc925de00eb49c8fd5cdf29292
+Native build: Release, Apple M1 / macOS ARM64
+
+Clozure Common Lisp Version 1.13 (v1.13-459-g690ff7ea) DarwinARM6464 | machine arm64 | backend NATIVE | native array access POINTER
+
+Array comparison (speedup = scalar / implementation)
+Operation    Type         Elements Implementation us/call    Speedup   
+ADD          SINGLE-FLOAT       32 SCALAR              0.167      1.00x
+ADD          SINGLE-FLOAT       32 LISP                0.617      0.27x
+ADD          SINGLE-FLOAT       32 NATIVE              0.278      0.60x
+ADD          SINGLE-FLOAT       32 NATIVE-COPY         2.346      0.07x
+MULTIPLY-ADD SINGLE-FLOAT       32 SCALAR              0.199      1.00x
+MULTIPLY-ADD SINGLE-FLOAT       32 LISP                0.357      0.56x
+MULTIPLY-ADD SINGLE-FLOAT       32 NATIVE              0.457      0.43x
+MULTIPLY-ADD SINGLE-FLOAT       32 NATIVE-COPY         0.509      0.39x
+DOT          SINGLE-FLOAT       32 SCALAR              0.161      1.00x
+DOT          SINGLE-FLOAT       32 LISP                0.706      0.23x
+DOT          SINGLE-FLOAT       32 NATIVE              0.240      0.67x
+DOT          SINGLE-FLOAT       32 NATIVE-COPY         1.614      0.10x
+ADD          SINGLE-FLOAT     1024 SCALAR              4.504      1.00x
+ADD          SINGLE-FLOAT     1024 LISP               15.802      0.29x
+ADD          SINGLE-FLOAT     1024 NATIVE              0.380     11.86x
+ADD          SINGLE-FLOAT     1024 NATIVE-COPY         7.790      0.58x
+MULTIPLY-ADD SINGLE-FLOAT     1024 SCALAR              5.468      1.00x
+MULTIPLY-ADD SINGLE-FLOAT     1024 LISP                5.944      0.92x
+MULTIPLY-ADD SINGLE-FLOAT     1024 NATIVE              0.676      8.09x
+MULTIPLY-ADD SINGLE-FLOAT     1024 NATIVE-COPY         7.928      0.69x
+DOT          SINGLE-FLOAT     1024 SCALAR              5.120      1.00x
+DOT          SINGLE-FLOAT     1024 LISP               17.469      0.29x
+DOT          SINGLE-FLOAT     1024 NATIVE              0.429     11.94x
+DOT          SINGLE-FLOAT     1024 NATIVE-COPY         5.551      0.92x
+ADD          SINGLE-FLOAT    65536 SCALAR            286.758      1.00x
+ADD          SINGLE-FLOAT    65536 LISP             1004.062      0.29x
+ADD          SINGLE-FLOAT    65536 NATIVE              9.301     30.83x
+ADD          SINGLE-FLOAT    65536 NATIVE-COPY       430.320      0.67x
+MULTIPLY-ADD SINGLE-FLOAT    65536 SCALAR            348.215      1.00x
+MULTIPLY-ADD SINGLE-FLOAT    65536 LISP              369.121      0.94x
+MULTIPLY-ADD SINGLE-FLOAT    65536 NATIVE             17.001     20.48x
+MULTIPLY-ADD SINGLE-FLOAT    65536 NATIVE-COPY       578.086      0.60x
+DOT          SINGLE-FLOAT    65536 SCALAR            327.672      1.00x
+DOT          SINGLE-FLOAT    65536 LISP             1110.312      0.30x
+DOT          SINGLE-FLOAT    65536 NATIVE             15.670     20.91x
+DOT          SINGLE-FLOAT    65536 NATIVE-COPY       297.969      1.10x
+ADD          DOUBLE-FLOAT       32 SCALAR              0.166      1.00x
+ADD          DOUBLE-FLOAT       32 LISP                0.938      0.18x
+ADD          DOUBLE-FLOAT       32 NATIVE              0.284      0.59x
+ADD          DOUBLE-FLOAT       32 NATIVE-COPY         2.335      0.07x
+MULTIPLY-ADD DOUBLE-FLOAT       32 SCALAR              0.210      1.00x
+MULTIPLY-ADD DOUBLE-FLOAT       32 LISP                0.350      0.60x
+MULTIPLY-ADD DOUBLE-FLOAT       32 NATIVE              0.449      0.47x
+MULTIPLY-ADD DOUBLE-FLOAT       32 NATIVE-COPY         0.498      0.42x
+DOT          DOUBLE-FLOAT       32 SCALAR              0.163      1.00x
+DOT          DOUBLE-FLOAT       32 LISP                1.037      0.16x
+DOT          DOUBLE-FLOAT       32 NATIVE              0.243      0.67x
+DOT          DOUBLE-FLOAT       32 NATIVE-COPY         1.616      0.10x
+ADD          DOUBLE-FLOAT     1024 SCALAR              4.507      1.00x
+ADD          DOUBLE-FLOAT     1024 LISP               25.706      0.18x
+ADD          DOUBLE-FLOAT     1024 NATIVE              0.490      9.19x
+ADD          DOUBLE-FLOAT     1024 NATIVE-COPY         7.685      0.59x
+MULTIPLY-ADD DOUBLE-FLOAT     1024 SCALAR              5.472      1.00x
+MULTIPLY-ADD DOUBLE-FLOAT     1024 LISP                5.933      0.92x
+MULTIPLY-ADD DOUBLE-FLOAT     1024 NATIVE              0.913      6.00x
+MULTIPLY-ADD DOUBLE-FLOAT     1024 NATIVE-COPY         8.119      0.67x
+DOT          DOUBLE-FLOAT     1024 SCALAR              5.125      1.00x
+DOT          DOUBLE-FLOAT     1024 LISP               29.486      0.17x
+DOT          DOUBLE-FLOAT     1024 NATIVE              0.671      7.64x
+DOT          DOUBLE-FLOAT     1024 NATIVE-COPY         5.624      0.91x
+ADD          DOUBLE-FLOAT    65536 SCALAR            287.309      1.00x
+ADD          DOUBLE-FLOAT    65536 LISP             1629.500      0.18x
+ADD          DOUBLE-FLOAT    65536 NATIVE             18.089     15.88x
+ADD          DOUBLE-FLOAT    65536 NATIVE-COPY       465.812      0.62x
+MULTIPLY-ADD DOUBLE-FLOAT    65536 SCALAR            348.152      1.00x
+MULTIPLY-ADD DOUBLE-FLOAT    65536 LISP              369.148      0.94x
+MULTIPLY-ADD DOUBLE-FLOAT    65536 NATIVE             32.637     10.67x
+MULTIPLY-ADD DOUBLE-FLOAT    65536 NATIVE-COPY       713.711      0.49x
+DOT          DOUBLE-FLOAT    65536 SCALAR            327.773      1.00x
+DOT          DOUBLE-FLOAT    65536 LISP             1850.281      0.18x
+DOT          DOUBLE-FLOAT    65536 NATIVE             31.048     10.56x
+DOT          DOUBLE-FLOAT    65536 NATIVE-COPY       342.879      0.96x
+
+Kernel a*b+c
+     32 elements LISP kernel        0.376 us/call
+     32 elements LISP true FMA      0.401 us/call
+     32 elements LISP two ops       1.197 us/call
+     32 elements NATIVE kernel      0.454 us/call
+     32 elements NATIVE true FMA    0.449 us/call
+     32 elements NATIVE two ops     0.541 us/call
+   1024 elements LISP kernel        5.938 us/call
+   1024 elements LISP true FMA      6.913 us/call
+   1024 elements LISP two ops       31.266 us/call
+   1024 elements NATIVE kernel      0.671 us/call
+   1024 elements NATIVE true FMA    0.666 us/call
+   1024 elements NATIVE two ops     0.746 us/call
+  65536 elements LISP kernel        368.902 us/call
+  65536 elements LISP true FMA      430.398 us/call
+  65536 elements LISP two ops       1987.594 us/call
+  65536 elements NATIVE kernel      17.271 us/call
+  65536 elements NATIVE true FMA    19.443 us/call
+  65536 elements NATIVE two ops     18.099 us/call
+
+Kernel sum(a*b)
+SINGLE-FLOAT      32 elements LISP    sum kernel     0.469 us/call
+SINGLE-FLOAT      32 elements LISP    multiply+sum   0.940 us/call
+SINGLE-FLOAT      32 elements LISP    bulk dot       0.660 us/call
+SINGLE-FLOAT      32 elements NATIVE  sum kernel     0.272 us/call
+SINGLE-FLOAT      32 elements NATIVE  multiply+sum   0.396 us/call
+SINGLE-FLOAT      32 elements NATIVE  bulk dot       0.230 us/call
+SINGLE-FLOAT    1024 elements LISP    sum kernel     12.498 us/call
+SINGLE-FLOAT    1024 elements LISP    multiply+sum   24.816 us/call
+SINGLE-FLOAT    1024 elements LISP    bulk dot       17.493 us/call
+SINGLE-FLOAT    1024 elements NATIVE  sum kernel     0.437 us/call
+SINGLE-FLOAT    1024 elements NATIVE  multiply+sum   0.682 us/call
+SINGLE-FLOAT    1024 elements NATIVE  bulk dot       0.429 us/call
+SINGLE-FLOAT   65536 elements LISP    sum kernel     794.734 us/call
+SINGLE-FLOAT   65536 elements LISP    multiply+sum   1632.125 us/call
+SINGLE-FLOAT   65536 elements LISP    bulk dot       1110.016 us/call
+SINGLE-FLOAT   65536 elements NATIVE  sum kernel     11.025 us/call
+SINGLE-FLOAT   65536 elements NATIVE  multiply+sum   24.623 us/call
+SINGLE-FLOAT   65536 elements NATIVE  bulk dot       15.645 us/call
+DOUBLE-FLOAT      32 elements LISP    sum kernel     0.657 us/call
+DOUBLE-FLOAT      32 elements LISP    multiply+sum   1.448 us/call
+DOUBLE-FLOAT      32 elements LISP    bulk dot       1.038 us/call
+DOUBLE-FLOAT      32 elements NATIVE  sum kernel     0.278 us/call
+DOUBLE-FLOAT      32 elements NATIVE  multiply+sum   0.405 us/call
+DOUBLE-FLOAT      32 elements NATIVE  bulk dot       0.236 us/call
+DOUBLE-FLOAT    1024 elements LISP    sum kernel     17.162 us/call
+DOUBLE-FLOAT    1024 elements LISP    multiply+sum   40.533 us/call
+DOUBLE-FLOAT    1024 elements LISP    bulk dot       29.247 us/call
+DOUBLE-FLOAT    1024 elements NATIVE  sum kernel     0.618 us/call
+DOUBLE-FLOAT    1024 elements NATIVE  multiply+sum   1.051 us/call
+DOUBLE-FLOAT    1024 elements NATIVE  bulk dot       0.665 us/call
+DOUBLE-FLOAT   65536 elements LISP    sum kernel     1090.734 us/call
+DOUBLE-FLOAT   65536 elements LISP    multiply+sum   2608.094 us/call
+DOUBLE-FLOAT   65536 elements LISP    bulk dot       1873.781 us/call
+DOUBLE-FLOAT   65536 elements NATIVE  sum kernel     21.865 us/call
+DOUBLE-FLOAT   65536 elements NATIVE  multiply+sum   48.916 us/call
+DOUBLE-FLOAT   65536 elements NATIVE  bulk dot       31.009 us/call

@@ -1,14 +1,16 @@
 # Benchmark results
 
-On the measured Apple M1, native pointer access beats typed scalar Lisp loops
+On the measured Apple M1, SBCL native pointer access beats typed scalar Lisp loops
 for 1,024- and 65,536-element arrays. Scalar loops are faster at 32 elements;
 copying inputs and outputs costs more than the scalar loop in these cases.
 Native sum kernels avoid an intermediate vector. Reusable spill scratch does
 not meet the 10% adoption threshold, so normal calls retain per-call allocation.
 
-Measured on 2026-09-28 with SBCL 2.6.8, macOS ARM64, native NEON and pointer
-array access. Times are microseconds per complete warmed call; speedup is the
-scalar time divided by native time.[^timing] These are machine-specific
+Array and sum tables are measured on 2026-09-29 at implementation commit
+`8dd1cdb`, with SBCL 2.6.8, CCL 1.13, and ECL 26.5.5 on macOS ARM64. The
+main array and sum tables use SBCL, native NEON, and pointer array access.
+Times are microseconds per complete warmed call; speedup is the scalar time
+divided by native time.[^timing] These are machine-specific
 measurements, rather than performance guarantees.
 
 ## Array operations
@@ -21,29 +23,29 @@ use identical typed arrays; output buffers are reused.[^scalar]
 
 | Elements | Operation | Scalar | Lisp fallback | Native | Native copy | Native speedup |
 |---:|---|---:|---:|---:|---:|---:|
-| 32 | add | 0.030 | 0.725 | 0.092 | 0.590 | 0.33x |
-| 32 | multiply-add | 0.037 | 0.133 | 0.137 | 0.386 | 0.27x |
-| 32 | dot | 0.025 | 0.790 | 0.068 | 0.367 | 0.37x |
-| 1,024 | add | 1.000 | 20.102 | 0.208 | 2.921 | 4.80x |
-| 1,024 | multiply-add | 1.150 | 2.880 | 0.372 | 3.451 | 3.09x |
-| 1,024 | dot | 0.971 | 21.800 | 0.306 | 1.842 | 3.17x |
-| 65,536 | add | 62.896 | 1289.813 | 8.633 | 155.162 | 7.29x |
-| 65,536 | multiply-add | 69.735 | 178.365 | 16.646 | 207.527 | 4.19x |
-| 65,536 | dot | 63.588 | 1188.406 | 15.974 | 104.033 | 3.98x |
+| 32 | add | 0.029 | 0.699 | 0.082 | 0.520 | 0.36x |
+| 32 | multiply-add | 0.035 | 0.135 | 0.132 | 0.338 | 0.27x |
+| 32 | dot | 0.024 | 0.809 | 0.067 | 0.346 | 0.36x |
+| 1,024 | add | 0.966 | 19.462 | 0.192 | 2.856 | 5.04x |
+| 1,024 | multiply-add | 1.111 | 3.052 | 0.354 | 3.532 | 3.14x |
+| 1,024 | dot | 0.938 | 21.822 | 0.297 | 2.038 | 3.16x |
+| 65,536 | add | 61.196 | 1242.797 | 8.286 | 152.486 | 7.39x |
+| 65,536 | multiply-add | 67.269 | 192.742 | 16.069 | 207.656 | 4.19x |
+| 65,536 | dot | 61.423 | 1145.063 | 15.440 | 110.412 | 3.98x |
 
 ### double-float
 
 | Elements | Operation | Scalar | Lisp fallback | Native | Native copy | Native speedup |
 |---:|---|---:|---:|---:|---:|---:|
-| 32 | add | 0.030 | 0.813 | 0.091 | 0.597 | 0.33x |
-| 32 | multiply-add | 0.040 | 0.129 | 0.142 | 0.399 | 0.28x |
-| 32 | dot | 0.026 | 0.808 | 0.069 | 0.373 | 0.37x |
-| 1,024 | add | 1.001 | 25.079 | 0.317 | 3.019 | 3.16x |
-| 1,024 | multiply-add | 1.247 | 2.835 | 0.624 | 3.711 | 2.00x |
-| 1,024 | dot | 0.972 | 25.536 | 0.549 | 2.103 | 1.77x |
-| 65,536 | add | 63.132 | 1654.094 | 13.051 | 162.793 | 4.84x |
-| 65,536 | multiply-add | 77.707 | 178.174 | 32.658 | 282.605 | 2.38x |
-| 65,536 | dot | 63.563 | 1695.531 | 31.865 | 119.480 | 1.99x |
+| 32 | add | 0.028 | 0.823 | 0.084 | 0.522 | 0.34x |
+| 32 | multiply-add | 0.035 | 0.136 | 0.137 | 0.343 | 0.26x |
+| 32 | dot | 0.025 | 0.806 | 0.068 | 0.347 | 0.37x |
+| 1,024 | add | 0.967 | 28.096 | 0.297 | 2.918 | 3.25x |
+| 1,024 | multiply-add | 1.163 | 3.061 | 0.607 | 3.749 | 1.92x |
+| 1,024 | dot | 0.938 | 26.026 | 0.531 | 2.248 | 1.77x |
+| 65,536 | add | 61.071 | 1826.875 | 16.417 | 159.283 | 3.72x |
+| 65,536 | multiply-add | 65.713 | 192.531 | 31.726 | 314.398 | 2.07x |
+| 65,536 | dot | 61.415 | 1610.563 | 30.808 | 139.016 | 1.99x |
 
 ## Lisp implementation comparison
 
@@ -53,12 +55,12 @@ scalar loop.[^implementations]
 
 | Type | Operation | SBCL 2.6.8 | CCL 1.13 | ECL 26.5.5 |
 |---|---|---:|---:|---:|
-| single-float | add | 0.208 (4.80x) | 0.386 (11.68x) | 0.867 (31.61x) |
-| single-float | multiply-add | 0.372 (3.09x) | 0.671 (8.22x) | 1.410 (28.75x) |
-| single-float | dot | 0.306 (3.17x) | 0.443 (11.56x) | 0.779 (114.41x) |
-| double-float | add | 0.317 (3.16x) | 0.494 (9.12x) | 1.042 (26.38x) |
-| double-float | multiply-add | 0.624 (2.00x) | 0.911 (6.00x) | 1.782 (23.16x) |
-| double-float | dot | 0.549 (1.77x) | 0.672 (7.92x) | 1.068 (83.04x) |
+| single-float | add | 0.192 (5.04x) | 0.380 (11.86x) | 0.861 (32.09x) |
+| single-float | multiply-add | 0.354 (3.14x) | 0.676 (8.09x) | 1.424 (28.18x) |
+| single-float | dot | 0.297 (3.16x) | 0.429 (11.94x) | 0.820 (109.58x) |
+| double-float | add | 0.297 (3.25x) | 0.490 (9.19x) | 1.063 (25.97x) |
+| double-float | multiply-add | 0.607 (1.92x) | 0.913 (6.00x) | 1.831 (22.32x) |
+| double-float | dot | 0.531 (1.77x) | 0.671 (7.64x) | 1.129 (79.65x) |
 
 ## Sum kernels
 
@@ -68,12 +70,12 @@ routine. The native kernel retains the existing block/lane/tail addition order.
 
 | Type | Elements | Lisp kernel | Native kernel | Native multiply+sum | Native dot |
 |---|---:|---:|---:|---:|---:|
-| single-float | 32 | 0.064 | 0.106 | 0.148 | 0.066 |
-| single-float | 1,024 | 1.206 | 0.269 | 0.486 | 0.301 |
-| single-float | 65,536 | 75.027 | 10.722 | 23.751 | 15.436 |
-| double-float | 32 | 0.066 | 0.121 | 0.150 | 0.069 |
-| double-float | 1,024 | 1.219 | 0.461 | 0.819 | 0.532 |
-| double-float | 65,536 | 75.720 | 21.668 | 47.220 | 32.499 |
+| single-float | 32 | 0.065 | 0.100 | 0.146 | 0.069 |
+| single-float | 1,024 | 1.358 | 0.262 | 0.483 | 0.298 |
+| single-float | 65,536 | 84.656 | 10.719 | 23.753 | 15.436 |
+| double-float | 32 | 0.070 | 0.103 | 0.147 | 0.069 |
+| double-float | 1,024 | 1.365 | 0.445 | 0.815 | 0.531 |
+| double-float | 65,536 | 84.796 | 21.598 | 50.220 | 30.774 |
 
 See [kernel performance](kernel-performance.md) for multiply-add, true FMA, and
 implementation-specific comparisons.
@@ -112,17 +114,20 @@ compiler, CPU, memory access mode, and system load.
 
 ## Limitations
 
-- These results cover one Apple M1 using SBCL and native pointer access. They
-  do not measure x86-64 SBCL SIMD or other CPUs.
+- These results cover one Apple M1 using SBCL, CCL, and ECL. They do not
+  measure x86-64 SBCL SIMD or other CPUs.
 - Short kernel setup and copy-mode costs remain; see
   [kernel limitations](kernels.md#limitations) and
   [array access limitations](backends.md#limitations).
 
 [^timing]: Arrays and programs are prepared outside timing. Each case warms up,
     calibrates batches to at least 50 ms, and reports the median of three
-    further batches. The array tables come from one complete run of
-    `tests/bench.lisp` at implementation commit `fcfab2b`; results are checked
-    before timing. Values are rounded for display.
+    further batches. Array and sum tables come from `tests/bench.lisp` at
+    implementation commit `8dd1cdb` on 2026-09-29; results are checked before
+    timing. Values are rounded for display. Raw output:
+    [SBCL](benchmark-runs/2026-09-29-sbcl.txt),
+    [CCL](benchmark-runs/2026-09-29-ccl.txt),
+    [ECL](benchmark-runs/2026-09-29-ecl.txt).
 
 [^scalar]: Scalar functions are compiled typed Lisp loops without explicit
     SIMD. The compiler may still emit vector instructions. `Native copy`

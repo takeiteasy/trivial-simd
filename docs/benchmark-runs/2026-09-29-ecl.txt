@@ -1,0 +1,196 @@
+Measured: 2026-09-29
+Implementation commit: 8dd1cdb10cee6bcc925de00eb49c8fd5cdf29292
+Native build: Release, Apple M1 / macOS ARM64
+
+ECL 26.5.5 | machine arm64 | backend NATIVE | native array access POINTER
+
+Array comparison (speedup = scalar / implementation)
+Operation    Type         Elements Implementation us/call    Speedup   
+ADD          SINGLE-FLOAT       32 SCALAR              1.094      1.00x
+ADD          SINGLE-FLOAT       32 LISP                3.351      0.33x
+ADD          SINGLE-FLOAT       32 NATIVE              0.755      1.45x
+ADD          SINGLE-FLOAT       32 NATIVE-COPY        22.216      0.05x
+MULTIPLY-ADD SINGLE-FLOAT       32 SCALAR              1.547      1.00x
+MULTIPLY-ADD SINGLE-FLOAT       32 LISP                2.494      0.62x
+MULTIPLY-ADD SINGLE-FLOAT       32 NATIVE              1.204      1.28x
+MULTIPLY-ADD SINGLE-FLOAT       32 NATIVE-COPY        26.652      0.06x
+DOT          SINGLE-FLOAT       32 SCALAR              2.982      1.00x
+DOT          SINGLE-FLOAT       32 LISP                3.979      0.75x
+DOT          SINGLE-FLOAT       32 NATIVE              0.589      5.06x
+DOT          SINGLE-FLOAT       32 NATIVE-COPY        15.106      0.20x
+ADD          SINGLE-FLOAT     1024 SCALAR             27.619      1.00x
+ADD          SINGLE-FLOAT     1024 LISP               98.837      0.28x
+ADD          SINGLE-FLOAT     1024 NATIVE              0.861     32.09x
+ADD          SINGLE-FLOAT     1024 NATIVE-COPY       596.742      0.05x
+MULTIPLY-ADD SINGLE-FLOAT     1024 SCALAR             40.136      1.00x
+MULTIPLY-ADD SINGLE-FLOAT     1024 LISP               62.333      0.64x
+MULTIPLY-ADD SINGLE-FLOAT     1024 NATIVE              1.424     28.18x
+MULTIPLY-ADD SINGLE-FLOAT     1024 NATIVE-COPY       787.984      0.05x
+DOT          SINGLE-FLOAT     1024 SCALAR             89.877      1.00x
+DOT          SINGLE-FLOAT     1024 LISP              118.172      0.76x
+DOT          SINGLE-FLOAT     1024 NATIVE              0.820    109.58x
+DOT          SINGLE-FLOAT     1024 NATIVE-COPY       385.898      0.23x
+ADD          SINGLE-FLOAT    65536 SCALAR           1747.813      1.00x
+ADD          SINGLE-FLOAT    65536 LISP             6019.813      0.29x
+ADD          SINGLE-FLOAT    65536 NATIVE              8.867    197.12x
+ADD          SINGLE-FLOAT    65536 NATIVE-COPY     38051.000      0.05x
+MULTIPLY-ADD SINGLE-FLOAT    65536 SCALAR           2589.188      1.00x
+MULTIPLY-ADD SINGLE-FLOAT    65536 LISP             3702.000      0.70x
+MULTIPLY-ADD SINGLE-FLOAT    65536 NATIVE             18.675    138.65x
+MULTIPLY-ADD SINGLE-FLOAT    65536 NATIVE-COPY     48841.000      0.05x
+DOT          SINGLE-FLOAT    65536 SCALAR           5610.875      1.00x
+DOT          SINGLE-FLOAT    65536 LISP             7207.125      0.78x
+DOT          SINGLE-FLOAT    65536 NATIVE             15.914    352.58x
+DOT          SINGLE-FLOAT    65536 NATIVE-COPY     25229.500      0.22x
+ADD          DOUBLE-FLOAT       32 SCALAR              1.086      1.00x
+ADD          DOUBLE-FLOAT       32 LISP                3.460      0.31x
+ADD          DOUBLE-FLOAT       32 NATIVE              0.852      1.28x
+ADD          DOUBLE-FLOAT       32 NATIVE-COPY        23.434      0.05x
+MULTIPLY-ADD DOUBLE-FLOAT       32 SCALAR              1.549      1.00x
+MULTIPLY-ADD DOUBLE-FLOAT       32 LISP                2.726      0.57x
+MULTIPLY-ADD DOUBLE-FLOAT       32 NATIVE              1.356      1.14x
+MULTIPLY-ADD DOUBLE-FLOAT       32 NATIVE-COPY        26.941      0.06x
+DOT          DOUBLE-FLOAT       32 SCALAR              3.007      1.00x
+DOT          DOUBLE-FLOAT       32 LISP                4.037      0.74x
+DOT          DOUBLE-FLOAT       32 NATIVE              0.636      4.73x
+DOT          DOUBLE-FLOAT       32 NATIVE-COPY        15.967      0.19x
+ADD          DOUBLE-FLOAT     1024 SCALAR             27.594      1.00x
+ADD          DOUBLE-FLOAT     1024 LISP               94.289      0.29x
+ADD          DOUBLE-FLOAT     1024 NATIVE              1.063     25.97x
+ADD          DOUBLE-FLOAT     1024 NATIVE-COPY       635.125      0.04x
+MULTIPLY-ADD DOUBLE-FLOAT     1024 SCALAR             40.880      1.00x
+MULTIPLY-ADD DOUBLE-FLOAT     1024 LISP               58.738      0.70x
+MULTIPLY-ADD DOUBLE-FLOAT     1024 NATIVE              1.831     22.32x
+MULTIPLY-ADD DOUBLE-FLOAT     1024 NATIVE-COPY       858.563      0.05x
+DOT          DOUBLE-FLOAT     1024 SCALAR             89.924      1.00x
+DOT          DOUBLE-FLOAT     1024 LISP              112.275      0.80x
+DOT          DOUBLE-FLOAT     1024 NATIVE              1.129     79.65x
+DOT          DOUBLE-FLOAT     1024 NATIVE-COPY       434.711      0.21x
+ADD          DOUBLE-FLOAT    65536 SCALAR           1476.406      1.00x
+ADD          DOUBLE-FLOAT    65536 LISP             5713.938      0.26x
+ADD          DOUBLE-FLOAT    65536 NATIVE             17.185     85.91x
+ADD          DOUBLE-FLOAT    65536 NATIVE-COPY     38921.000      0.04x
+MULTIPLY-ADD DOUBLE-FLOAT    65536 SCALAR           2191.906      1.00x
+MULTIPLY-ADD DOUBLE-FLOAT    65536 LISP             3537.313      0.62x
+MULTIPLY-ADD DOUBLE-FLOAT    65536 NATIVE             32.936     66.55x
+MULTIPLY-ADD DOUBLE-FLOAT    65536 NATIVE-COPY     51922.000      0.04x
+DOT          DOUBLE-FLOAT    65536 SCALAR           4904.438      1.00x
+DOT          DOUBLE-FLOAT    65536 LISP             6872.250      0.71x
+DOT          DOUBLE-FLOAT    65536 NATIVE             31.315    156.62x
+DOT          DOUBLE-FLOAT    65536 NATIVE-COPY     26576.000      0.18x
+
+Kernel a*b+c
+     32 elements LISP kernel        2.419 us/call
+     32 elements LISP true FMA      2.436 us/call
+     32 elements LISP two ops       6.065 us/call
+     32 elements NATIVE kernel      1.120 us/call
+     32 elements NATIVE true FMA    1.124 us/call
+     32 elements NATIVE two ops     1.380 us/call
+   1024 elements LISP kernel        55.917 us/call
+   1024 elements LISP true FMA      56.353 us/call
+   1024 elements LISP two ops       180.391 us/call
+   1024 elements NATIVE kernel      1.343 us/call
+   1024 elements NATIVE true FMA    1.349 us/call
+   1024 elements NATIVE two ops     1.586 us/call
+  65536 elements LISP kernel        3539.250 us/call
+  65536 elements LISP true FMA      3548.125 us/call
+  65536 elements LISP two ops       12031.250 us/call
+  65536 elements NATIVE kernel      17.564 us/call
+  65536 elements NATIVE true FMA    19.210 us/call
+  65536 elements NATIVE two ops     16.981 us/call
+
+Kernel sum(a*b)
+SINGLE-FLOAT      32 elements LISP    sum kernel     4.032 us/call
+SINGLE-FLOAT      32 elements LISP    multiply+sum   4.956 us/call
+SINGLE-FLOAT      32 elements LISP    bulk dot       3.716 us/call
+SINGLE-FLOAT      32 elements NATIVE  sum kernel     0.889 us/call
+SINGLE-FLOAT      32 elements NATIVE  multiply+sum   1.053 us/call
+SINGLE-FLOAT      32 elements NATIVE  bulk dot       0.561 us/call
+SINGLE-FLOAT    1024 elements LISP    sum kernel     118.295 us/call
+SINGLE-FLOAT    1024 elements LISP    multiply+sum   143.518 us/call
+SINGLE-FLOAT    1024 elements LISP    bulk dot       109.629 us/call
+SINGLE-FLOAT    1024 elements NATIVE  sum kernel     1.050 us/call
+SINGLE-FLOAT    1024 elements NATIVE  multiply+sum   1.394 us/call
+SINGLE-FLOAT    1024 elements NATIVE  bulk dot       0.770 us/call
+SINGLE-FLOAT   65536 elements LISP    sum kernel     7504.625 us/call
+SINGLE-FLOAT   65536 elements LISP    multiply+sum   9133.000 us/call
+SINGLE-FLOAT   65536 elements LISP    bulk dot       6985.875 us/call
+SINGLE-FLOAT   65536 elements NATIVE  sum kernel     11.421 us/call
+SINGLE-FLOAT   65536 elements NATIVE  multiply+sum   24.607 us/call
+SINGLE-FLOAT   65536 elements NATIVE  bulk dot       15.898 us/call
+DOUBLE-FLOAT      32 elements LISP    sum kernel     4.097 us/call
+DOUBLE-FLOAT      32 elements LISP    multiply+sum   5.100 us/call
+DOUBLE-FLOAT      32 elements LISP    bulk dot       3.753 us/call
+DOUBLE-FLOAT      32 elements NATIVE  sum kernel     0.965 us/call
+DOUBLE-FLOAT      32 elements NATIVE  multiply+sum   1.146 us/call
+DOUBLE-FLOAT      32 elements NATIVE  bulk dot       0.587 us/call
+DOUBLE-FLOAT    1024 elements LISP    sum kernel     117.416 us/call
+DOUBLE-FLOAT    1024 elements LISP    multiply+sum   149.137 us/call
+DOUBLE-FLOAT    1024 elements LISP    bulk dot       109.893 us/call
+DOUBLE-FLOAT    1024 elements NATIVE  sum kernel     1.303 us/call
+DOUBLE-FLOAT    1024 elements NATIVE  multiply+sum   1.823 us/call
+DOUBLE-FLOAT    1024 elements NATIVE  bulk dot       1.061 us/call
+DOUBLE-FLOAT   65536 elements LISP    sum kernel     7487.125 us/call
+DOUBLE-FLOAT   65536 elements LISP    multiply+sum   9139.125 us/call
+DOUBLE-FLOAT   65536 elements LISP    bulk dot       6988.500 us/call
+DOUBLE-FLOAT   65536 elements NATIVE  sum kernel     22.563 us/call
+DOUBLE-FLOAT   65536 elements NATIVE  multiply+sum   48.264 us/call
+DOUBLE-FLOAT   65536 elements NATIVE  bulk dot       31.315 us/call
+
+ECL shared native runners
+COMPILED ELEMENTWISE SINGLE-FLOAT: cold signature 369.568 ms; shared-definition first call 0.191 ms (five-trial medians; clock 0.001 ms)
+COMPILED ELEMENTWISE SINGLE-FLOAT      32 FIRST: 1.113 us/call (warm)
+COMPILED ELEMENTWISE SINGLE-FLOAT      32 SHARED: 1.129 us/call (warm)
+COMPILED ELEMENTWISE SINGLE-FLOAT    1024 FIRST: 1.356 us/call (warm)
+COMPILED ELEMENTWISE SINGLE-FLOAT    1024 SHARED: 1.345 us/call (warm)
+COMPILED ELEMENTWISE SINGLE-FLOAT   65536 FIRST: 17.523 us/call (warm)
+COMPILED ELEMENTWISE SINGLE-FLOAT   65536 SHARED: 17.475 us/call (warm)
+COMPILED ELEMENTWISE DOUBLE-FLOAT: cold signature 368.597 ms; shared-definition first call 0.190 ms (five-trial medians; clock 0.001 ms)
+COMPILED ELEMENTWISE DOUBLE-FLOAT      32 FIRST: 1.264 us/call (warm)
+COMPILED ELEMENTWISE DOUBLE-FLOAT      32 SHARED: 1.265 us/call (warm)
+COMPILED ELEMENTWISE DOUBLE-FLOAT    1024 FIRST: 1.748 us/call (warm)
+COMPILED ELEMENTWISE DOUBLE-FLOAT    1024 SHARED: 1.760 us/call (warm)
+COMPILED ELEMENTWISE DOUBLE-FLOAT   65536 FIRST: 33.001 us/call (warm)
+COMPILED ELEMENTWISE DOUBLE-FLOAT   65536 SHARED: 33.050 us/call (warm)
+COMPILED SUM SINGLE-FLOAT: cold signature 367.389 ms; shared-definition first call 0.148 ms (five-trial medians; clock 0.001 ms)
+COMPILED SUM SINGLE-FLOAT      32 FIRST: 1.056 us/call (warm)
+COMPILED SUM SINGLE-FLOAT      32 SHARED: 1.011 us/call (warm)
+COMPILED SUM SINGLE-FLOAT    1024 FIRST: 1.305 us/call (warm)
+COMPILED SUM SINGLE-FLOAT    1024 SHARED: 1.355 us/call (warm)
+COMPILED SUM SINGLE-FLOAT   65536 FIRST: 21.349 us/call (warm)
+COMPILED SUM SINGLE-FLOAT   65536 SHARED: 21.377 us/call (warm)
+COMPILED SUM DOUBLE-FLOAT: cold signature 372.691 ms; shared-definition first call 0.195 ms (five-trial medians; clock 0.001 ms)
+COMPILED SUM DOUBLE-FLOAT      32 FIRST: 1.175 us/call (warm)
+COMPILED SUM DOUBLE-FLOAT      32 SHARED: 1.126 us/call (warm)
+COMPILED SUM DOUBLE-FLOAT    1024 FIRST: 1.833 us/call (warm)
+COMPILED SUM DOUBLE-FLOAT    1024 SHARED: 1.803 us/call (warm)
+COMPILED SUM DOUBLE-FLOAT   65536 FIRST: 43.730 us/call (warm)
+COMPILED SUM DOUBLE-FLOAT   65536 SHARED: 45.002 us/call (warm)
+EVAL ELEMENTWISE SINGLE-FLOAT: cold signature 367.458 ms; shared-definition first call 0.192 ms (five-trial medians; clock 0.001 ms)
+EVAL ELEMENTWISE SINGLE-FLOAT      32 FIRST: 1.613 us/call (warm)
+EVAL ELEMENTWISE SINGLE-FLOAT      32 SHARED: 1.601 us/call (warm)
+EVAL ELEMENTWISE SINGLE-FLOAT    1024 FIRST: 1.842 us/call (warm)
+EVAL ELEMENTWISE SINGLE-FLOAT    1024 SHARED: 1.836 us/call (warm)
+EVAL ELEMENTWISE SINGLE-FLOAT   65536 FIRST: 20.035 us/call (warm)
+EVAL ELEMENTWISE SINGLE-FLOAT   65536 SHARED: 18.102 us/call (warm)
+EVAL ELEMENTWISE DOUBLE-FLOAT: cold signature 367.717 ms; shared-definition first call 0.158 ms (five-trial medians; clock 0.001 ms)
+EVAL ELEMENTWISE DOUBLE-FLOAT      32 FIRST: 1.752 us/call (warm)
+EVAL ELEMENTWISE DOUBLE-FLOAT      32 SHARED: 1.758 us/call (warm)
+EVAL ELEMENTWISE DOUBLE-FLOAT    1024 FIRST: 2.229 us/call (warm)
+EVAL ELEMENTWISE DOUBLE-FLOAT    1024 SHARED: 2.232 us/call (warm)
+EVAL ELEMENTWISE DOUBLE-FLOAT   65536 FIRST: 33.429 us/call (warm)
+EVAL ELEMENTWISE DOUBLE-FLOAT   65536 SHARED: 33.450 us/call (warm)
+EVAL SUM SINGLE-FLOAT: cold signature 361.293 ms; shared-definition first call 0.166 ms (five-trial medians; clock 0.001 ms)
+EVAL SUM SINGLE-FLOAT      32 FIRST: 1.474 us/call (warm)
+EVAL SUM SINGLE-FLOAT      32 SHARED: 1.546 us/call (warm)
+EVAL SUM SINGLE-FLOAT    1024 FIRST: 1.779 us/call (warm)
+EVAL SUM SINGLE-FLOAT    1024 SHARED: 1.772 us/call (warm)
+EVAL SUM SINGLE-FLOAT   65536 FIRST: 21.733 us/call (warm)
+EVAL SUM SINGLE-FLOAT   65536 SHARED: 21.844 us/call (warm)
+EVAL SUM DOUBLE-FLOAT: cold signature 365.651 ms; shared-definition first call 0.193 ms (five-trial medians; clock 0.001 ms)
+EVAL SUM DOUBLE-FLOAT      32 FIRST: 1.582 us/call (warm)
+EVAL SUM DOUBLE-FLOAT      32 SHARED: 1.586 us/call (warm)
+EVAL SUM DOUBLE-FLOAT    1024 FIRST: 2.256 us/call (warm)
+EVAL SUM DOUBLE-FLOAT    1024 SHARED: 2.270 us/call (warm)
+EVAL SUM DOUBLE-FLOAT   65536 FIRST: 45.803 us/call (warm)
+EVAL SUM DOUBLE-FLOAT   65536 SHARED: 43.877 us/call (warm)
