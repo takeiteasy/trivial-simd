@@ -169,6 +169,9 @@ allocation.
     checking discarded owners. CCL signals its join semaphore before completing
     thread cleanup. Its tests use native weak populations for observations and
     explicitly drain the queue of already-unreachable finalizers after GC.
+    Before collection, a CCL barrier inserts and removes its own metadata key
+    in the weak documentation and function-name tables, replacing cached keys
+    without removing any kernel entry or changing retained references.
 
 [^timing]: Calibration uses `get-internal-real-time`. Each measured batch retains
     its final result outside the timed interval so reduction results remain

@@ -212,7 +212,7 @@
   (lambda (owner) (declare (ignore owner)) (funcall callback)))
 
 (defun register-native-program-finalizer (program callback)
-  ;; CCL's native queue avoids the weak bookkeeping table's cached owner.
+  ;; Register directly without a second weak bookkeeping table.
   #+ccl (ccl:terminate-when-unreachable program (ccl-native-finalizer callback))
   #-ccl (trivial-garbage:finalize program callback))
 

@@ -85,7 +85,16 @@
         (values-list result))
       (funcall function)))
 
+#+ccl
+(defun clear-test-gc-roots ()
+  ;; Replace cached compiler metadata keys without removing kernel entries.
+  (dolist (table (list ccl::%documentation ccl::*lfun-names*))
+    (setf (gethash 'clear-test-gc-roots table) nil)
+    (remhash 'clear-test-gc-roots table))
+  nil)
+
 (defun collect-test-garbage ()
+  #+ccl (clear-test-gc-roots)
   (run-on-test-thread
    (lambda ()
      (trivial-garbage:gc :full t)
