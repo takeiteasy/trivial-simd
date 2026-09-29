@@ -171,6 +171,7 @@ for measurements and [FMA fallback limitations](#limitations).
     Native builds disable implicit multiply/add contraction; explicit FMA keeps
     its single-rounding behavior.
 
-[^ownership]: `trivial-garbage` finalizers release foreign buffers without retaining
+[^ownership]: CCL's native finalization queue and `trivial-garbage` on other Lisps
+    release foreign buffers without retaining
     their owning program. Partial initialization frees completed allocations,
     and active native calls keep the owner reachable until they finish.

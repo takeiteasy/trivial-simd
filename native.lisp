@@ -207,6 +207,15 @@
   ;; Keep the owner out of the finalizer's lexical environment on interpreted ECL.
   (lambda () (free-native-program-buffers buffers)))
 
+#+ccl
+(defun ccl-native-finalizer (callback)
+  (lambda (owner) (declare (ignore owner)) (funcall callback)))
+
+(defun register-native-program-finalizer (program callback)
+  ;; CCL's native queue avoids the weak bookkeeping table's cached owner.
+  #+ccl (ccl:terminate-when-unreachable program (ccl-native-finalizer callback))
+  #-ccl (trivial-garbage:finalize program callback))
+
 (defun foreign-copy (values type coerce-type)
   (let* ((buffers (list (cffi:foreign-alloc type :count (max 1 (length values)))))
          (pointer (first buffers))
@@ -223,7 +232,7 @@
       (unless complete (free-native-program-buffers buffers)))))
 
 (defun make-native-program (code constants scratch-count)
-  (declare (notinline trivial-garbage:finalize))
+  (declare (notinline register-native-program-finalizer))
   (let ((buffers nil) (complete nil))
     (unwind-protect
          (flet ((copy (values type coerce-type)
@@ -236,7 +245,7 @@
                            :scratch-count scratch-count
                            :f32-constants (copy constants :float 'single-float)
                            :f64-constants (copy constants :double 'double-float))))
-             (trivial-garbage:finalize program (native-program-finalizer buffers))
+             (register-native-program-finalizer program (native-program-finalizer buffers))
              (setf complete t)
              program))
       (unless complete (free-native-program-buffers buffers)))))

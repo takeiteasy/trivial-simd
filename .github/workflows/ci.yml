@@ -86,6 +86,15 @@ jobs:
         shell: lispsh -eo pipefail {0}
         run: ros -Q run --eval '(handler-case (load "tests/run.lisp") (error (condition) (format *error-output* "~A~%" condition) (uiop:quit 1)))'
 
+      - name: CCL lifetime stress and fresh suites
+        if: contains(matrix.lisp, 'ccl')
+        shell: lispsh -eo pipefail {0}
+        run: |
+          ros -Q run --load tests/run-lifetime-stress.lisp
+          for trial in 1 2 3; do
+            ros -Q run --eval '(handler-case (load "tests/run.lisp") (error (condition) (format *error-output* "~A~%" condition) (uiop:quit 1)))'
+          done
+
   arm-ccl:
     needs: plan
     if: contains(fromJSON(needs.plan.outputs.extras), 'arm-ccl')
@@ -142,6 +151,16 @@ jobs:
           CCL_EXECUTABLE: ${{ matrix.executable }}
         run: |
           "$RUNNER_TEMP/ccl/$CCL_EXECUTABLE" --no-init --batch --load "$RUNNER_TEMP/ccl/asdf.lisp" --load tests/run.lisp --eval '(quit)'
+
+      - name: Lifetime stress and fresh suites
+        shell: bash
+        env:
+          CCL_EXECUTABLE: ${{ matrix.executable }}
+        run: |
+          "$RUNNER_TEMP/ccl/$CCL_EXECUTABLE" --no-init --batch --load "$RUNNER_TEMP/ccl/asdf.lisp" --load tests/run-lifetime-stress.lisp --eval '(quit)'
+          for trial in 1 2 3; do
+            "$RUNNER_TEMP/ccl/$CCL_EXECUTABLE" --no-init --batch --load "$RUNNER_TEMP/ccl/asdf.lisp" --eval '(handler-case (load "tests/run.lisp") (error (condition) (format *error-output* "~A~%" condition) (uiop:quit 1)))' --eval '(quit)'
+          done
 
   arm-windows:
     needs: plan

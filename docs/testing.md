@@ -55,6 +55,22 @@ scratch checks cover capacity, overflow, zero-length calls, ownership, and recov
 after domain errors.
 GitHub Actions and sourcehut builds run it alongside the Lisp suite.
 
+## Native program lifetime
+
+The redefinition test keeps one older function callable while four discarded
+programs are reclaimed. After dropping the retained function, all five owners
+are collected and each program's buffers are released exactly once. Weak
+observations identify any live owners without retaining them.[^lifetime]
+
+The optional stress runner executes the full suite, followed by 500 lifetime
+trials. It requires the native library and exits with failure on any error.
+
+```sh
+ccl --no-init --batch --load tests/run-lifetime-stress.lisp --eval '(quit)'
+```
+
+CCL CI jobs run 500 trials and five full suites in fresh processes.
+
 ## Benchmark
 
 See [measured results](benchmarks.md) for array comparisons, sum kernels, and
@@ -147,6 +163,12 @@ allocation.
 [^scalar]: Scalar functions are specialized for each float type and compiled
     explicitly when necessary. The Lisp compiler may choose SIMD instructions;
     the label describes source-level loops, not a guarantee about machine code.
+
+[^lifetime]: Definitions, calls, weak observations, and collections run in
+    short-lived workers. The tests join workers and wait for termination before
+    checking discarded owners. CCL signals its join semaphore before completing
+    thread cleanup. Its tests use native weak populations for observations and
+    explicitly drain the queue of already-unreachable finalizers after GC.
 
 [^timing]: Calibration uses `get-internal-real-time`. Each measured batch retains
     its final result outside the timed interval so reduction results remain

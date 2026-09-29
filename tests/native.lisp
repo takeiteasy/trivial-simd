@@ -23,7 +23,7 @@
                                      (when (= failure (incf copies))
                                        (error "Injected allocation failure"))
                                      (apply copy arguments)))
-            (with-function-replaced (trivial-garbage:finalize
+            (with-function-replaced (simd::register-native-program-finalizer
                                      (lambda (owner callback)
                                        (declare (ignore owner callback))
                                        (error "Injected registration failure")))
@@ -46,7 +46,7 @@
 
 (defun await-collection (predicate)
   (or (loop repeat 100
-            do (trivial-garbage:gc :full t)
+            do (collect-test-garbage)
                (when (funcall predicate) (return t))
                (sleep 0.01))
       (funcall predicate)))
@@ -61,15 +61,36 @@
     (funcall finalize owner (counted-finalizer callback counter))))
 
 (defun make-tracked-native-program (released weak)
-  (with-function-replaced (trivial-garbage:finalize
-                           (track-finalizers #'trivial-garbage:finalize released weak))
+  (with-function-replaced (simd::register-native-program-finalizer
+                           (track-finalizers #'simd::register-native-program-finalizer released weak))
     (simd::make-native-program '(1 255 0 0) '(1) 0))
   nil)
 
 (defun run-on-test-thread (function)
   (if bordeaux-threads:*supports-threads-p*
-      (bordeaux-threads:join-thread (bordeaux-threads:make-thread function))
+      (let* ((result nil) (failure nil)
+             (thread (bordeaux-threads:make-thread
+                      (lambda ()
+                        (handler-case
+                            (setf result (multiple-value-list (funcall function)))
+                          (error (condition) (setf failure condition)))
+                        nil))))
+        (bordeaux-threads:join-thread thread)
+        ;; CCL joins before its worker has finished releasing its stack.
+        (unless (loop repeat 100
+                      when (not (bordeaux-threads:thread-alive-p thread)) return t
+                      do (sleep 0.01))
+          (error "Test worker did not terminate"))
+        (when failure (error failure))
+        (values-list result))
       (funcall function)))
+
+(defun collect-test-garbage ()
+  (run-on-test-thread
+   (lambda ()
+     (trivial-garbage:gc :full t)
+     #+ccl (ccl:drain-termination-queue)
+     nil)))
 
 (test native-program-is-collected
   (let ((released (list 0))
@@ -91,26 +112,70 @@
   (fmakunbound 'lifetime-kernel)
   nil)
 
-(defun exercise-native-redefinitions (released)
+(defun lifetime-finalizer (callback released reclaimed index)
+  (lambda ()
+    (funcall callback)
+    (incf (aref reclaimed index))
+    (incf (car released))))
+
+(defun observe-lifetime-programs (finalize released registered owners reclaimed)
+  (lambda (owner callback)
+    (let ((index (car registered)))
+      (incf (car registered))
+      (setf (aref owners index)
+            #+ccl (ccl::%cons-population (list owner) ccl::$population_weak-list nil)
+            #-ccl (trivial-garbage:make-weak-pointer owner))
+      (funcall finalize owner (lifetime-finalizer callback released reclaimed index)))))
+
+(defun live-lifetime-programs (owners)
+  (loop for weak across owners for index from 1
+        when (and weak
+                  #+ccl (ccl::population-data weak)
+                  #-ccl (trivial-garbage:weak-pointer-value weak)) collect index))
+
+(defun exercise-retained-native-kernel (released owners reclaimed retained)
   (let ((registered (list 0))
-        (old nil)
         (input (values-for 5 'single-float 1))
         (output (make-array 5 :element-type 'single-float)))
     (with-backend (:native)
-      (with-function-replaced (trivial-garbage:finalize
-                               (track-finalizers #'trivial-garbage:finalize released nil registered))
-        (setf old (define-native-lifetime-kernel 1))
-        (funcall old output input)
+      (with-function-replaced (simd::register-native-program-finalizer
+                               (observe-lifetime-programs #'simd::register-native-program-finalizer
+                                                          released registered owners reclaimed))
+        (run-on-test-thread
+         (lambda ()
+           (with-backend (:native)
+             (setf (car retained) (define-native-lifetime-kernel 1))
+             (funcall (car retained) output input))
+           nil))
         (run-on-test-thread (lambda () (replace-native-lifetime-kernels output input))))
       (unless (= 5 (car registered))
         (error "Expected five native programs, registered ~D" (car registered)))
       (unless (await-collection (lambda () (= 4 (car released))))
-        (error "Unreachable redefinitions retained their programs (~D/4 released)"
-               (car released)))
-      (funcall old output input)
+        (error "Unreachable redefinitions retained their programs (~D/4 released; live ~S; finalizers ~S)"
+               (car released) (live-lifetime-programs owners) reclaimed))
+      (unless (and (equal '(1) (run-on-test-thread (lambda () (live-lifetime-programs owners))))
+                   (equalp #(0 1 1 1 1) reclaimed))
+        (error "Incorrect retained-program ownership: live ~S; finalizers ~S"
+               (live-lifetime-programs owners) reclaimed))
+      (run-on-test-thread
+       (lambda () (with-backend (:native) (funcall (car retained) output input)) nil))
       (dotimes (i 5)
         (unless (= (1+ (aref input i)) (aref output i))
           (error "Retained kernel returned the wrong result")))))
+  nil)
+
+(defun exercise-native-redefinitions (released)
+  (let ((owners (make-array 5 :initial-element nil))
+        (reclaimed (make-array 5 :initial-element 0))
+        (retained (list nil)))
+    (exercise-retained-native-kernel released owners reclaimed retained)
+    (run-on-test-thread (lambda () (setf (car retained) nil)))
+    (unless (await-collection (lambda () (= 5 (car released))))
+      (error "Dropped retained function kept its program: live ~S; finalizers ~S"
+             (live-lifetime-programs owners) reclaimed))
+    (unless (and (null (live-lifetime-programs owners))
+                 (every (lambda (count) (= 1 count)) reclaimed))
+      (error "Native programs were not released exactly once: ~S" reclaimed)))
   nil)
 
 (test native-program-redefinition
@@ -217,8 +282,8 @@
 (test native-program-survives-active-call
   (when simd::*native-available-p*
     (let ((counter (cons 0 0)))
-      (with-function-replaced (trivial-garbage:finalize
-                               (track-finalizers #'trivial-garbage:finalize counter))
+      (with-function-replaced (simd::register-native-program-finalizer
+                               (track-finalizers #'simd::register-native-program-finalizer counter))
         (with-function-replaced (simd::%native-kernel-f32
                                  (collecting-native-call #'simd::%native-kernel-f32 counter))
           (cffi:with-foreign-object (output :float)
