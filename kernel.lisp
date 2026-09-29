@@ -398,21 +398,34 @@ SPILL/RELOAD use a register and slot; other operands name registers or inputs."
 
 #+ecl
 (declaim (notinline compile-native-kernel-runner))
-;; TODO: per-kernel compilation costs hundreds of ms; share runners by signature (#58).
 #+ecl
-(defun compile-native-kernel-runner (form fallback)
+(defun compile-native-kernel-runner (form fallback &optional (compiler #'compile))
   (handler-case
       (let ((*compile-verbose* nil) (*compile-print* nil))
-        (multiple-value-bind (function warnings failure) (compile nil form)
+        (multiple-value-bind (function warnings failure) (funcall compiler nil form)
           (declare (ignore warnings))
           (if failure fallback function)))
     (error () fallback)))
 
 #+ecl
-(defun ensure-native-kernel-runner (program form fallback)
+(defvar *native-kernel-runners* (make-hash-table :test 'eql))
+
+#+(and ecl threads)
+;; TODO: cold compilation is serialized; evaluate per-signature locks (#65).
+(defvar *native-kernel-runner-lock* (mp:make-lock :name "native kernel runners"))
+
+#+ecl
+(defun ensure-native-kernel-runner (program signature form fallback)
   (or (native-program-runner program)
-      (setf (native-program-runner program)
-            (compile-native-kernel-runner form fallback))))
+      (flet ((initialize ()
+               (or (native-program-runner program)
+                   (let ((runner (or (gethash signature *native-kernel-runners*)
+                                     (setf (gethash signature *native-kernel-runners*)
+                                           (or (compile-native-kernel-runner form nil) :failed)))))
+                     (setf (native-program-runner program)
+                           (if (eq runner :failed) fallback runner))))))
+        #+threads (mp:with-lock (*native-kernel-runner-lock*) (initialize))
+        #-threads (initialize))))
 
 (defmacro define-kernel (name (&rest arguments) expression)
   "Define an elementwise destination kernel or a scalar (SUM expression) kernel.
@@ -467,7 +480,9 @@ Both accept START, END, and per-input start keywords. Experimental."
                      (:native
                       (let ((,program (or ,program
                                           (setf ,program (make-native-program ',bytes ',constants ,scratch-count)))))
-                        #+ecl (funcall (ensure-native-kernel-runner ,program ',runner-form ,runner)
+                        #+ecl (funcall (ensure-native-kernel-runner
+                                       ,program ,(+ (* 2 (length arguments)) (if reduction-p 1 0))
+                                       ',runner-form ,runner)
                                        ,@runner-arguments)
                         #-ecl ,native-form))))
                  ,@(when destination (list destination))))))))))

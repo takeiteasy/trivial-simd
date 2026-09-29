@@ -7,8 +7,9 @@ Direct copy tests check both precisions, round trips, empty ranges, and partial
 copy-back, compact slice transfers, and overlapping copy-mode input snapshots. Native program tests check partial-initialization cleanup, finalization,
 retained functions after redefinition, and collection during active native calls.
 Threaded tests exercise concurrent first use with private call buffers. ECL tests
-also check helper compilation, reuse, and compiler-failure fallback. Kernel
-tests cover register spilling, scratch-slot reuse, encoding boundaries, square-root domain errors, signed zeros, single-rounding FMA, deterministic exact-reference comparisons, forced FMA fallbacks, and
+also check helper sharing across definitions, signature separation, both
+precisions and access modes, concurrent initialization, compiler-failure fallback,
+and collection with populated helper caches. Kernel tests cover register spilling, scratch-slot reuse, encoding boundaries, square-root domain errors, signed zeros, single-rounding FMA, deterministic exact-reference comparisons, forced FMA fallbacks, and
 scalar-returning sums with slices and spilling. ECL also exercises interpreted
 spilling and reduction definitions.
 
@@ -178,9 +179,14 @@ allocation.
     observable. Existing diagnostic sections use the same calibrated timing.
 
 [^compilation]: Compiled benchmark artifacts retain the source-system location
-    and load from `/tmp`. The ECL section separately measures an `eval`-defined
-    kernel and reports its first native call, including helper compilation,
-    before warmed timings.
+    and load from `/tmp`. The ECL section measures compiled and `eval` definitions
+    for elementwise multiply-add and sum kernels in both precisions. Five trials
+    use fresh caches and definitions to report median first-signature calls
+    (including compilation) and first calls of another definition sharing the
+    helper. Shared definitions use a different expression and result checks run
+    outside timing. Cache checks require one compiled helper per signature.
+    First-call results include the clock resolution; a zero means the call is
+    below that resolution. Warmed timings use 32/1,024/65,536 elements.
 
 [^profile]: Direct C timings use calibrated CPU-time batches; Lisp timings use
     the shared benchmark timer. Both report the median of three batches after

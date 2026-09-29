@@ -214,21 +214,77 @@
                     (benchmark-time (cdr case)))))))))
 
 #+ecl
+(defun make-ecl-benchmark-kernel (definition reduction-p other-p)
+  (let* ((name (gensym "BENCHMARK-KERNEL"))
+         (expression (if other-p '(- (* a b) c) '(+ (* a b) c)))
+         (form `(trivial-simd:define-kernel ,name (a b c)
+                  ,(if reduction-p `(trivial-simd:sum ,expression) expression))))
+    (unwind-protect
+         (progn
+           (ecase definition
+             (:compiled (funcall (compile nil `(lambda () ,form))))
+             (:eval (eval form)))
+           (symbol-function name))
+      (when (fboundp name) (fmakunbound name)))))
+
+#+ecl
+(defun ecl-kernel-call (function reduction-p output a b c)
+  (if reduction-p
+      (lambda () (funcall function a b c))
+      (lambda () (funcall function output a b c))))
+
+#+ecl
+(defun check-ecl-kernel-result (result reduction-p output expected)
+  (unless (if reduction-p
+              (= result (* expected (length output)))
+              (and (eq result output) (every (lambda (value) (= value expected)) output)))
+    (error "ECL shared runner benchmark result mismatch")))
+
+#+ecl
+(defun benchmark-ecl-runners (definition reduction-p type)
+  (let ((cold nil) (shared nil) (function nil) (other nil)
+        (trivial-simd::*backend* :native))
+    (dotimes (trial 5)
+      (let* ((trivial-simd::*native-kernel-runners* (make-hash-table :test 'eql))
+             #+threads (trivial-simd::*native-kernel-runner-lock* (mp:make-lock :name "benchmark runners"))
+             (a (make-array 32 :element-type type :initial-element (coerce 1 type)))
+             (b (make-array 32 :element-type type :initial-element (coerce 2 type)))
+             (c (make-array 32 :element-type type :initial-element (coerce 3 type)))
+             (output (make-array 32 :element-type type)))
+        (setf function (make-ecl-benchmark-kernel definition reduction-p nil)
+              other (make-ecl-benchmark-kernel definition reduction-p t))
+        (dolist (case (list (cons function 5) (cons other -1)))
+          (let* ((call (ecl-kernel-call (car case) reduction-p output a b c))
+                 (start (get-internal-real-time))
+                 (result (funcall call))
+                 (elapsed (/ (* 1000.0d0 (- (get-internal-real-time) start))
+                             internal-time-units-per-second)))
+            (check-ecl-kernel-result result reduction-p output (cdr case))
+            (if (eq (car case) function) (push elapsed cold) (push elapsed shared))))
+        (unless (and (= 1 (hash-table-count trivial-simd::*native-kernel-runners*))
+                     (functionp (gethash (+ 6 (if reduction-p 1 0)) trivial-simd::*native-kernel-runners*)))
+          (error "Expected one compiled runner shared by both definitions"))))
+    (format t "~A ~A ~A: cold signature ~,3F ms; shared-definition first call ~,3F ms (five-trial medians; clock ~,3F ms)~%"
+            definition (if reduction-p :sum :elementwise) type
+            (third (sort cold #'<)) (third (sort shared #'<))
+            (/ 1000.0d0 internal-time-units-per-second))
+    (dolist (count '(32 1024 65536))
+      (let* ((a (make-array count :element-type type :initial-element (coerce 1 type)))
+             (b (make-array count :element-type type :initial-element (coerce 2 type)))
+             (c (make-array count :element-type type :initial-element (coerce 3 type)))
+             (output (make-array count :element-type type)))
+        (dolist (case (list (cons function 5) (cons other -1)))
+          (let ((call (ecl-kernel-call (car case) reduction-p output a b c)))
+            (check-ecl-kernel-result (funcall call) reduction-p output (cdr case))
+            (format t "~A ~A ~A ~7D ~A: ~,3F us/call (warm)~%"
+                    definition (if reduction-p :sum :elementwise) type count
+                    (if (eq (car case) function) :first :shared)
+                    (benchmark-time call))))))))
+
+#+ecl
 (when trivial-simd::*native-available-p*
-  (format t "~%ECL eval-defined native kernel~%")
-  (eval '(trivial-simd:define-kernel eval-multiply-add (a b c) (+ (* a b) c)))
-  (let ((trivial-simd::*backend* :native))
-    (dolist (length '(32 1024 65536))
-      (let ((a (make-array length :element-type 'single-float :initial-element 1.0))
-            (b (make-array length :element-type 'single-float :initial-element 2.0))
-            (c (make-array length :element-type 'single-float :initial-element 3.0))
-            (out (make-array length :element-type 'single-float)))
-        (when (= length 32)
-          (let ((start (get-internal-real-time)))
-            (eval-multiply-add out a b c)
-            (format t "First call including helper compilation: ~,3F ms~%"
-                    (/ (* 1000.0 (- (get-internal-real-time) start))
-                       internal-time-units-per-second))))
-        (format t "~7D elements ~18A ~,3F us/call~%"
-                length "eval kernel (warm)"
-                (benchmark-time (lambda () (eval-multiply-add out a b c))))))))
+  (format t "~%ECL shared native runners~%")
+  (dolist (definition '(:compiled :eval))
+    (dolist (reduction-p '(nil t))
+      (dolist (type '(single-float double-float))
+        (benchmark-ecl-runners definition reduction-p type)))))

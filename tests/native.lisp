@@ -69,11 +69,15 @@
 (defun run-on-test-thread (function)
   (if bordeaux-threads:*supports-threads-p*
       (let* ((result nil) (failure nil)
+             #+ecl (cache simd::*native-kernel-runners*)
+             #+(and ecl threads) (lock simd::*native-kernel-runner-lock*)
              (thread (bordeaux-threads:make-thread
                       (lambda ()
-                        (handler-case
-                            (setf result (multiple-value-list (funcall function)))
-                          (error (condition) (setf failure condition)))
+                        (let (#+ecl (simd::*native-kernel-runners* cache)
+                              #+(and ecl threads) (simd::*native-kernel-runner-lock* lock))
+                          (handler-case
+                              (setf result (multiple-value-list (funcall function)))
+                            (error (condition) (setf failure condition))))
                         nil))))
         (bordeaux-threads:join-thread thread)
         ;; CCL joins before its worker has finished releasing its stack.
@@ -229,55 +233,162 @@
         (fmakunbound 'concurrent-reduction)))))
 
 #+ecl
+(defmacro with-fresh-native-runners (&body body)
+  `(let ((simd::*native-kernel-runners* (make-hash-table :test 'eql))
+         #+threads (simd::*native-kernel-runner-lock* (mp:make-lock :name "test runners")))
+     ,@body))
+
+#+ecl
 (test ecl-native-runner-compilation-and-cache
-  (let ((calls 0) (compile-runner #'simd::compile-native-kernel-runner))
-    (eval '(simd:define-kernel lazy-native-runner (a) (+ a 2)))
-    (with-function-replaced (simd::compile-native-kernel-runner
-                             (lambda (form fallback)
-                               (incf calls)
-                               (funcall compile-runner form fallback)))
-      (let ((input (values-for 5 'single-float 1))
-            (output (make-array 5 :element-type 'single-float)))
-        (with-backend (:lisp) (lazy-native-runner output input))
-        (is (zerop calls))
-        (when simd::*native-available-p*
-          (with-backend (:native)
-            (lazy-native-runner output input)
-            (lazy-native-runner output input))
-          (is (= 1 calls))
-          (is (= 3 (aref output 0))))))
-    (fmakunbound 'lazy-native-runner)))
+  (with-fresh-native-runners
+    (let ((calls 0) (compile-runner #'simd::compile-native-kernel-runner))
+      (eval '(simd:define-kernel lazy-native-runner (a) (+ a 2)))
+      (unwind-protect
+           (with-function-replaced (simd::compile-native-kernel-runner
+                                    (lambda (form fallback)
+                                      (incf calls)
+                                      (funcall compile-runner form fallback)))
+             (let ((input (values-for 5 'single-float 1))
+                   (output (make-array 5 :element-type 'single-float)))
+               (with-backend (:lisp) (lazy-native-runner output input))
+               (is (zerop calls))
+               (when simd::*native-available-p*
+                 (with-backend (:native)
+                   (lazy-native-runner output input)
+                   (lazy-native-runner output input))
+                 (is (= 1 calls))
+                 (is (= 3 (aref output 0))))))
+        (fmakunbound 'lazy-native-runner)))))
+
+#+ecl
+(test ecl-native-runner-shared-signatures
+  (when simd::*native-available-p*
+    (with-fresh-native-runners
+      (let ((calls 0) (compile-runner #'simd::compile-native-kernel-runner)
+            (definitions `((shared-add (a) (+ a 2) 6)
+                           (shared-multiply (a) (* a 3) 12)
+                           (shared-spill (a) ,(balanced-expression 9) 2048)
+                           (shared-binary (a b) (+ a b) 8)
+                           (shared-constant () 7 7)
+                           (shared-root-sum (a) (simd:sum (sqrt a)) 2)
+                           (shared-binary-sum (a b) (simd:sum (+ a b)) 8))))
+        (unwind-protect
+             (with-function-replaced (simd::compile-native-kernel-runner
+                                      (lambda (form fallback)
+                                        (incf calls)
+                                        (funcall compile-runner form fallback)))
+               (dolist (definition definitions)
+                 (destructuring-bind (name arguments expression expected) definition
+                   (eval `(simd:define-kernel ,name ,arguments ,expression))
+                   (dolist (type '(single-float double-float))
+                     (dolist (mode '(:native :native-copy))
+                       (dolist (count '(0 5 257))
+                         (let* ((input (make-array count :element-type type :initial-element (coerce 4 type)))
+                                (output (make-array count :element-type type))
+                                (inputs (loop for nil in arguments collect input)))
+                           (with-backend (mode)
+                             (if (and (consp expression) (eq (first expression) 'simd:sum))
+                                 (is (= (* count expected) (apply (symbol-function name) inputs)))
+                                 (progn
+                                   (is (eq output (apply (symbol-function name) output inputs)))
+                                   (is (every (lambda (value) (= value expected)) output)))))))))))
+               (is (= 5 calls))
+               (is (= 5 (hash-table-count simd::*native-kernel-runners*)))
+               (is (every #'functionp (loop for runner being the hash-values of simd::*native-kernel-runners*
+                                           collect runner))))
+          (dolist (definition definitions) (fmakunbound (first definition))))))))
 
 #+ecl
 (test ecl-native-runner-failure-fallback
-  (let ((fallback (lambda () :fallback)))
-    (is (eq fallback (simd::compile-native-kernel-runner 'invalid-form fallback)))
-    (is (eq :compiled (funcall (simd::compile-native-kernel-runner
-                               '(lambda () :compiled) fallback))))
-    (let ((program (simd::%make-native-program)) (attempts 0))
-      (with-function-replaced (simd::compile-native-kernel-runner
-                               (lambda (form ignored)
-                                 (declare (ignore form ignored))
-                                 (incf attempts)
-                                 fallback))
-        (is (eq fallback (simd::ensure-native-kernel-runner program '(lambda () nil) fallback)))
-        (is (eq fallback (simd::ensure-native-kernel-runner program '(lambda () nil) fallback)))
-        (is (= 1 attempts)))))
+  (with-fresh-native-runners
+    (let ((fallback (lambda () :fallback)))
+      (is (eq fallback (simd::compile-native-kernel-runner 'invalid-form fallback)))
+      (is (eq fallback
+              (simd::compile-native-kernel-runner
+               '(lambda () nil) fallback
+               (lambda (name form)
+                 (declare (ignore name form))
+                 (values (lambda () :invalid) nil t)))))
+      (is (eq :compiled (funcall (simd::compile-native-kernel-runner
+                                 '(lambda () :compiled) fallback))))
+      (let ((program (simd::%make-native-program)) (other (simd::%make-native-program))
+            (other-fallback (lambda () :other)) (attempts 0))
+        (with-function-replaced (simd::compile-native-kernel-runner
+                                 (lambda (form fallback)
+                                   (declare (ignore form))
+                                   (incf attempts)
+                                   fallback))
+          (is (eq fallback (simd::ensure-native-kernel-runner program 2 '(lambda () nil) fallback)))
+          (is (eq fallback (simd::ensure-native-kernel-runner program 2 '(lambda () nil) fallback)))
+          (is (eq other-fallback (simd::ensure-native-kernel-runner other 2 '(lambda () nil) other-fallback)))
+          (is (eq :failed (gethash 2 simd::*native-kernel-runners*)))
+          (is (= 1 attempts)))))
+    (when simd::*native-available-p*
+      (let ((attempts 0))
+        (unwind-protect
+             (with-function-replaced (simd::compile-native-kernel-runner
+                                      (lambda (form fallback)
+                                        (declare (ignore form))
+                                        (incf attempts)
+                                        fallback))
+               (eval '(simd:define-kernel fallback-native-runner (a) (simd:sum (sqrt a))))
+               (eval '(simd:define-kernel other-fallback-runner (a) (simd:sum (+ a 3))))
+               (dolist (type '(single-float double-float))
+                 (dolist (mode '(:native :native-copy))
+                   (with-backend (mode)
+                     (is (= 10 (fallback-native-runner
+                                (make-array 5 :element-type type :initial-element (coerce 4 type)))))
+                     (is (= 35 (other-fallback-runner
+                                (make-array 5 :element-type type :initial-element (coerce 4 type)))))
+                     (signals error (fallback-native-runner
+                                     (make-array 5 :element-type type :initial-element (coerce -1 type)))))))
+               (is (= 1 attempts)))
+          (fmakunbound 'fallback-native-runner)
+          (fmakunbound 'other-fallback-runner))))))
+
+#+(and ecl threads)
+(test ecl-shared-runner-concurrent-first-use
   (when simd::*native-available-p*
-    (eval '(simd:define-kernel fallback-native-runner (a) (simd:sum (sqrt a))))
-    (let ((attempts 0))
-      (with-function-replaced (simd::compile-native-kernel-runner
-                               (lambda (form fallback)
-                                 (declare (ignore form))
-                                 (incf attempts)
-                                 fallback))
-        (with-backend (:native)
-          (is (= 10.0 (fallback-native-runner
-                      (make-array 5 :element-type 'single-float :initial-element 4.0))))
-          (signals error (fallback-native-runner
-                          (make-array 5 :element-type 'single-float :initial-element -1.0)))
-          (is (= 1 attempts))))
-      (fmakunbound 'fallback-native-runner))))
+    (with-fresh-native-runners
+      (let ((cache simd::*native-kernel-runners*) (lock simd::*native-kernel-runner-lock*)
+            (gate (bordeaux-threads:make-lock "shared runner start"))
+            (compile-runner #'simd::compile-native-kernel-runner)
+            (calls 0) (threads nil) (names nil))
+        (unwind-protect
+             (with-function-replaced (simd::compile-native-kernel-runner
+                                      (lambda (form fallback)
+                                        (incf calls)
+                                        (funcall compile-runner form fallback)))
+               (bordeaux-threads:with-lock-held (gate)
+                 (dolist (type '(single-float double-float))
+                   (dolist (mode '(:native :native-copy))
+                     (let ((elementwise (gensym "CONCURRENT")) (reduction (gensym "SUM")))
+                       (push elementwise names)
+                       (push reduction names)
+                       (eval `(simd:define-kernel ,elementwise (a) (+ a 2)))
+                       (eval `(simd:define-kernel ,reduction (a) (simd:sum (+ a 2))))
+                       (let ((worker (concurrent-kernel-worker gate (symbol-function elementwise)
+                                                               (symbol-function reduction) mode type)))
+                         (push (bordeaux-threads:make-thread
+                                (lambda ()
+                                  (let ((simd::*native-kernel-runners* cache)
+                                        (simd::*native-kernel-runner-lock* lock))
+                                    (funcall worker)))) threads))))))
+               (dolist (thread threads)
+                 (is (eq :ok (bordeaux-threads:join-thread thread)))))
+          (dolist (thread threads)
+            (when (bordeaux-threads:thread-alive-p thread) (bordeaux-threads:join-thread thread)))
+          (dolist (name names) (fmakunbound name)))
+        (is (= 2 calls))
+        (is (= 2 (hash-table-count cache)))))))
+
+#+ecl
+(test ecl-shared-runner-program-redefinition
+  (when simd::*native-available-p*
+    (with-fresh-native-runners
+      (let ((released (list 0)))
+        (finishes (exercise-native-redefinitions released))
+        (is (functionp (gethash 2 simd::*native-kernel-runners*)))))))
 
 (defun collecting-native-call (function counter)
   (lambda (&rest arguments)
@@ -303,10 +414,12 @@
 #+ecl
 (test ecl-fallback-program-redefinition
   (when simd::*native-available-p*
-    (let ((released (list 0)))
-      (with-function-replaced (simd::compile-native-kernel-runner
-                               (lambda (form fallback) (declare (ignore form)) fallback))
-        (finishes (exercise-native-redefinitions released))))))
+    (with-fresh-native-runners
+      (let ((released (list 0)))
+        (with-function-replaced (simd::compile-native-kernel-runner
+                                 (lambda (form fallback) (declare (ignore form)) fallback))
+          (finishes (exercise-native-redefinitions released))
+          (is (eq :failed (gethash 2 simd::*native-kernel-runners*))))))))
 
 (test native-copy-compact-slices
   (dolist (type '(single-float double-float))

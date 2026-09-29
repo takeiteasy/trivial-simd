@@ -52,8 +52,11 @@
 #+ecl
 (progn
   (eval '(trivial-simd:define-kernel eval-multiply-add (a b c) (+ (* a b) c)))
+  (eval '(trivial-simd:define-kernel eval-multiply-subtract (a b c) (- (* a b) c)))
   (let ((a (make-array 5 :element-type 'single-float :initial-element 2.0))
         (out (make-array 5 :element-type 'single-float)))
     (dotimes (i 2)
       (eval-multiply-add out a a a)
-      (assert (every (lambda (value) (= value 6.0)) out)))))
+      (assert (every (lambda (value) (= value 6.0)) out)))
+    (eval-multiply-subtract out a a a)
+    (assert (every (lambda (value) (= value 2.0)) out))))

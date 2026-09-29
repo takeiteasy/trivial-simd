@@ -92,11 +92,14 @@ Native code and constant buffers are allocated lazily and reclaimed when their
 kernel function becomes unreachable. Retained references to an older function
 remain callable after redefinition. Reclamation follows garbage collection.[^ownership]
 
-On ECL, the first native call compiles a helper for foreign-call setup; later
-calls reuse it. This also accelerates kernels defined through `eval`. If helper
-compilation fails, calls use the interpreted setup without retrying compilation.
-Lisp-only calls do not compile a helper. Each invocation owns its pointer table
-and reduction output storage, so concurrent calls use separate mutable buffers.
+On ECL, native calls share a compiled setup helper by input count and
+whether the kernel returns a sum. Different expressions, both float types, and
+pointer/copy access reuse the same helper. This includes `eval` definitions.
+The first native call for a signature compiles its helper; later definitions
+reuse it. Failed compilation selects each kernel's own interpreted fallback
+without retrying that signature until restart. Lisp-only calls do not initialize
+helpers. Each invocation owns its pointer table and reduction output storage,
+so concurrent calls use separate mutable buffers.[^ecl-runners]
 See [ECL measurements](kernel-performance.md#ecl-native-calls) and
 [cold-start limitations](#limitations).
 
@@ -127,9 +130,10 @@ for measurements and [FMA fallback limitations](#limitations).
 - Reductions are top-level sums only. Nested reductions and additional reducers
   are unsupported. See the
   [additional reductions ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/42).
-- ECL compiles a helper per kernel on first native use, costing hundreds of
-  milliseconds. See the
-  [helper reuse ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/58).
+- ECL's first native call for each setup signature includes helper compilation,
+  costing hundreds of milliseconds. Cold compilation for different signatures
+  is serialized. See the
+  [concurrent compilation ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/65).
 - Element types are `single-float` and `double-float`. See the
   [integer ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/39).
 - SBCL kernels are generated only on x86-64 with `sb-simd`.
@@ -176,3 +180,9 @@ for measurements and [FMA fallback limitations](#limitations).
     release foreign buffers without retaining
     their owning program. Partial initialization frees completed allocations,
     and active native calls keep the owner reachable until they finish.
+
+[^ecl-runners]: The process retains at most 495 helpers or failure markers under
+    the current input-count limit. Cache entries do not retain kernel programs
+    or per-call data. Each program stores its selected runner, so warmed calls
+    avoid shared-cache lookup and locking. Threaded ECL protects initialization
+    with one native lock; non-threaded ECL initializes directly.

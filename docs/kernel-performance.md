@@ -104,19 +104,46 @@ Apple M1 and the Lisp versions above. The baseline is commit `5bbddc2`.
 
 ## ECL native calls
 
-ECL 26.5.5 on Apple M1, `single-float` multiply-add kernels. Values are median
-microseconds per warmed call across three batches. The fallback column uses
-interpreted call setup when helper compilation is unavailable.
+ECL 26.5.5 on Apple M1 shares setup helpers across definitions with the same
+input count and reduction mode. A new definition using an existing helper avoids
+compilation; its first native call still allocates its program buffers.
+See [kernel limitations](kernels.md#limitations) for cold compilation.
 
-| Elements | Compiled definition | Eval definition | Eval with fallback | Two bulk calls |
-|---|---:|---:|---:|---:|
-| 32 | 1.18 | 1.76 | 5.45 | 1.47 |
-| 1,024 | 1.31 | 2.08 | 5.61 | 1.88 |
-| 65,536 | 17.87 | 18.36 | 22.38 | 18.33 |
+First-call milliseconds for 32 elements, using five-trial medians:
 
-The first native call for the eval definition takes about 320 ms, including
-helper compilation. The helper is reused for later calls. See
-[kernel limitations](kernels.md#limitations) for cold-start work.
+| Definition | Kernel | Float | Cold signature | Shared signature |
+|---|---|---|---:|---:|
+| Compiled | Elementwise | single | 361.171 | 0.147 |
+| Compiled | Elementwise | double | 376.045 | 0.152 |
+| Compiled | Sum | single | 341.766 | 0.133 |
+| Compiled | Sum | double | 368.892 | 0.185 |
+| Eval | Elementwise | single | 335.136 | 0.070 |
+| Eval | Elementwise | double | 320.489 | 0.065 |
+| Eval | Sum | single | 337.276 | 0.067 |
+| Eval | Sum | double | 321.078 | 0.067 |
+
+Warmed microseconds per call for definitions using the shared helper:
+
+| Kernel | Float | Elements | Compiled | Eval |
+|---|---|---:|---:|---:|
+| Elementwise | single | 32 | 1.102 | 1.661 |
+| Elementwise | single | 1,024 | 1.334 | 1.898 |
+| Elementwise | single | 65,536 | 18.652 | 18.812 |
+| Elementwise | double | 32 | 1.246 | 1.803 |
+| Elementwise | double | 1,024 | 1.735 | 2.319 |
+| Elementwise | double | 65,536 | 32.839 | 34.844 |
+| Sum | single | 32 | 1.012 | 1.529 |
+| Sum | single | 1,024 | 1.297 | 1.838 |
+| Sum | single | 65,536 | 21.380 | 22.572 |
+| Sum | double | 32 | 1.110 | 1.651 |
+| Sum | double | 1,024 | 1.789 | 2.311 |
+| Sum | double | 65,536 | 43.403 | 43.856 |
+
+The elementwise expression is `(- (* a b) c)`; the sum wraps that expression
+in `sum`. Each helper is first initialized by a different definition using
+`(+ (* a b) c)`. Inputs are identical typed vectors and all results are checked
+outside timing. Cold trials use fresh caches and definitions; warm values are
+medians of three calibrated batches. The first-call clock resolution is 1 µs.
 
 [^x86-fma]: The C profile disables hardware dispatch in its software executable;
     the platform math library may itself use hardware FMA. The first C table
