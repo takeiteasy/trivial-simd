@@ -127,7 +127,10 @@
             ,@body)
   #+ecl `(progn (ext:trap-fpe t nil)
                 (unwind-protect (progn ,@body) (ext:trap-fpe t t)))
-  #-(or sbcl ecl) `(progn ,@body))
+  #+ccl `(let ((mode (ccl:get-fpu-mode)))
+           (ccl:set-fpu-mode :division-by-zero nil :invalid nil :overflow nil)
+           (unwind-protect (progn ,@body) (apply #'ccl:set-fpu-mode mode)))
+  #-(or sbcl ecl ccl) `(progn ,@body))
 
 (defun cblas-call (name &rest arguments)
   (without-float-traps
@@ -663,16 +666,19 @@
 
 (defun blas-poison (type)
   "Return an infinity of TYPE's component, or NIL when the Lisp has no constant."
-  (let* ((component (blas-component type))
-         (name (if (eq component 'single-float)
-                   "SINGLE-FLOAT-POSITIVE-INFINITY"
-                   "DOUBLE-FLOAT-POSITIVE-INFINITY"))
-         (symbol (some (lambda (package)
-                         (let ((package (find-package package)))
-                           (and package (find-symbol name package))))
-                       '("SB-EXT" "CCL" "EXT"))))
-    (when (and symbol (boundp symbol))
-      (let ((infinity (symbol-value symbol)))
+  (flet ((find-infinity (name)
+           (let ((symbol (some (lambda (package)
+                                 (let ((package (find-package package)))
+                                   (and package (find-symbol name package))))
+                               '("SB-EXT" "CCL" "EXT"))))
+             (and symbol (boundp symbol) (symbol-value symbol)))))
+    (let* ((component (blas-component type))
+           (infinity (if (eq component 'single-float)
+                         (or (find-infinity "SINGLE-FLOAT-POSITIVE-INFINITY")
+                             (let ((double (find-infinity "DOUBLE-FLOAT-POSITIVE-INFINITY")))
+                               (and double (ignore-errors (coerce double 'single-float)))))
+                         (find-infinity "DOUBLE-FLOAT-POSITIVE-INFINITY"))))
+      (when infinity
         (if (consp type) (complex infinity infinity) infinity)))))
 
 (defun new-test-view (type rows cols)

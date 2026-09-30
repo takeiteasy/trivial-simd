@@ -30,7 +30,10 @@
             ,@body)
   #+ecl `(progn (ext:trap-fpe t nil)
                 (unwind-protect (progn ,@body) (ext:trap-fpe t t)))
-  #-(or sbcl ecl) `(progn ,@body))
+  #+ccl `(let ((mode (ccl:get-fpu-mode)))
+           (ccl:set-fpu-mode :division-by-zero nil :invalid nil :overflow nil)
+           (unwind-protect (progn ,@body) (apply #'ccl:set-fpu-mode mode)))
+  #-(or sbcl ecl ccl) `(progn ,@body))
 
 (defun load-reference-blas ()
   (loop for library in '("/System/Library/Frameworks/Accelerate.framework/Accelerate"

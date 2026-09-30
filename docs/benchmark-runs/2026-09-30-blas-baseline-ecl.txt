@@ -1,4 +1,5 @@
 # ECL 26.5.5; times are microseconds per call; ratio = ours / CBLAS
+routine  layout        n     ours         cblas        ratio    
 dgemm    ROW-MAJOR        16     3130.156       11.378    275.11
 dsyrk    ROW-MAJOR        16     1626.438        9.416    172.73
 dtrsm    ROW-MAJOR        16      997.563       11.451     87.12

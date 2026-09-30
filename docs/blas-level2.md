@@ -63,7 +63,9 @@ Each routine walks the stored matrix one contiguous line at a time, so dense,
 band, and packed views share one typed kernel per precision.[^runs] Band
 routines visit only the band and triangular routines only their triangle. On
 the measured Apple M1 with SBCL, a 64×64 `dgemv` takes 2.5 µs against 271 µs
-for the earlier loops; see the [BLAS benchmarks](blas-benchmarks.md).
+for the earlier loops; see the [BLAS benchmarks](blas-benchmarks.md). Kernels
+do not call the native `dot` and `axpy!`, which only beat a Lisp loop from
+about 1,000 elements.[^native]
 
 ## Limitations
 
@@ -81,3 +83,7 @@ storage follows the [overlap limitation](api.md#limitations).
 [^runs]: A line is a row for row-major views and a column for column-major
     views. Kernels skip bounds checks after validation, so views and
     increments must fit 30 bits.
+[^native]: Measured per call on double-float vectors with SBCL and the native
+    backend: `dot` takes 0.11 µs at 64 elements, 0.21 µs at 256, and 0.57 µs at
+    1,024, against 0.04, 0.20, and 0.93 µs for a typed Lisp loop. `axpy!` takes
+    0.38 µs at 64 elements and 0.56 µs at 1,024.

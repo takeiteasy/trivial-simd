@@ -65,7 +65,7 @@ view. The [runnable example](../examples/blas.lisp) uses `gemm!`.
 Each routine resolves its views to a base offset and row and column strides
 once, then runs a typed loop per precision with the unit-stride dimension
 innermost.[^kernels] On the measured Apple M1 with SBCL, a 64×64 `dgemm` takes
-253 µs, against 22.3 ms for the earlier checked-access loops; see the
+244 to 285 µs depending on layout, against 22.3 ms for the earlier checked-access loops; see the
 [BLAS benchmarks](blas-benchmarks.md).
 
 ## Limitations
