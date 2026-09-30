@@ -60,7 +60,21 @@ defaults to no transpose and zero `beta`. `trsm!` defaults to left, upper,
 no transpose, and nonunit diagonal. Both select precision from the output
 view. The [runnable example](../examples/blas.lisp) uses `gemm!`.
 
+## Performance
+
+Each routine resolves its views to a base offset and row and column strides
+once, then runs a typed loop per precision with the unit-stride dimension
+innermost.[^kernels] On the measured Apple M1 with SBCL, a 64×64 `dgemm` takes
+253 µs, against 22.3 ms for the earlier checked-access loops.
+
 ## Limitations
 
-Level 3 uses portable scalar loops. Matrix kernel optimization is tracked by
-[#77](https://todo.sr.ht/~takeiteasy/trivial-simd/77).
+Level 3 kernels are scalar Lisp loops without cache blocking or SIMD. They
+remain well behind system CBLAS on large matrices. Native kernels are tracked
+by [#79](https://todo.sr.ht/~takeiteasy/trivial-simd/79).
+
+[^kernels]: `symm` and `hemm` expand the stored triangle to a dense matrix and
+    call the `gemm` kernel. `trmm` and `trsm` operate on a dense row-major
+    copy of `B`; right-side calls solve the transposed left-side problem.
+    Kernels skip bounds checks after validation, so views must fit
+    30-bit dimensions and leading dimensions.

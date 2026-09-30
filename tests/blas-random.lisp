@@ -125,8 +125,8 @@
 (defmacro without-float-traps (&body body)
   #+sbcl `(sb-int:with-float-traps-masked (:divide-by-zero :invalid :overflow :inexact)
             ,@body)
-  #+ecl `(ext:with-float-traps-masked (:divide-by-zero :invalid :overflow :inexact)
-           ,@body)
+  #+ecl `(progn (ext:trap-fpe t nil)
+                (unwind-protect (progn ,@body) (ext:trap-fpe t t)))
   #-(or sbcl ecl) `(progn ,@body))
 
 (defun cblas-call (name &rest arguments)

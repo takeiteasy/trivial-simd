@@ -46,6 +46,7 @@
                (:file "blas/level1")
                (:file "blas/level1-extra")
                (:file "blas/matrix-view")
+               (:file "blas/kernel")
                (:file "blas/level2")
                (:file "blas/level3"))
   :in-order-to ((asdf:test-op (asdf:test-op "trivial-simd/tests"))))
