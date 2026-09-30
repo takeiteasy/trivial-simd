@@ -33,7 +33,7 @@ triangle. Both constructors accept `:layout` and `:offset`; band views also
 accept `:leading-dimension`. The operation's `:upper` or `:lower` flag
 selects which triangle is stored. These views share their backing vector.
 
-Level 2 routines use portable Lisp loops. Native kernels that use a view's
+Level 2 and 3 routines use portable Lisp loops. Native kernels that use a view's
 backing vector must pin or copy it through the same paths as core numeric
 vectors.[^pointer] A native pointer to a view starts at the element offset.
 Alignment of the backing vector does not imply alignment at a nonzero offset.
@@ -46,8 +46,7 @@ supported simple vector before constructing a BLAS view.
 ## Limitations
 
 Subviews are available for dense matrices; band and packed views use an explicit
-base offset. Level 3 routines are tracked by
-[#71](https://todo.sr.ht/~takeiteasy/trivial-simd/71).
+base offset.
 
 [^pointer]: See [native array access](backends.md#array-access) for the tested
     implementations and the copy fallback.

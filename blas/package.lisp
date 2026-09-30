@@ -26,4 +26,10 @@
            #:sger #:dger #:cgeru #:zgeru #:cgerc #:zgerc
            #:ssyr #:dsyr #:sspr #:dspr
            #:ssyr2 #:dsyr2 #:sspr2 #:dspr2
-           #:cher #:zher #:chpr #:zhpr #:cher2 #:zher2 #:chpr2 #:zhpr2))
+           #:cher #:zher #:chpr #:zhpr #:cher2 #:zher2 #:chpr2 #:zhpr2
+           #:sgemm #:dgemm #:cgemm #:zgemm
+           #:ssymm #:dsymm #:csymm #:zsymm #:chemm #:zhemm
+           #:ssyrk #:dsyrk #:csyrk #:zsyrk #:cherk #:zherk
+           #:ssyr2k #:dsyr2k #:csyr2k #:zsyr2k #:cher2k #:zher2k
+           #:strmm #:dtrmm #:ctrmm #:ztrmm
+           #:strsm #:dtrsm #:ctrsm #:ztrsm))

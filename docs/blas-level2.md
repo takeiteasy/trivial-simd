@@ -64,8 +64,6 @@ Level 2 uses portable Lisp loops; optimized kernels are tracked by
 is tracked by [#43](https://todo.sr.ht/~takeiteasy/trivial-simd/43).
 Shared input/output
 storage follows the [overlap limitation](api.md#limitations).
-Level 3 routines are tracked by
-[#71](https://todo.sr.ht/~takeiteasy/trivial-simd/71).
 
 [^storage]: General band views use `:kind :general` with `:kl` and `:ku`.
     Symmetric, Hermitian, and triangular band views use their matching

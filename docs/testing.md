@@ -13,6 +13,8 @@ the reference comparison is skipped when no CBLAS is installed.
 Level 2 tests cover matrix views, layouts, packed and band storage, transpose,
 triangular solves, Hermitian updates, and reference CBLAS comparisons for
 dense, banded, packed, symmetric, and rank-update operations.
+Level 3 tests cover all precision variants, matrix overlap, padded views,
+operation flags, and CBLAS comparisons across its nine routine families.
 Direct copy tests check both precisions, round trips, empty ranges, and partial
 copy-back, compact slice transfers, and overlapping copy-mode input snapshots. Native program tests check partial-initialization cleanup, finalization,
 retained functions after redefinition, and collection during active native calls.

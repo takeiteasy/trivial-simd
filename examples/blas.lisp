@@ -25,3 +25,14 @@
        (y (make-array 2 :element-type 'double-float :initial-element 0d0)))
   (trivial-simd/blas/convenience:gemv! y 1d0 matrix x)
   (format t "matrix-vector product: ~S~%" y))
+
+(let* ((a (make-array 4 :element-type 'double-float
+                      :initial-contents '(1d0 2d0 3d0 4d0)))
+       (b (make-array 4 :element-type 'double-float
+                      :initial-contents '(5d0 6d0 7d0 8d0)))
+       (c (make-array 4 :element-type 'double-float :initial-element 0d0)))
+  (trivial-simd/blas/convenience:gemm!
+   (trivial-simd/blas:make-matrix-view c 2 2) 1d0
+   (trivial-simd/blas:make-matrix-view a 2 2)
+   (trivial-simd/blas:make-matrix-view b 2 2))
+  (format t "matrix product: ~S~%" c))

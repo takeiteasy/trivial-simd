@@ -1,7 +1,7 @@
 (defpackage #:trivial-simd/blas/convenience
   (:use #:cl)
   (:export #:axpy! #:scal! #:copy! #:swap! #:dot #:norm2
-           #:gemv! #:ger! #:trsv!))
+           #:gemv! #:ger! #:trsv! #:gemm! #:trsm!))
 
 (in-package #:trivial-simd/blas/convenience)
 
@@ -136,3 +136,25 @@
              (:c32 #'trivial-simd/blas:ctrsv)
              (:c64 #'trivial-simd/blas:ztrsv))
            uplo transpose diag view x 1))
+
+(defun gemm! (c alpha a b &key (transa :no-transpose)
+                                 (transb :no-transpose) beta)
+  (let* ((precision (view-precision c))
+         (zero (ecase precision
+                 (:f32 0.0f0) (:f64 0.0d0)
+                 (:c32 #C(0.0f0 0.0f0)) (:c64 #C(0.0d0 0.0d0)))))
+    (funcall (ecase precision
+               (:f32 #'trivial-simd/blas:sgemm)
+               (:f64 #'trivial-simd/blas:dgemm)
+               (:c32 #'trivial-simd/blas:cgemm)
+               (:c64 #'trivial-simd/blas:zgemm))
+             transa transb alpha a b (or beta zero) c)))
+
+(defun trsm! (b alpha a &key (side :left) (uplo :upper)
+                                  (transpose :no-transpose) (diag :non-unit))
+  (funcall (ecase (view-precision b)
+             (:f32 #'trivial-simd/blas:strsm)
+             (:f64 #'trivial-simd/blas:dtrsm)
+             (:c32 #'trivial-simd/blas:ctrsm)
+             (:c64 #'trivial-simd/blas:ztrsm))
+           side uplo transpose diag alpha a b))
