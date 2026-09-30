@@ -481,6 +481,23 @@ SPILL/RELOAD use a register and slot; other operands name registers or inputs."
                  (:operation (walk (third node)) (walk (fourth node))))))
       (walk tree))))
 
+(defun validate-complex-kernel (tree)
+  (labels ((walk (node)
+             (case (first node)
+               ((:argument :constant) nil)
+               (:negate (walk (second node)))
+               (:unary
+                (when (eq (second node) :abs)
+                  (error "Complex kernel ABS needs a real destination"))
+                (walk (third node)))
+               (:fma (error "FMA requires real float vectors"))
+               (:operation
+                (when (member (second node) '(:min :max))
+                  (error "Complex values have no ordering"))
+                (walk (third node))
+                (walk (fourth node))))))
+    (walk tree)))
+
 (defun integer-kernel-function (cache tree type backend destination arguments count d-offset offsets)
   (let ((slot (+ (* 2 (- (position type *numeric-types* :key #'first) 2))
                  (if (eq backend :sbcl) 1 0))))
@@ -496,6 +513,16 @@ SPILL/RELOAD use a register and slot; other operands name registers or inputs."
                                #-(and sbcl x86-64)
                                '(error "SBCL SIMD is unavailable on this platform")
                                (lisp-kernel-form tree type destination arguments d-offset offsets count))))))))
+
+(defun complex-kernel-function (cache tree type destination arguments count d-offset offsets)
+  (let ((slot (if (eq type :c32) 0 1)))
+    (or (aref cache slot)
+        (setf (aref cache slot)
+              (#+ecl eval #-ecl compile
+               #-ecl nil
+               `(lambda (,@(when destination (list destination)) ,@arguments ,count
+                         ,@(when destination (list d-offset)) ,@offsets)
+                  ,(lisp-kernel-form tree type destination arguments d-offset offsets count)))))))
 
 (defmacro define-kernel (name (&rest arguments) expression)
   "Define an elementwise destination kernel or a scalar (SUM expression) kernel.
@@ -516,6 +543,7 @@ Both accept START, END, and per-input start keywords. Experimental."
                (offsets (loop for nil in arguments collect (gensym "OFFSET")))
                (program (gensym "PROGRAM")) (programs (gensym "PROGRAMS"))
                (integer-functions (gensym "INTEGER-FUNCTIONS")) (type (gensym "TYPE"))
+               (complex-functions (gensym "COMPLEX-FUNCTIONS"))
                (offsets-variable (gensym "OFFSETS"))
                (starts (mapcar (lambda (argument) (intern (format nil "~A-START" argument))) arguments))
                (vectors (if destination (cons destination arguments) arguments))
@@ -535,6 +563,7 @@ Both accept START, END, and per-input start keywords. Experimental."
                #+ecl (runner-form `(lambda ,runner-arguments ,native-form)))
           `(let ((,programs (make-array ,(length *numeric-types*) :initial-element nil))
                  (,integer-functions (make-array 16 :initial-element nil))
+                 (,complex-functions (make-array 2 :initial-element nil))
                  #+ecl (,runner ,runner-form))
              (defun ,name (,@vectors &key start end ,@all-starts)
                ,(if reduction-p "Return the sum of the kernel expression over the input slice."
@@ -544,7 +573,14 @@ Both accept START, END, and per-input start keywords. Experimental."
                  (when (integer-type-p ,type) (validate-integer-kernel ',tree ,type))
                  (destructuring-bind ,all-offsets ,offsets-variable
                    (declare (type fixnum ,@all-offsets))
-                   (ecase *backend*
+                   (if (complex-type-p ,type)
+                       (progn
+                         (validate-complex-kernel ',tree)
+                         (funcall (complex-kernel-function
+                                   ,complex-functions ',tree ,type ',destination ',arguments
+                                   ',count ',d-offset ',offsets)
+                                  ,@vectors ,count ,@all-offsets))
+                       (ecase *backend*
                      (:lisp (if (integer-type-p ,type) ,integer-form
                                 (if (eq ,type :f32)
                                     ,(selected-lisp-kernel-form tree :f32 destination arguments d-offset offsets count)
@@ -568,5 +604,5 @@ Both accept START, END, and per-input start keywords. Experimental."
                                        ,program ,(+ (* 2 (length arguments)) (if reduction-p 1 0))
                                        ',runner-form ,runner)
                                        ,@runner-arguments)
-                        #-ecl ,native-form))))
+                        #-ecl ,native-form)))))
                  ,@(when destination (list destination))))))))))

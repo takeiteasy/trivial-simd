@@ -32,7 +32,6 @@ supported simple vector before constructing a BLAS view.
 Matrix views and Level 2–3 routines are not implemented yet. Their implementation
 is tracked by [#70](https://todo.sr.ht/~takeiteasy/trivial-simd/70) and
 [#71](https://todo.sr.ht/~takeiteasy/trivial-simd/71).
-Complex backing vectors depend on [#47](https://todo.sr.ht/~takeiteasy/trivial-simd/47).
 
 [^pointer]: See [native array access](backends.md#array-access) for the tested
     implementations and the copy fallback.

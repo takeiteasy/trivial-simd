@@ -4,5 +4,5 @@
   (:export #:add! #:subtract! #:multiply! #:divide! #:scale! #:axpy! #:fma!
            #:negate! #:abs! #:sqrt! #:reciprocal! #:min! #:max! #:clamp!
            #:convert! #:compare! #:select! #:select #:count #:any #:all
-           #:sum #:dot #:backend
+           #:sum #:dot #:dotc #:backend
            #:define-kernel #:fma))

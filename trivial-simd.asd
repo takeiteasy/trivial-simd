@@ -14,6 +14,7 @@
                (:file "backends")
                (:file "operations")
                (:file "extended-operations")
+               (:file "complex-operations")
                (:file "kernel"))
   :in-order-to ((asdf:test-op (asdf:test-op "trivial-simd/tests"))))
 
@@ -26,7 +27,9 @@
                (:file "tests/native")
                (:file "tests/kernels")
                (:file "tests/integers")
-               (:file "tests/blas"))
+               (:file "tests/blas")
+               (:file "tests/complex")
+               (:file "tests/blas-level1"))
   :perform (asdf:test-op (operation component)
              (declare (ignore operation component))
              (unless (uiop:symbol-call :fiveam :run! :trivial-simd)
@@ -37,7 +40,8 @@
   :depends-on ("trivial-simd")
   :serial t
   :components ((:file "blas/package")
-               (:file "blas/level1"))
+               (:file "blas/level1")
+               (:file "blas/level1-extra"))
   :in-order-to ((asdf:test-op (asdf:test-op "trivial-simd/tests"))))
 
 (asdf:defsystem "trivial-simd/blas/convenience"

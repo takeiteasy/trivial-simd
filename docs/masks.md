@@ -18,6 +18,8 @@ destination type. The [bulk slice rules](api.md#slices) apply. The per-vector
 keywords are `:mask-start`, `:left-start`, `:right-start`, `:true-start`,
 `:false-start`, and `:destination-start` where relevant. An empty mask gives
 `0` for `count`, false for `any`, and true for `all`.
+Complex vectors support `:eq` and `:ne` comparisons and complex selection;
+ordered comparisons require real or integer operands.
 
 ```lisp
 (trivial-simd:compare! mask :gt measurements threshold)

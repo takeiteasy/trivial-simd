@@ -1,8 +1,8 @@
 # Type conversion
 
 `(convert! destination input &key start end destination-start input-start
-rounding)` converts between every pair of the [ten numeric vector
-types](api.md). It writes and returns `destination`. The vectors may have
+rounding)` converts among the [numeric vector types](api.md). It writes and
+returns `destination`. The vectors may have
 different element types; the usual [slice rules](api.md#slices) apply.
 
 | Conversion | Behavior |
@@ -11,6 +11,9 @@ different element types; the usual [slice rules](api.md#slices) apply.
 | Integer to float | Round to the destination float precision |
 | Float to float | Round to the destination float precision |
 | Float to integer | Apply `:rounding`, then clamp to the destination range |
+| Real or integer to complex | Convert the real component; use zero imaginary component |
+| Complex to complex | Round both components to the destination precision |
+| Complex to real or integer | Require zero imaginary component, then convert the real component |
 
 Float-to-integer `:rounding` accepts `:nearest-even` (default), `:truncate`,
 `:floor`, and `:ceiling`. It has no effect on other conversions. Positive and

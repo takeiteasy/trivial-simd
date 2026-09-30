@@ -1,7 +1,8 @@
 # API
 
 `trivial-simd` operates on whole, equal-length, simple vectors of
-`single-float`, `double-float`, or signed/unsigned 8/16/32/64-bit integers.
+`single-float`, `double-float`, `(complex single-float)`,
+`(complex double-float)`, or signed/unsigned 8/16/32/64-bit integers.
 Arithmetic inputs and destination have the same element type. Scalars match
 that element type exactly; integer scalars fit its signed or unsigned range.
 [Conversion](conversion.md) and [masks](masks.md) use mixed element types.
@@ -21,6 +22,7 @@ Integer arithmetic [wraps at the vector width](integers.md).
 | [Masks and selection](masks.md) | Compare, select, count, any, all |
 | `(sum input &key ...)` | Scalar sum |
 | `(dot left right &key ...)` | Scalar dot product |
+| `(dotc left right &key ...)` | Conjugated complex dot product |
 | `(backend)` | `:sbcl`, `:native`, or `:lisp` |
 
 The four binary `!` functions accept a scalar on either side, with a vector
@@ -29,9 +31,13 @@ three scalars. The destination sets the length and type. These calls do not
 allocate broadcast vectors. `scale!` and `axpy!` accept one scalar multiplier.
 
 Every `!` function returns its modified vector. A destination may also be an
-input at the same slice position. `sum` and `dot` return a zero of the vector's
+input at the same slice position. `sum`, `dot`, and `dotc` return a zero of the vector's
 element type for empty vectors. Invalid element types and mismatched lengths
 signal an error, including on empty slices.
+
+[Complex vectors](complex.md) support the arithmetic operations with a
+defined complex result. Their magnitudes and conversions use matching real
+vectors where appropriate.
 
 ## Slices
 
@@ -45,7 +51,7 @@ vector while the element count stays `end - start`.
 | `:destination-start`, `:left-start`, `:right-start` | `add!`, `subtract!`, `multiply!`, `divide!` |
 | `:y-start`, `:x-start` | `axpy!` |
 | `:destination-start`, `:x-start`, `:y-start`, `:z-start` | `fma!` |
-| `:left-start`, `:right-start` | `dot` |
+| `:left-start`, `:right-start` | `dot`, `dotc` |
 | `:input-start` | `sum` |
 | `:destination-start`, `:input-start` | Unary operations and `convert!` |
 | `:destination-start`, `:left-start`, `:right-start` | `min!`, `max!` |
@@ -98,7 +104,6 @@ instead. The available integer operations and backend paths are described in
 | More reductions | [#42](https://todo.sr.ht/~takeiteasy/trivial-simd/42) |
 | Strided access | [#43](https://todo.sr.ht/~takeiteasy/trivial-simd/43) |
 | Copy, fill, swap | [#44](https://todo.sr.ht/~takeiteasy/trivial-simd/44) |
-| Complex floats | [#47](https://todo.sr.ht/~takeiteasy/trivial-simd/47) |
 | Matrix support | [#70](https://todo.sr.ht/~takeiteasy/trivial-simd/70) |
 | Shifted overlap between destination and input slices | [#67](https://todo.sr.ht/~takeiteasy/trivial-simd/67) |
 

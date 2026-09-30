@@ -53,23 +53,26 @@ STARTS holds each vector's own start or NIL to use START."
   (multiple-value-bind (type count offsets)
       (resolve-bulk-operands destination (list left right)
                              (list left-start right-start) start end destination-start)
-    (declare (ignore type))
     (destructuring-bind (destination-offset left-offset right-offset) offsets
-      (if (and (vectorp left) (vectorp right))
-          (ecase *backend*
-            (:sbcl (sbcl-binary operation destination left right count
-                                destination-offset left-offset right-offset))
-            (:native (native-binary operation destination left right count
-                                    destination-offset left-offset right-offset))
-            (:lisp (lisp-binary operation destination left right count
-                                destination-offset left-offset right-offset)))
-          (ecase *backend*
-            (:sbcl (sbcl-scalar-binary operation destination left right count
+      (cond ((complex-type-p type)
+             (complex-binary operation destination left right count
+                             destination-offset left-offset right-offset))
+            ((and (vectorp left) (vectorp right))
+             (ecase *backend*
+               (:sbcl (sbcl-binary operation destination left right count
+                                   destination-offset left-offset right-offset))
+               (:native (native-binary operation destination left right count
                                        destination-offset left-offset right-offset))
-            (:native (native-scalar-binary operation destination left right count
-                                         destination-offset left-offset right-offset))
-            (:lisp (lisp-scalar-binary operation destination left right count
-                                       destination-offset left-offset right-offset))))))
+               (:lisp (lisp-binary operation destination left right count
+                                   destination-offset left-offset right-offset))))
+            (t
+             (ecase *backend*
+               (:sbcl (sbcl-scalar-binary operation destination left right count
+                                          destination-offset left-offset right-offset))
+               (:native (native-scalar-binary operation destination left right count
+                                            destination-offset left-offset right-offset))
+               (:lisp (lisp-scalar-binary operation destination left right count
+                                          destination-offset left-offset right-offset)))))))
   destination)
 
 (defun resolve-bulk-operands (destination operands starts start end destination-start)
@@ -110,12 +113,13 @@ override the start for one vector." verb)
   (when (vectorp a) (error "SCALE! needs a scalar multiplier"))
   (multiple-value-bind (type count offsets)
       (resolve-bulk-operands x (list a) (list nil) start end nil)
-    (declare (ignore type))
     (let ((offset (first offsets)))
-      (ecase *backend*
-        (:sbcl (sbcl-scale x a count offset))
-        (:native (native-scale x a count offset))
-        (:lisp (lisp-scale x a count offset)))))
+      (if (complex-type-p type)
+          (complex-scale x a count offset)
+          (ecase *backend*
+            (:sbcl (sbcl-scale x a count offset))
+            (:native (native-scale x a count offset))
+            (:lisp (lisp-scale x a count offset))))))
   x)
 
 (defun axpy! (y a x &key start end y-start x-start)
@@ -124,13 +128,14 @@ override the start for one vector." verb)
   (unless (vectorp x) (error "AXPY! needs a vector input"))
   (multiple-value-bind (type count offsets)
       (resolve-bulk-operands y (list a x) (list nil x-start) start end y-start)
-    (declare (ignore type))
     (destructuring-bind (y-offset scalar-offset x-offset) offsets
       (declare (ignore scalar-offset))
-      (ecase *backend*
-        (:sbcl (sbcl-axpy y a x count y-offset x-offset))
-        (:native (native-axpy y a x count y-offset x-offset))
-        (:lisp (lisp-axpy y a x count y-offset x-offset)))))
+      (if (complex-type-p type)
+          (complex-axpy y a x count y-offset x-offset)
+          (ecase *backend*
+            (:sbcl (sbcl-axpy y a x count y-offset x-offset))
+            (:native (native-axpy y a x count y-offset x-offset))
+            (:lisp (lisp-axpy y a x count y-offset x-offset))))))
   y)
 
 (defun fma! (destination x y z &key start end destination-start x-start y-start z-start)
@@ -152,20 +157,30 @@ override the start for one vector." verb)
   "Return the sum of the :START to :END slice of INPUT, or a zero if empty."
   (multiple-value-bind (type count offsets)
       (resolve-slice (list input) (list input-start) start end)
-    (declare (ignore type))
     (let ((offset (first offsets)))
-      (ecase *backend*
-        (:sbcl (sbcl-sum input count offset))
-        (:native (native-sum input count offset))
-        (:lisp (lisp-sum input count offset))))))
+      (if (complex-type-p type)
+          (complex-sum input count offset)
+          (ecase *backend*
+            (:sbcl (sbcl-sum input count offset))
+            (:native (native-sum input count offset))
+            (:lisp (lisp-sum input count offset)))))))
 
 (defun dot (left right &key start end left-start right-start)
   "Return the dot product of the :START to :END slices of LEFT and RIGHT."
   (multiple-value-bind (type count offsets)
       (resolve-slice (list left right) (list left-start right-start) start end)
-    (declare (ignore type))
     (destructuring-bind (left-offset right-offset) offsets
-      (ecase *backend*
-        (:sbcl (sbcl-dot left right count left-offset right-offset))
-        (:native (native-dot left right count left-offset right-offset))
-        (:lisp (lisp-dot left right count left-offset right-offset))))))
+      (if (complex-type-p type)
+          (complex-dot left right count left-offset right-offset nil)
+          (ecase *backend*
+            (:sbcl (sbcl-dot left right count left-offset right-offset))
+            (:native (native-dot left right count left-offset right-offset))
+            (:lisp (lisp-dot left right count left-offset right-offset)))))))
+
+(defun dotc (left right &key start end left-start right-start)
+  "Return the dot product with LEFT conjugated."
+  (multiple-value-bind (type count offsets)
+      (resolve-slice (list left right) (list left-start right-start) start end)
+    (unless (complex-type-p type)
+      (error "DOTC requires complex vectors"))
+    (complex-dot left right count (first offsets) (second offsets) t)))

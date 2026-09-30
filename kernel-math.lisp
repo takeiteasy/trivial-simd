@@ -1,7 +1,8 @@
 (in-package #:trivial-simd)
 
 (defun kernel-sqrt (value)
-  (when (minusp value) (error "Negative kernel square root operand: ~S" value))
+  (when (and (realp value) (minusp value))
+    (error "Negative kernel square root operand: ~S" value))
   (sqrt value))
 
 (defun kernel-min (left right)

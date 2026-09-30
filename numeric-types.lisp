@@ -14,10 +14,17 @@
       (:u64 (unsigned-byte 64) :uint64 64 nil))))
 
 (defun numeric-type (type)
-  (or (assoc type *numeric-types*) (error "Unknown numeric type ~S" type)))
+  (or (assoc type *numeric-types*)
+      (case type
+        (:c32 '(:c32 (complex single-float) nil 64 nil))
+        (:c64 '(:c64 (complex double-float) nil 128 nil)))
+      (error "Unknown numeric type ~S" type)))
 
 (defun integer-type-p (type)
-  (not (member type '(:f32 :f64))))
+  (member type '(:s8 :u8 :s16 :u16 :s32 :u32 :s64 :u64)))
+
+(defun complex-type-p (type)
+  (member type '(:c32 :c64)))
 
 (defun integer-operation-symbol (operation type)
   (intern (format nil "INTEGER-~A-~A" operation type) :trivial-simd))
@@ -25,6 +32,8 @@
 (defmacro define-vector-type ()
   `(defun vector-type (vector)
      (etypecase vector
+       ((simple-array (complex single-float) (*)) :c32)
+       ((simple-array (complex double-float) (*)) :c64)
        ,@(loop for (key element) in *numeric-types*
                collect `((simple-array ,element (*)) ,key)))))
 

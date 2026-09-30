@@ -11,6 +11,8 @@ The library selects the first available backend in this order:
 The C backend uses SSE2 on x86-64 and NEON on ARM64. Other architectures use
 scalar C loops. This library enables its SBCL backend only on x86-64. Integer operations
 use the [per-backend paths](integers.md#backend-coverage).
+Complex add, subtract, and multiply use interleaved SIMD buffers on the native
+backend for longer vectors; other complex calls use Lisp arithmetic.
 SBCL on ARM64 selects the C backend when built, or the Lisp fallback otherwise.
 
 ## Tested combinations

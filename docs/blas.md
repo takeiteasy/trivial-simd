@@ -6,14 +6,18 @@ loads without the convenience system.
 
 | System | Package | Current functions |
 |---|---|---|
-| `trivial-simd/blas` | `trivial-simd/blas` | `saxpy`, `daxpy` |
-| `trivial-simd/blas/convenience` | `trivial-simd/blas/convenience` | `axpy!` |
+| `trivial-simd/blas` | `trivial-simd/blas` | Level 1 real and complex routines |
+| `trivial-simd/blas/convenience` | `trivial-simd/blas/convenience` | Unit-increment vector calls |
+
+The [Level 1 reference](blas-level1.md) lists routines, arguments, returns,
+and precision variants. [Complex vectors](complex.md) describes their storage
+and scalar types.
 
 ## AXPY
 
-`(saxpy n alpha x incx y incy &key x-offset y-offset)` and `daxpy` set
-`y ← alpha*x + y` for `n` elements and return `y`. `saxpy` requires
-single-float vectors and scalar; `daxpy` requires double-float. Vectors are
+`(saxpy n alpha x incx y incy &key x-offset y-offset)` and its `daxpy`,
+`caxpy`, and `zaxpy` variants set `y ← alpha*x + y` for `n` elements and
+return `y`. Scalars and vectors match the named precision. Vectors are
 simple specialized vectors. Offsets default to zero and name the beginning
 of each storage span. Increments are nonzero integers. A negative increment
 visits the span in reverse order.[^negative] Invalid types, increments, or
@@ -31,7 +35,8 @@ unchanged after validation.
 
 `(trivial-simd/blas/convenience:axpy! y alpha x &key start end)` uses unit
 increments and derives the count from a shared slice. Without `:end`, the
-vectors have equal lengths. It returns `y`. The core
+vectors have equal lengths. It supports real and complex vectors and returns
+`y`. The core
 [`trivial-simd:axpy!`](api.md) remains a general bulk-vector operation.
 The [runnable example](../examples/blas.lisp) uses both BLAS layers.
 
@@ -54,13 +59,11 @@ for Level 2 and 3 operands.
 
 ## Limitations
 
-Only `saxpy` and `daxpy` are implemented. The remaining routines are tracked
-by [Level 1 #69](https://todo.sr.ht/~takeiteasy/trivial-simd/69),
-[Level 2 #70](https://todo.sr.ht/~takeiteasy/trivial-simd/70), and
+Level 2 and Level 3 routines are tracked by
+[Level 2 #70](https://todo.sr.ht/~takeiteasy/trivial-simd/70) and
 [Level 3 #71](https://todo.sr.ht/~takeiteasy/trivial-simd/71).
-Complex variants depend on [#47](https://todo.sr.ht/~takeiteasy/trivial-simd/47).
 The core bulk API does not accept increments yet ([#43](https://todo.sr.ht/~takeiteasy/trivial-simd/43));
-BLAS AXPY handles nonunit increments with a scalar loop. Shifted overlap
+BLAS routines handle nonunit increments with scalar loops. Shifted overlap
 between `x` and `y` can affect results ([#67](https://todo.sr.ht/~takeiteasy/trivial-simd/67)).
 
 [^negative]: The [reference SAXPY routine](https://www.netlib.org/lapack/explore-html/d5/d4b/group__axpy_gabe0745849954ad2106e633fd2ebfc920.html)

@@ -2,14 +2,15 @@
 
 `negate!`, `abs!`, `sqrt!`, `reciprocal!`, `min!`, `max!`, and `clamp!` write
 into a caller-provided destination and return it. All accept the [bulk slice
-keywords](api.md#slices). Inputs and destination have the same element type.
+keywords](api.md#slices). Inputs and destination have the same element type,
+except complex `abs!` writes a real vector of matching precision.
 
 | Function | Operation | Types |
 |---|---|---|
-| `(negate! destination input &key ...)` | `-input` | Float and integer |
-| `(abs! destination input &key ...)` | Absolute value | Float and integer |
-| `(sqrt! destination input &key ...)` | Square root | Float |
-| `(reciprocal! destination input &key ...)` | `1/input` | Float |
+| `(negate! destination input &key ...)` | `-input` | Real, complex, integer |
+| `(abs! destination input &key ...)` | Absolute value | Real, complex, integer |
+| `(sqrt! destination input &key ...)` | Square root | Real, complex |
+| `(reciprocal! destination input &key ...)` | `1/input` | Real, complex |
 | `(min! destination left right &key ...)` | Elementwise minimum | Float and integer |
 | `(max! destination left right &key ...)` | Elementwise maximum | Float and integer |
 | `(clamp! destination input lower upper &key ...)` | Limit to `[lower, upper]` | Float and integer |

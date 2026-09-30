@@ -137,28 +137,35 @@
 
 (defun extended-unary (operation destination input start end destination-start input-start)
   (unless (vectorp input) (error "A unary operation needs a vector input"))
+  (when (and (eq operation :abs) (complex-type-p (vector-type input)))
+    (return-from extended-unary
+      (complex-magnitude! destination input start end destination-start input-start)))
   (let ((type (vector-type destination)))
     (when (and (integer-type-p type) (member operation '(:sqrt :reciprocal)))
       (error "~A requires float vectors" operation)))
   (multiple-value-bind (type count offsets)
       (extended-slice destination (list input) (list input-start) start end destination-start)
     (destructuring-bind (d-offset i-offset) offsets
-      (if (eq *backend* :native)
-          (native-extended-unary operation destination input count d-offset i-offset)
-          (if (and (eq *backend* :sbcl) (not (integer-type-p type)))
-              (funcall (if (eq type :f32)
-                           #+(and sbcl x86-64) #'%sbcl-extended-unary-f32
-                           #-(and sbcl x86-64) (error "SBCL SIMD unavailable")
-                           #+(and sbcl x86-64) #'%sbcl-extended-unary-f64
-                           #-(and sbcl x86-64) (error "SBCL SIMD unavailable"))
-                       operation destination input count d-offset i-offset)
-              (dotimes (i count)
-                (let ((value (aref input (+ i-offset i))))
-                  (setf (aref destination (+ d-offset i))
-                        (ecase operation
-                          ((:negate :abs) (wrapped-unary operation type value))
-                          (:sqrt (kernel-sqrt value))
-                          (:reciprocal (/ (coerce 1 (second (numeric-type type))) value))))))))))
+      (cond ((complex-type-p type)
+             (complex-unary operation destination input count d-offset i-offset))
+            ((eq *backend* :native)
+             (native-extended-unary operation destination input count d-offset i-offset))
+            ((and (eq *backend* :sbcl) (not (integer-type-p type)))
+             (funcall (if (eq type :f32)
+                          #+(and sbcl x86-64) #'%sbcl-extended-unary-f32
+                          #-(and sbcl x86-64) (error "SBCL SIMD unavailable")
+                          #+(and sbcl x86-64) #'%sbcl-extended-unary-f64
+                          #-(and sbcl x86-64) (error "SBCL SIMD unavailable"))
+                      operation destination input count d-offset i-offset))
+            (t
+             (dotimes (i count)
+               (let ((value (aref input (+ i-offset i))))
+                 (setf (aref destination (+ d-offset i))
+                       (ecase operation
+                         ((:negate :abs) (wrapped-unary operation type value))
+                         (:sqrt (kernel-sqrt value))
+                         (:reciprocal (/ (coerce 1 (second (numeric-type type)))
+                                         value))))))))))
   destination)
 
 (defmacro define-extended-unary (name operation)
@@ -177,6 +184,8 @@
   (if (> right left) right left))
 
 (defun extended-minmax (operation destination left right start end d-start l-start r-start)
+  (when (complex-type-p (vector-type destination))
+    (error "Complex vectors have no ordering for MIN!/MAX!"))
   (unless (or (vectorp left) (vectorp right))
     (error "MIN!/MAX! needs a vector operand"))
   (multiple-value-bind (type count offsets)
@@ -202,6 +211,8 @@
 
 (defun clamp! (destination input lower upper &key start end destination-start
                                              input-start lower-start upper-start)
+  (when (complex-type-p (vector-type destination))
+    (error "Complex vectors have no ordering for CLAMP!"))
   (unless (vectorp input) (error "CLAMP! needs a vector input"))
   (when (and (not (vectorp lower)) (not (vectorp upper)) (> lower upper))
     (error "CLAMP! lower bound exceeds upper bound"))
@@ -229,20 +240,28 @@
         (values 0 (1- (ash 1 bits))))))
 
 (defun convert-element (value destination-type rounding)
-  (if (integer-type-p destination-type)
-      (multiple-value-bind (low high) (integer-limits destination-type)
-        (when (and (floatp value) (not (= value value)))
-          (error "Cannot convert NaN to an integer"))
-        (cond ((< value low) low)
-              ((> value high) high)
-              ((integerp value) value)
-              (t (min high (max low
-                                (ecase rounding
-                                  (:nearest-even (round value))
-                                  (:truncate (truncate value))
-                                  (:floor (floor value))
-                                  (:ceiling (ceiling value))))))))
-      (coerce value (second (numeric-type destination-type)))))
+  (cond ((complex-type-p destination-type)
+         (let ((real-type (if (eq destination-type :c32) 'single-float 'double-float)))
+           (complex (coerce (realpart value) real-type)
+                    (coerce (imagpart value) real-type))))
+        ((complexp value)
+         (if (zerop (imagpart value))
+             (convert-element (realpart value) destination-type rounding)
+             (error "Complex values with nonzero imaginary part cannot become real")))
+        ((integer-type-p destination-type)
+         (multiple-value-bind (low high) (integer-limits destination-type)
+           (when (and (floatp value) (not (= value value)))
+             (error "Cannot convert NaN to an integer"))
+           (cond ((< value low) low)
+                 ((> value high) high)
+                 ((integerp value) value)
+                 (t (min high (max low
+                                   (ecase rounding
+                                     (:nearest-even (round value))
+                                     (:truncate (truncate value))
+                                     (:floor (floor value))
+                                     (:ceiling (ceiling value)))))))))
+        (t (coerce value (second (numeric-type destination-type))))))
 
 (defun convert! (destination input &key start end destination-start input-start
                                     (rounding :nearest-even))
@@ -278,12 +297,14 @@
   (let ((type (cond ((vectorp left) (vector-type left))
                     ((vectorp right) (vector-type right))
                     (t (error "COMPARE! needs a vector operand")))))
+    (when (and (complex-type-p type) (not (member operator '(:eq :ne))))
+      (error "Complex vectors support only equality comparisons"))
     (multiple-value-bind (resolved count offsets)
         (extended-slice mask (list left right) (list left-start right-start)
                         start end mask-start :numeric-type type)
       (declare (ignore resolved))
       (destructuring-bind (m-offset l-offset r-offset) offsets
-        (if (eq *backend* :native)
+        (if (and (eq *backend* :native) (not (complex-type-p type)))
             (native-extended-compare mask operator left right type count m-offset l-offset r-offset)
             (dotimes (i count)
               (setf (aref mask (+ m-offset i))
@@ -297,9 +318,8 @@
       (extended-slice destination (list mask on-true on-false)
                       (list mask-start true-start false-start) start end destination-start
                       :mask-operand 0)
-    (declare (ignore type))
     (destructuring-bind (d-offset m-offset t-offset f-offset) offsets
-      (if (eq *backend* :native)
+      (if (and (eq *backend* :native) (not (complex-type-p type)))
           (native-extended-select destination mask on-true on-false count
                                   d-offset m-offset t-offset f-offset)
           (dotimes (i count)
