@@ -195,10 +195,10 @@
                                  (matrix-ref b p j))
                               (* (matrix-ref b i p)
                                  (triangular-value a p j uplo transpose diag type)))))
-                  (setf (aref result i j) (* alpha sum))))))
+                  (setf (aref result i j) (* alpha sum)))))))
       (dotimes (i m b)
         (dotimes (j n)
-          (setf (matrix-ref b i j) (aref result i j))))))))
+          (setf (matrix-ref b i j) (aref result i j)))))))
 
 (defmacro define-level3-gemm (name type)
   `(defun ,name (transa transb alpha a b beta c)
