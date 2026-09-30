@@ -99,6 +99,33 @@
 
 (define-native-integers)
 
+(defmacro define-native-bulk-calls ()
+  `(progn
+     ,@(loop for (key element foreign) in *numeric-types*
+             for scalar-foreign = (if (integer-type-p key)
+                                      (intern (format nil "UINT~D" (fourth (numeric-type key))) :keyword)
+                                      foreign)
+             for suffix = (string-downcase key)
+             for binary = (intern (format nil "%NATIVE-BULK-BINARY-~A" key))
+             for axpy = (intern (format nil "%NATIVE-BULK-AXPY-~A" key))
+             append
+             `((define-native (,(format nil "ts_bulk_binary_~A" suffix) ,binary)
+                   ,(if (integer-type-p key) :int :void)
+                 (operation :uint) (output :pointer) (left :pointer) (right :pointer)
+                 (left-scalar ,scalar-foreign) (right-scalar ,scalar-foreign) (count :size))
+               (define-native (,(format nil "ts_bulk_axpy_~A" suffix) ,axpy)
+                   ,(if (integer-type-p key) :int :void)
+                 (output :pointer) (scalar ,scalar-foreign) (input :pointer) (count :size))))
+     ,@(loop for key in '(:f32 :f64)
+             for foreign = (third (numeric-type key))
+             for name = (intern (format nil "%NATIVE-BULK-FMA-~A" key))
+             collect
+             `(define-native (,(format nil "ts_bulk_fma_~A" (string-downcase key)) ,name) :void
+                (output :pointer) (x :pointer) (y :pointer) (z :pointer)
+                (x-scalar ,foreign) (y-scalar ,foreign) (z-scalar ,foreign) (count :size)))))
+
+(define-native-bulk-calls)
+
 (defun check-native-integer-status (status)
   (case status
     (0 nil)
@@ -240,6 +267,84 @@
                           :outputs (output) :count count)
       (call-native-binary operation type output a b count)))
   destination)
+
+(defmacro with-native-bulk-output ((pointer vector offset type count &key read) &body body)
+  (let ((raw (gensym "RAW")))
+    `(ecase *native-array-access*
+       (:pointer
+        (cffi:with-pointer-to-vector-data (,raw ,vector)
+          (let ((,pointer (element-pointer ,raw ,type ,offset)))
+            ,@body)))
+       (:copy
+        (cffi:with-foreign-object (,pointer ,type (max 1 ,count))
+          ,@(when read `((copy-to-foreign ,vector ,pointer ,type ,offset ,count)))
+          (multiple-value-prog1 (progn ,@body)
+            (copy-from-foreign ,pointer ,vector ,type ,offset ,count)))))))
+
+(defmacro with-native-bulk-input ((pointer value offset type count) &body body)
+  (let ((raw (gensym "RAW")))
+    `(if (vectorp ,value)
+         (ecase *native-array-access*
+           (:pointer
+            (cffi:with-pointer-to-vector-data (,raw ,value)
+              (let ((,pointer (element-pointer ,raw ,type ,offset))) ,@body)))
+           (:copy
+            (cffi:with-foreign-object (,pointer ,type (max 1 ,count))
+              (copy-to-foreign ,value ,pointer ,type ,offset ,count)
+              ,@body)))
+         (let ((,pointer (cffi:null-pointer))) ,@body))))
+
+(defun native-bulk-function (prefix type)
+  (symbol-function (intern (format nil "~A~A" prefix type) :trivial-simd)))
+
+(defun native-scalar-bits (type value)
+  (if (integer-type-p type)
+      (logand value (1- (ash 1 (fourth (numeric-type type)))))
+      value))
+
+(defun native-scalar-binary (operation destination left right count d-offset l-offset r-offset)
+  (let* ((type (vector-type destination))
+         (foreign (third (numeric-type type)))
+         (opcode (+ (if (integer-type-p type) 2 0)
+                    (position operation '(:add :subtract :multiply :divide)))))
+    (with-native-bulk-output (output destination d-offset foreign count)
+      (with-native-bulk-input (a left l-offset foreign count)
+        (with-native-bulk-input (b right r-offset foreign count)
+          (let ((status (funcall (native-bulk-function "%NATIVE-BULK-BINARY-" type)
+                                 opcode output a b
+                                 (if (vectorp left) (coerce 0 (second (numeric-type type)))
+                                     (native-scalar-bits type left))
+                                 (if (vectorp right) (coerce 0 (second (numeric-type type)))
+                                     (native-scalar-bits type right))
+                                 count)))
+            (when (integer-type-p type) (check-native-integer-status status))))))
+  destination))
+
+(defun native-scale (x a count offset)
+  (native-scalar-binary :multiply x x a count offset offset nil))
+
+(defun native-axpy (y a x count y-offset x-offset)
+  (let* ((type (vector-type y)) (foreign (third (numeric-type type))))
+    (with-native-bulk-output (output y y-offset foreign count :read t)
+      (with-native-bulk-input (input x x-offset foreign count)
+        (let ((status (funcall (native-bulk-function "%NATIVE-BULK-AXPY-" type)
+                               output (native-scalar-bits type a) input count)))
+          (when (integer-type-p type) (check-native-integer-status status))))))
+  y)
+
+(defun native-bulk-fma (destination x y z count d-offset x-offset y-offset z-offset)
+  (let* ((type (vector-type destination)) (foreign (third (numeric-type type))))
+    (with-native-bulk-output (output destination d-offset foreign count)
+      (with-native-bulk-input (a x x-offset foreign count)
+        (with-native-bulk-input (b y y-offset foreign count)
+          (with-native-bulk-input (c z z-offset foreign count)
+            (funcall (native-bulk-function "%NATIVE-BULK-FMA-" type)
+                     output a b c
+                     (if (vectorp x) (coerce 0 (second (numeric-type type))) x)
+                     (if (vectorp y) (coerce 0 (second (numeric-type type))) y)
+                     (if (vectorp z) (coerce 0 (second (numeric-type type))) z)
+                     count)))))
+  destination))
 
 (defmacro define-native-reductions ()
   `(progn

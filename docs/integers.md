@@ -6,7 +6,7 @@ element type.
 
 | Operation | Integer behavior |
 |---|---|
-| `add!`, `subtract!`, `multiply!` | Wrap to the vector's width |
+| `add!`, `subtract!`, `multiply!`, `scale!`, `axpy!` | Wrap to the vector's width |
 | `divide!` | Quotient truncated toward zero; zero divisor signals `division-by-zero` |
 | `sum`, `dot` | Same-width wrapped integer result; empty slice returns `0` |
 | `define-kernel` | Wrap each arithmetic step and the result of a sum kernel |
@@ -16,6 +16,10 @@ Signed results use the two's-complement range. For example, signed 8-bit
 divided by `-1` wraps to signed minimum. Negation and `abs` wrap too, so
 `abs(-128)` is `-128` for signed 8-bit vectors.
 
+The four binary operations accept one in-range integer scalar in place of a
+vector. `scale!` multiplies a vector in place; `axpy!` computes `y := a*x+y`
+with wrapping multiplication and addition. `fma!` remains float-only.
+
 ```lisp
 (let* ((a (make-array 3 :element-type '(unsigned-byte 8)
                         :initial-contents '(250 7 2)))
@@ -23,6 +27,7 @@ divided by `-1` wraps to signed minimum. Negation and `abs` wrap too, so
                         :initial-contents '(10 3 4)))
        (out (make-array 3 :element-type '(unsigned-byte 8))))
   (trivial-simd:add! out a b)  ; => #(4 10 6)
+  (trivial-simd:scale! out 2)  ; => #(8 20 12)
   (trivial-simd:dot a b))     ; => 225
 ```
 

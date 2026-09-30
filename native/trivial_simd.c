@@ -37,6 +37,8 @@
 #define TS_F64_MAX(a, b) vbslq_f64(vcgeq_f64(a, b), a, b)
 #define TS_F32_FMA(a, b, c) vfmaq_f32(c, a, b)
 #define TS_F64_FMA(a, b, c) vfmaq_f64(c, a, b)
+#define TS_F32_SPLAT(a) vdupq_n_f32(a)
+#define TS_F64_SPLAT(a) vdupq_n_f64(a)
 #elif !defined(TS_SCALAR) && (defined(__x86_64__) || defined(_M_X64))
 #include <emmintrin.h>
 #include <xmmintrin.h>
@@ -86,6 +88,8 @@ static __m128d ts_fma_f64(__m128d a, __m128d b, __m128d c) {
 }
 #define TS_F32_FMA(a, b, c) ts_fma_f32(a, b, c)
 #define TS_F64_FMA(a, b, c) ts_fma_f64(a, b, c)
+#define TS_F32_SPLAT(a) _mm_set1_ps(a)
+#define TS_F64_SPLAT(a) _mm_set1_pd(a)
 #else
 #define TS_F32_WIDTH 1
 #define TS_F64_WIDTH 1
@@ -115,6 +119,8 @@ static __m128d ts_fma_f64(__m128d a, __m128d b, __m128d c) {
 #define TS_F64_MAX(a, b) ((a) == (b) ? copysign(a, a) : ((a) > (b) ? (a) : (b)))
 #define TS_F32_FMA(a, b, c) fmaf(a, b, c)
 #define TS_F64_FMA(a, b, c) fma(a, b, c)
+#define TS_F32_SPLAT(a) (a)
+#define TS_F64_SPLAT(a) (a)
 #endif
 
 #define TS_BINARY(name, suffix, type, width, load, store, vector_op, scalar_op) \
@@ -133,6 +139,44 @@ TS_BINARY(add, f64, double, TS_F64_WIDTH, TS_F64_LOAD, TS_F64_STORE, TS_F64_ADD,
 TS_BINARY(subtract, f64, double, TS_F64_WIDTH, TS_F64_LOAD, TS_F64_STORE, TS_F64_SUB, -)
 TS_BINARY(multiply, f64, double, TS_F64_WIDTH, TS_F64_LOAD, TS_F64_STORE, TS_F64_MUL, *)
 TS_BINARY(divide, f64, double, TS_F64_WIDTH, TS_F64_LOAD, TS_F64_STORE, TS_F64_DIV, /)
+
+#define TS_BULK_FLOAT(suffix, type, width, load, store, splat, add, sub, mul, div, fused, scalar_fma) \
+void ts_bulk_binary_##suffix(unsigned op, type *out, const type *left, const type *right, \
+                             type left_scalar, type right_scalar, size_t n) { \
+    size_t i = 0; \
+    for (; i + width <= n; i += width) { \
+        const type *a = left ? left + i : NULL, *b = right ? right + i : NULL; \
+        if (op == 0) store(out + i, add(a ? load(a) : splat(left_scalar), b ? load(b) : splat(right_scalar))); \
+        else if (op == 1) store(out + i, sub(a ? load(a) : splat(left_scalar), b ? load(b) : splat(right_scalar))); \
+        else if (op == 2) store(out + i, mul(a ? load(a) : splat(left_scalar), b ? load(b) : splat(right_scalar))); \
+        else store(out + i, div(a ? load(a) : splat(left_scalar), b ? load(b) : splat(right_scalar))); \
+    } \
+    for (; i < n; ++i) { \
+        type a = left ? left[i] : left_scalar, b = right ? right[i] : right_scalar; \
+        if (op == 0) out[i] = a + b; \
+        else if (op == 1) out[i] = a - b; \
+        else if (op == 2) out[i] = a * b; \
+        else out[i] = a / b; \
+    } \
+} \
+void ts_bulk_axpy_##suffix(type *y, type a, const type *x, size_t n) { \
+    size_t i = 0; \
+    for (; i + width <= n; i += width) store(y + i, add(mul(splat(a), load(x + i)), load(y + i))); \
+    for (; i < n; ++i) y[i] = a * x[i] + y[i]; \
+} \
+void ts_bulk_fma_##suffix(type *out, const type *x, const type *y, const type *z, \
+                          type xs, type ys, type zs, size_t n) { \
+    size_t i = 0; \
+    for (; i + width <= n; i += width) \
+        store(out + i, fused(x ? load(x + i) : splat(xs), \
+                             y ? load(y + i) : splat(ys), z ? load(z + i) : splat(zs))); \
+    for (; i < n; ++i) out[i] = scalar_fma(x ? x[i] : xs, y ? y[i] : ys, z ? z[i] : zs); \
+}
+
+TS_BULK_FLOAT(f32, float, TS_F32_WIDTH, TS_F32_LOAD, TS_F32_STORE, TS_F32_SPLAT,
+              TS_F32_ADD, TS_F32_SUB, TS_F32_MUL, TS_F32_DIV, TS_F32_FMA, fmaf)
+TS_BULK_FLOAT(f64, double, TS_F64_WIDTH, TS_F64_LOAD, TS_F64_STORE, TS_F64_SPLAT,
+              TS_F64_ADD, TS_F64_SUB, TS_F64_MUL, TS_F64_DIV, TS_F64_FMA, fma)
 
 #define TS_REDUCTIONS(suffix, type, width, vector_type, load, store, zero, add, mul) \
 type ts_sum_##suffix(const type *input, size_t n) { \

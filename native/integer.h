@@ -100,6 +100,21 @@ static int ts_binary_##suffix(unsigned op, type *out, const type *a, const type 
     } \
     return 0; \
 } \
+int ts_bulk_binary_##suffix(unsigned op, type *out, const type *left, const type *right, \
+                            type left_scalar, type right_scalar, size_t n) { \
+    for (size_t i = 0; i < n; ++i) { \
+        type a = left ? left[i] : left_scalar, b = right ? right[i] : right_scalar; \
+        if (op == TS_OP_DIVIDE && !b) return -3; \
+        out[i] = ts_value_##suffix(op, a, b); \
+    } \
+    return 0; \
+} \
+int ts_bulk_axpy_##suffix(type *y, type a, const type *x, size_t n) { \
+    for (size_t i = 0; i < n; ++i) \
+        y[i] = ts_value_##suffix(TS_OP_ADD, \
+                ts_value_##suffix(TS_OP_MULTIPLY, a, x[i]), y[i]); \
+    return 0; \
+} \
 int ts_add_##suffix(type *out, const type *a, const type *b, size_t n) { \
     return ts_binary_##suffix(TS_OP_ADD, out, a, b, n); \
 } \

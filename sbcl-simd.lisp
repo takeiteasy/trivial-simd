@@ -36,6 +36,53 @@
 (define-sbcl-binary %sbcl-divide-f64 double-float 2
   sb-simd-sse2:f64.2-aref sb-simd-sse2:f64.2/ /)
 
+(defmacro define-sbcl-scalar (suffix element width aref pack add sub mul div)
+  (let ((binary (intern (format nil "%SBCL-SCALAR-BINARY-~A" suffix)))
+        (axpy (intern (format nil "%SBCL-AXPY-~A" suffix))))
+    `(progn
+       (defun ,binary (operation destination left right count d-offset l-offset r-offset)
+         (declare (type (simple-array ,element (*)) destination)
+                  (type fixnum count d-offset))
+         (let ((i 0) (left-vector (vectorp left)) (right-vector (vectorp right)))
+           (declare (type fixnum i))
+           (loop while (<= (+ i ,width) count) do
+             (let ((a (if left-vector (,aref left (+ l-offset i)) (,pack left)))
+                   (b (if right-vector (,aref right (+ r-offset i)) (,pack right))))
+               (setf (,aref destination (+ d-offset i))
+                     (ecase operation
+                       (:add (,add a b)) (:subtract (,sub a b))
+                       (:multiply (,mul a b)) (:divide (,div a b)))))
+             (incf i ,width))
+           (loop while (< i count) do
+             (let ((a (if left-vector (aref left (+ l-offset i)) left))
+                   (b (if right-vector (aref right (+ r-offset i)) right)))
+               (setf (aref destination (+ d-offset i))
+                     (ecase operation
+                       (:add (+ a b)) (:subtract (- a b))
+                       (:multiply (* a b)) (:divide (/ a b)))))
+             (incf i))
+           destination))
+       (defun ,axpy (y a x count y-offset x-offset)
+         (declare (type (simple-array ,element (*)) y x)
+                  (type ,element a) (type fixnum count y-offset x-offset))
+         (let ((i 0) (scalar (,pack a)))
+           (declare (type fixnum i))
+           (loop while (<= (+ i ,width) count) do
+             (setf (,aref y (+ y-offset i))
+                   (,add (,mul scalar (,aref x (+ x-offset i)))
+                         (,aref y (+ y-offset i))))
+             (incf i ,width))
+           (loop while (< i count) do
+             (setf (aref y (+ y-offset i))
+                   (+ (* a (aref x (+ x-offset i))) (aref y (+ y-offset i))))
+             (incf i))
+           y)))))
+
+(define-sbcl-scalar f32 single-float 4 sb-simd-sse:f32.4-aref sb-simd-sse:f32.4
+  sb-simd-sse:f32.4+ sb-simd-sse:f32.4- sb-simd-sse:f32.4* sb-simd-sse:f32.4/)
+(define-sbcl-scalar f64 double-float 2 sb-simd-sse2:f64.2-aref sb-simd-sse2:f64.2
+  sb-simd-sse2:f64.2+ sb-simd-sse2:f64.2- sb-simd-sse2:f64.2* sb-simd-sse2:f64.2/)
+
 (defun %sbcl-sum-f32 (input count offset)
   (declare (type (simple-array single-float (*)) input)
            (type fixnum count offset))
@@ -107,4 +154,6 @@
 (mapc #'compile
       '(%sbcl-add-f32 %sbcl-subtract-f32 %sbcl-multiply-f32 %sbcl-divide-f32
         %sbcl-add-f64 %sbcl-subtract-f64 %sbcl-multiply-f64 %sbcl-divide-f64
+        %sbcl-scalar-binary-f32 %sbcl-scalar-binary-f64
+        %sbcl-axpy-f32 %sbcl-axpy-f64
         %sbcl-sum-f32 %sbcl-sum-f64 %sbcl-dot-f32 %sbcl-dot-f64))
