@@ -6,12 +6,12 @@ loads without the convenience system.
 
 | System | Package | Current functions |
 |---|---|---|
-| `trivial-simd/blas` | `trivial-simd/blas` | Level 1 real and complex routines |
-| `trivial-simd/blas/convenience` | `trivial-simd/blas/convenience` | Unit-increment vector calls |
+| `trivial-simd/blas` | `trivial-simd/blas` | Level 1 and 2 real and complex routines |
+| `trivial-simd/blas/convenience` | `trivial-simd/blas/convenience` | Unit-increment vector and matrix calls |
 
-The [Level 1 reference](blas-level1.md) lists routines, arguments, returns,
-and precision variants. [Complex vectors](complex.md) describes their storage
-and scalar types.
+The [Level 1](blas-level1.md) and [Level 2](blas-level2.md) references list
+routines, arguments, returns, and precision variants.
+[Complex vectors](complex.md) describes their storage and scalar types.
 
 ## AXPY
 
@@ -59,9 +59,8 @@ for Level 2 and 3 operands.
 
 ## Limitations
 
-Level 2 and Level 3 routines are tracked by
-[Level 2 #70](https://todo.sr.ht/~takeiteasy/trivial-simd/70) and
-[Level 3 #71](https://todo.sr.ht/~takeiteasy/trivial-simd/71).
+Level 3 routines are tracked by
+[#71](https://todo.sr.ht/~takeiteasy/trivial-simd/71).
 The core bulk API does not accept increments yet ([#43](https://todo.sr.ht/~takeiteasy/trivial-simd/43));
 BLAS routines handle nonunit increments with scalar loops. Shifted overlap
 between `x` and `y` can affect results ([#67](https://todo.sr.ht/~takeiteasy/trivial-simd/67)).

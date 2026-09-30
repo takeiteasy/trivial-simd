@@ -1,6 +1,7 @@
 (defpackage #:trivial-simd/blas/convenience
   (:use #:cl)
-  (:export #:axpy! #:scal! #:copy! #:swap! #:dot #:norm2))
+  (:export #:axpy! #:scal! #:copy! #:swap! #:dot #:norm2
+           #:gemv! #:ger! #:trsv!))
 
 (in-package #:trivial-simd/blas/convenience)
 
@@ -93,3 +94,45 @@
                (:c32 #'trivial-simd/blas:scnrm2)
                (:c64 #'trivial-simd/blas:dznrm2))
              count x 1 :x-offset start)))
+
+(defun view-precision (view)
+  (let ((type (trivial-simd/blas::matrix-element-type
+               (trivial-simd/blas:matrix-view-data view))))
+    (cond ((eq type 'single-float) :f32)
+          ((eq type 'double-float) :f64)
+          ((equal type '(complex single-float)) :c32)
+          (t :c64))))
+
+(defun gemv! (y alpha view x &key (transpose :no-transpose) beta)
+  (let* ((precision (view-precision view))
+         (zero (ecase precision
+                 (:f32 0.0f0) (:f64 0.0d0)
+                 (:c32 #C(0.0f0 0.0f0)) (:c64 #C(0.0d0 0.0d0)))))
+    (funcall (ecase precision
+               (:f32 #'trivial-simd/blas:sgemv)
+               (:f64 #'trivial-simd/blas:dgemv)
+               (:c32 #'trivial-simd/blas:cgemv)
+               (:c64 #'trivial-simd/blas:zgemv))
+             transpose alpha view x 1 (or beta zero) y 1)))
+
+(defun ger! (view alpha x y &key conjugate)
+  (let ((precision (view-precision view)))
+    (when (and conjugate (member precision '(:f32 :f64)))
+      (error "Conjugated GER requires complex storage"))
+    (funcall (ecase precision
+               (:f32 #'trivial-simd/blas:sger)
+               (:f64 #'trivial-simd/blas:dger)
+               (:c32 (if conjugate #'trivial-simd/blas:cgerc
+                         #'trivial-simd/blas:cgeru))
+               (:c64 (if conjugate #'trivial-simd/blas:zgerc
+                         #'trivial-simd/blas:zgeru)))
+             alpha x 1 y 1 view)))
+
+(defun trsv! (x view &key (uplo :upper) (transpose :no-transpose)
+                           (diag :non-unit))
+  (funcall (ecase (view-precision view)
+             (:f32 #'trivial-simd/blas:strsv)
+             (:f64 #'trivial-simd/blas:dtrsv)
+             (:c32 #'trivial-simd/blas:ctrsv)
+             (:c64 #'trivial-simd/blas:ztrsv))
+           uplo transpose diag view x 1))

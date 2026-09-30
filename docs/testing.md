@@ -10,6 +10,9 @@ BLAS Level 1 tests cover real and complex precisions, offsets, increments,
 errors, rotations, and convenience wrappers. They compare against an available
 system CBLAS (Accelerate on macOS, or OpenBLAS/BLAS on other platforms); only
 the reference comparison is skipped when no CBLAS is installed.
+Level 2 tests cover matrix views, layouts, packed and band storage, transpose,
+triangular solves, Hermitian updates, and reference CBLAS comparisons for
+dense, banded, packed, symmetric, and rank-update operations.
 Direct copy tests check both precisions, round trips, empty ranges, and partial
 copy-back, compact slice transfers, and overlapping copy-mode input snapshots. Native program tests check partial-initialization cleanup, finalization,
 retained functions after redefinition, and collection during active native calls.

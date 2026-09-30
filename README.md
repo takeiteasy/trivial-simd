@@ -31,6 +31,7 @@ and `cmake --build build --config Release`. The Lisp fallback loads without it.
 - [Integer vectors](docs/integers.md)
 - [BLAS subsystem](docs/blas.md)
 - [Matrix storage design](docs/matrix-views.md)
+- [BLAS Level 2](docs/blas-level2.md)
 - [Kernels](docs/kernels.md)
 - [Backends and build](docs/backends.md)
 - [Testing and benchmarks](docs/testing.md)

@@ -29,7 +29,8 @@
                (:file "tests/integers")
                (:file "tests/blas")
                (:file "tests/complex")
-               (:file "tests/blas-level1"))
+               (:file "tests/blas-level1")
+               (:file "tests/blas-level2"))
   :perform (asdf:test-op (operation component)
              (declare (ignore operation component))
              (unless (uiop:symbol-call :fiveam :run! :trivial-simd)
@@ -41,7 +42,9 @@
   :serial t
   :components ((:file "blas/package")
                (:file "blas/level1")
-               (:file "blas/level1-extra"))
+               (:file "blas/level1-extra")
+               (:file "blas/matrix-view")
+               (:file "blas/level2"))
   :in-order-to ((asdf:test-op (asdf:test-op "trivial-simd/tests"))))
 
 (asdf:defsystem "trivial-simd/blas/convenience"

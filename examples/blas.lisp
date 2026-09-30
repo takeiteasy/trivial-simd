@@ -16,3 +16,12 @@
   (format t "conjugated dot: ~S~%" (trivial-simd/blas:cdotc 2 x 1 y 1))
   (trivial-simd/blas/convenience:scal! x #C(2.0f0 0.0f0))
   (format t "scaled complex vector: ~S~%" x))
+
+(let* ((storage (make-array 6 :element-type 'double-float
+                            :initial-contents '(1d0 2d0 3d0 4d0 5d0 6d0)))
+       (matrix (trivial-simd/blas:make-matrix-view storage 2 3))
+       (x (make-array 3 :element-type 'double-float
+                      :initial-contents '(1d0 1d0 1d0)))
+       (y (make-array 2 :element-type 'double-float :initial-element 0d0)))
+  (trivial-simd/blas/convenience:gemv! y 1d0 matrix x)
+  (format t "matrix-vector product: ~S~%" y))

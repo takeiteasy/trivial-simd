@@ -104,7 +104,7 @@ instead. The available integer operations and backend paths are described in
 | More reductions | [#42](https://todo.sr.ht/~takeiteasy/trivial-simd/42) |
 | Strided access | [#43](https://todo.sr.ht/~takeiteasy/trivial-simd/43) |
 | Copy, fill, swap | [#44](https://todo.sr.ht/~takeiteasy/trivial-simd/44) |
-| Matrix support | [#70](https://todo.sr.ht/~takeiteasy/trivial-simd/70) |
+| Level 3 matrix routines | [#71](https://todo.sr.ht/~takeiteasy/trivial-simd/71) |
 | Shifted overlap between destination and input slices | [#67](https://todo.sr.ht/~takeiteasy/trivial-simd/67) |
 
 [^order]: SIMD reductions accumulate lanes separately before combining them.
