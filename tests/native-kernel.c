@@ -315,6 +315,44 @@ static void check_integer_mul_add_64(void) {
     assert(!ts_mul_add_constant_pattern(code, sizeof(code)));
 }
 
+static void check_mask_kernels(void) {
+    uint8_t compare[] = {TS_OP_GT, TS_KERNEL_OUTPUT, 8, 9};
+    uint8_t choose[] = {TS_OP_COPY, 0, 10, 0,
+                        TS_OP_GT, 1, 8, 9,
+                        TS_OP_SELECT, 0, 1, 8,
+                        TS_OP_COPY, TS_KERNEL_OUTPUT, 0, 0};
+    float a[259], b[259], fallback[259], output[259];
+    uint8_t mask[259];
+    const float *inputs[] = {a, b, fallback};
+    size_t result;
+    for (size_t i = 0; i < 259; ++i) {
+        a[i] = (float)i;
+        b[i] = 129.0f;
+        fallback[i] = -1.0f;
+    }
+    assert(ts_kernel_mask_f32(compare, sizeof(compare), NULL, inputs, 2,
+                              mask, 259, 0, 0, NULL) == 0);
+    for (size_t i = 0; i < 259; ++i) assert(mask[i] == (i > 129));
+    assert(ts_kernel_mask_f32(compare, sizeof(compare), NULL, inputs, 2,
+                              NULL, 259, 0, 1, &result) == 0);
+    assert(result == 129);
+    assert(ts_kernel_mask_f32(compare, sizeof(compare), NULL, inputs, 2,
+                              NULL, 259, 0, 2, &result) == 0);
+    assert(result == 1);
+    assert(ts_kernel_mask_f32(compare, sizeof(compare), NULL, inputs, 2,
+                              NULL, 259, 0, 3, &result) == 0);
+    assert(result == 0);
+    assert(ts_kernel_f32(choose, sizeof(choose), NULL, inputs, output, 259, 0) == 0);
+    for (size_t i = 0; i < 259; ++i) assert(output[i] == (i > 129 ? a[i] : -1.0f));
+
+    uint8_t signed_compare[] = {TS_OP_LT, TS_KERNEL_OUTPUT, 8, 9};
+    uint8_t x[] = {0x80, 0x7f}, y[] = {0x7f, 0x80};
+    const uint8_t *signed_inputs[] = {x, y};
+    assert(ts_kernel_mask_s8(signed_compare, sizeof(signed_compare), NULL,
+                             signed_inputs, 2, mask, 2, 0, 0, NULL) == 0);
+    assert(mask[0] == 1 && mask[1] == 0);
+}
+
 int main(void) {
     check_integer_s8();
     check_integer_u8();
@@ -325,6 +363,7 @@ int main(void) {
     check_integer_s64();
     check_integer_u64();
     check_integer_mul_add_64();
+    check_mask_kernels();
     check_scalar_fma();
     check_f32();
     check_f64();

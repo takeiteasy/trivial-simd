@@ -31,7 +31,7 @@ function(configure_native_library target)
   endforeach()
 endfunction()
 
-add_library(trivial_simd SHARED native/trivial_simd.c)
+add_library(trivial_simd SHARED native/trivial_simd.c native/extended.c)
 configure_native_library(trivial_simd)
 configure_fma(trivial_simd)
 

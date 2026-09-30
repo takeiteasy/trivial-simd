@@ -183,7 +183,8 @@ static int ts_integer_kernel_##suffix(const uint8_t *code, size_t code_length, \
             type *destination = dst == TS_KERNEL_OUTPUT ? (sum ? reduction : out + base) : registers[dst]; \
             const type *left = NULL, *right = NULL; \
             if (op != TS_OP_CONSTANT) left = a < TS_KERNEL_REGISTERS ? registers[a] : inputs[a - TS_KERNEL_REGISTERS] + base; \
-            if ((op >= TS_OP_ADD && op <= TS_OP_DIVIDE) || op == TS_OP_MIN || op == TS_OP_MAX) \
+            if ((op >= TS_OP_ADD && op <= TS_OP_DIVIDE) || op == TS_OP_MIN || op == TS_OP_MAX || \
+                (op >= TS_OP_EQ && op <= TS_OP_SELECT)) \
                 right = b < TS_KERNEL_REGISTERS ? registers[b] : inputs[b - TS_KERNEL_REGISTERS] + base; \
             if (op == TS_OP_CONSTANT) { \
                 for (size_t j = 0; j < m; ++j) destination[j] = constants[a]; \
@@ -191,6 +192,18 @@ static int ts_integer_kernel_##suffix(const uint8_t *code, size_t code_length, \
                 if (destination != left) memcpy(destination, left, m * sizeof(type)); \
             } else if (op == TS_OP_NEGATE || op == TS_OP_ABS) { \
                 for (size_t j = 0; j < m; ++j) destination[j] = ts_value_##suffix(op, left[j], 0); \
+            } else if (op >= TS_OP_EQ && op <= TS_OP_GE) { \
+                for (size_t j = 0; j < m; ++j) { \
+                    type x = left[j], y = right[j]; \
+                    int less = x != y && ts_value_##suffix(TS_OP_MIN, x, y) == x; \
+                    int greater = x != y && !less; \
+                    destination[j] = op == TS_OP_EQ ? x == y : op == TS_OP_NE ? x != y : \
+                                     op == TS_OP_LT ? less : op == TS_OP_LE ? !greater : \
+                                     op == TS_OP_GT ? greater : !less; \
+                } \
+            } else if (op == TS_OP_SELECT) { \
+                for (size_t j = 0; j < m; ++j) \
+                    destination[j] = left[j] ? right[j] : destination[j]; \
             } else { \
                 status = ts_binary_##suffix(op, destination, left, right, m); \
                 if (status) goto done; \

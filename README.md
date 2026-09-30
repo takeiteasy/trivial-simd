@@ -25,6 +25,9 @@ Build the native library with `cmake -S . -B build -DCMAKE_BUILD_TYPE=Release`
 and `cmake --build build --config Release`. The Lisp fallback loads without it.
 
 - [API](docs/api.md)
+- [Elementwise operations](docs/elementwise.md)
+- [Type conversion](docs/conversion.md)
+- [Masks and selection](docs/masks.md)
 - [Integer vectors](docs/integers.md)
 - [BLAS subsystem](docs/blas.md)
 - [Matrix storage design](docs/matrix-views.md)

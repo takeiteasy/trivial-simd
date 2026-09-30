@@ -13,6 +13,7 @@
                (:file "kernel-fma-arm64")
                (:file "backends")
                (:file "operations")
+               (:file "extended-operations")
                (:file "kernel"))
   :in-order-to ((asdf:test-op (asdf:test-op "trivial-simd/tests"))))
 
@@ -21,6 +22,7 @@
   :serial t
   :components ((:file "tests/package")
                (:file "tests/operations")
+               (:file "tests/extended")
                (:file "tests/native")
                (:file "tests/kernels")
                (:file "tests/integers")

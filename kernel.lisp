@@ -5,7 +5,9 @@
 (defparameter *kernel-opcodes*
   '((:copy . 0) (:constant . 1) (:add . 2) (:subtract . 3)
     (:multiply . 4) (:divide . 5) (:negate . 6) (:spill . 7) (:reload . 8)
-    (:sqrt . 9) (:abs . 10) (:min . 11) (:max . 12) (:fma . 13)))
+    (:sqrt . 9) (:abs . 10) (:min . 11) (:max . 12) (:fma . 13)
+    (:eq . 14) (:ne . 15) (:lt . 16) (:le . 17) (:gt . 18) (:ge . 19)
+    (:select . 20)))
 
 (defconstant +kernel-output+ #xFF)
 (defconstant +kernel-input-base+ +kernel-registers+)
@@ -51,6 +53,8 @@
     (:unary (max 1 (register-need (third node))))
     (:fma (loop for need in (sort (mapcar #'register-need (rest node)) #'>)
                 for held from 0 maximize (max 3 (+ held need))))
+    (:select (loop for need in (sort (mapcar #'register-need (rest node)) #'>)
+                   for held from 0 maximize (max 3 (+ held need))))
     (:operation (let ((left (register-need (third node)))
                       (right (register-need (fourth node))))
                   (max 1 (if (= left right) (1+ left) (max left right)))))))
@@ -149,6 +153,18 @@ SPILL/RELOAD use a register and slot; other operands name registers or inputs."
                       (unless (eql destination c) (emit :copy destination c 0))
                       (emit :fma destination a b)
                       (dolist (operand (list a b)) (release operand))
+                      (if top-p
+                          (progn (emit :copy +kernel-output+ destination 0)
+                                 (release destination) +kernel-output+)
+                          destination))))
+                 (:select
+                  (destructuring-bind (mask on-true on-false) (generate-many (rest node))
+                    (let ((destination (if (register-p on-false) on-false (allocate))))
+                      (unless (eql destination on-false)
+                        (emit :copy destination on-false 0))
+                      (emit :select destination mask on-true)
+                      (dolist (operand (list mask on-true))
+                        (unless (eql operand destination) (release operand)))
                       (if top-p
                           (progn (emit :copy +kernel-output+ destination 0)
                                  (release destination) +kernel-output+)
@@ -484,6 +500,8 @@ SPILL/RELOAD use a register and slot; other operands name registers or inputs."
 (defmacro define-kernel (name (&rest arguments) expression)
   "Define an elementwise destination kernel or a scalar (SUM expression) kernel.
 Both accept START, END, and per-input start keywords. Experimental."
+  (when (mask-kernel-expression-p expression)
+    (return-from define-kernel (mask-kernel-expansion name arguments expression)))
   (when (> (length arguments) +kernel-max-arguments+)
     (error "A kernel takes at most ~D arguments" +kernel-max-arguments+))
   (let* ((reduction-p (and (consp expression) (eq (first expression) 'sum)))

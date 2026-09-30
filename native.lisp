@@ -126,6 +126,37 @@
 
 (define-native-bulk-calls)
 
+(defmacro define-native-extended-calls ()
+  `(progn
+     ,@(loop for (key element foreign) in *numeric-types*
+             for suffix = (string-downcase key)
+             append
+             (loop for (operation arguments) in
+                     '((unary ((opcode :uint) (output :pointer) (input :pointer) (count :size)))
+                       (minmax ((opcode :uint) (output :pointer) (left :pointer) (right :pointer)
+                                (left-scalar scalar) (right-scalar scalar) (count :size)))
+                       (clamp ((output :pointer) (input :pointer) (lower :pointer) (upper :pointer)
+                               (lower-scalar scalar) (upper-scalar scalar) (count :size)))
+                       (compare ((opcode :uint) (mask :pointer) (left :pointer) (right :pointer)
+                                 (left-scalar scalar) (right-scalar scalar) (count :size)))
+                       (select ((output :pointer) (mask :pointer) (on-true :pointer) (on-false :pointer)
+                                (true-scalar scalar) (false-scalar scalar) (count :size))))
+                   collect
+                   `(define-native (,(format nil "ts_extended_~A_~A"
+                                            (string-downcase operation) suffix)
+                                    ,(intern (format nil "%NATIVE-EXTENDED-~A-~A" operation key)))
+                        :int
+                      ,@(loop for (name type) in arguments
+                              collect (list name (if (eq type 'scalar) foreign type))))))
+     (define-native ("ts_extended_mask_reduce" %native-extended-mask-reduce) :int
+       (opcode :uint) (mask :pointer) (count :size) (result :pointer))
+     (define-native ("ts_extended_f32_to_f64" %native-extended-f32-to-f64) :void
+       (output :pointer) (input :pointer) (count :size))
+     (define-native ("ts_extended_f64_to_f32" %native-extended-f64-to-f32) :void
+       (output :pointer) (input :pointer) (count :size))))
+
+(define-native-extended-calls)
+
 (defun check-native-integer-status (status)
   (case status
     (0 nil)
@@ -459,3 +490,34 @@
        (keep-native-program-alive program))))
 
 (define-native-kernel-dispatch)
+
+(defmacro define-native-mask-kernel-calls ()
+  `(progn
+     ,@(loop for (key) in *numeric-types*
+             collect
+             `(define-native (,(format nil "ts_kernel_mask_~A" (string-downcase key))
+                              ,(intern (format nil "%NATIVE-KERNEL-MASK-~A" key))) :int
+                (code :pointer) (code-length :size) (constants :pointer)
+                (inputs :pointer) (input-count :size) (mask :pointer)
+                (count :size) (scratch-count :size) (reduction :uint) (result :pointer)))))
+
+(define-native-mask-kernel-calls)
+
+(defun call-native-mask-kernel (program type inputs input-count mask count reduction result)
+  (unwind-protect
+       (let ((status
+               (funcall
+                (native-bulk-function "%NATIVE-KERNEL-MASK-"
+                                      (first (find type *numeric-types* :key #'third)))
+                (native-program-code program) (native-program-code-length program)
+                (or (native-program-constants program)
+                    (if (eq type :float) (native-program-f32-constants program)
+                        (native-program-f64-constants program)))
+                inputs input-count mask count (native-program-scratch-count program)
+                reduction result)))
+         (case status
+           (0 nil)
+           (-2 (error "Negative kernel square root operand"))
+           (-3 (error 'division-by-zero :operation 'truncate :operands nil))
+           (otherwise (error "Unable to allocate native kernel scratch storage"))))
+    (keep-native-program-alive program)))

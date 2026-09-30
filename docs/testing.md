@@ -4,6 +4,8 @@ The runner loads declared test dependencies through Quicklisp when available.
 The FiveAM suite checks the Lisp reference and every locally available SIMD
 backend for both float types and eight integer types, empty vectors, SIMD
 tails, aliasing, wrapping arithmetic, division errors, and type boundaries.
+Extended operation tests cover unary and bounded arithmetic, all conversion
+type pairs and rounding modes, byte masks, selection, and mask kernels.
 BLAS AXPY tests cover both precisions, offsets, increments, errors, and the
 convenience wrapper. They compare against an available system CBLAS (Accelerate
 on macOS, or OpenBLAS/BLAS on other platforms); only the reference comparison

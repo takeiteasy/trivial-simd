@@ -27,12 +27,18 @@ It returns `destination`.
 | `(sqrt x)`, `(abs x)` | Square root, absolute value |
 | `(min x ...)`, `(max x ...)` | Minimum, maximum; folded left |
 | `(trivial-simd:fma a b c)` | `a*b+c` with one rounding step |
+| `(> a b)` and other two-operand comparisons | Byte mask expression |
+| `(trivial-simd:select mask a b)` | Choose a numeric value per element |
+| `(trivial-simd:count mask)`, `(trivial-simd:any mask)`, `(trivial-simd:all mask)` | Top-level mask reductions |
 | `(trivial-simd:sum x)` | Top-level scalar sum |
 
 `+`, `*`, `min`, and `max` with one operand return it unchanged. Empty operand
 lists and unsupported forms signal an error when the kernel is defined. Vectors
 share one numeric element type, chosen per call. Integer expressions use
 [wrapping arithmetic](integers.md); `sqrt` and `fma` remain float-only.
+Comparisons use `=`, `/=`, `<`, `<=`, `>`, and `>=` with two operands. A
+comparison-only kernel writes a [byte mask](masks.md). Mask reductions return
+an integer count or a boolean; they are top-level forms like `sum`.
 
 ## Sum kernels
 
@@ -83,6 +89,11 @@ the native library.
 | `:sbcl` | `sb-simd` pack loop with a scalar tail[^sbcl] |
 | `:native` | Register bytecode run by a C interpreter over 256-element blocks[^vm] |
 
+Elementwise mask kernels and mask reductions use the native register VM on
+`:native`. Its comparison and selection opcodes process scalar lanes;
+arithmetic opcodes retain their SIMD paths. A `sum` over a selection uses a
+typed scalar loop, as do mask expressions on `:sbcl` and `:lisp`.
+
 The native backend makes one foreign call per kernel call and needs no
 full-length intermediate arrays. Expressions that exceed eight registers spill
 intermediate values into scratch blocks. Scratch slots are reused, and their
@@ -115,6 +126,10 @@ for measurements and [FMA fallback limitations](#limitations).
 
 ## Limitations
 
+- Mask expressions use scalar comparison and selection lanes in the native VM
+  and scalar loops on SBCL. Spilling mask reductions allocate scratch per
+  256-element block. Packed execution and scratch reuse are tracked in
+  [#72](https://todo.sr.ht/~takeiteasy/trivial-simd/72).
 - NaNs, infinities, non-default rounding modes, and floating-point traps may
   behave differently by backend. See the
   [IEEE consistency ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/53).

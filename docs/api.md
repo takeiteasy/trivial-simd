@@ -2,8 +2,9 @@
 
 `trivial-simd` operates on whole, equal-length, simple vectors of
 `single-float`, `double-float`, or signed/unsigned 8/16/32/64-bit integers.
-Every vector in an operation has the same element type. Scalars match that
-element type exactly; integer scalars fit its signed or unsigned range.
+Arithmetic inputs and destination have the same element type. Scalars match
+that element type exactly; integer scalars fit its signed or unsigned range.
+[Conversion](conversion.md) and [masks](masks.md) use mixed element types.
 Integer arithmetic [wraps at the vector width](integers.md).
 
 | Function | Result |
@@ -15,6 +16,9 @@ Integer arithmetic [wraps at the vector width](integers.md).
 | `(scale! x a &key ...)` | Replace `x` with `a*x` |
 | `(axpy! y a x &key ...)` | Replace `y` with `a*x+y` |
 | `(fma! destination x y z &key ...)` | Fused elementwise `x*y+z` for floats |
+| [Unary and bounded operations](elementwise.md) | Negate, absolute value, square root, reciprocal, min, max, clamp |
+| [`convert!`](conversion.md) | Convert among numeric vector types |
+| [Masks and selection](masks.md) | Compare, select, count, any, all |
 | `(sum input &key ...)` | Scalar sum |
 | `(dot left right &key ...)` | Scalar dot product |
 | `(backend)` | `:sbcl`, `:native`, or `:lisp` |
@@ -43,6 +47,12 @@ vector while the element count stays `end - start`.
 | `:destination-start`, `:x-start`, `:y-start`, `:z-start` | `fma!` |
 | `:left-start`, `:right-start` | `dot` |
 | `:input-start` | `sum` |
+| `:destination-start`, `:input-start` | Unary operations and `convert!` |
+| `:destination-start`, `:left-start`, `:right-start` | `min!`, `max!` |
+| `:destination-start`, `:input-start`, `:lower-start`, `:upper-start` | `clamp!` |
+| `:mask-start`, `:left-start`, `:right-start` | `compare!` |
+| `:destination-start`, `:mask-start`, `:true-start`, `:false-start` | `select!` |
+| `:mask-start` | Mask reductions |
 
 ```lisp
 (trivial-simd:add! out a b :start 4 :end 12)                 ; same range everywhere
@@ -85,12 +95,9 @@ instead. The available integer operations and backend paths are described in
 
 | Area | Ticket |
 |---|---|
-| Unary elementwise operations | [#41](https://todo.sr.ht/~takeiteasy/trivial-simd/41) |
 | More reductions | [#42](https://todo.sr.ht/~takeiteasy/trivial-simd/42) |
 | Strided access | [#43](https://todo.sr.ht/~takeiteasy/trivial-simd/43) |
 | Copy, fill, swap | [#44](https://todo.sr.ht/~takeiteasy/trivial-simd/44) |
-| Type conversion | [#45](https://todo.sr.ht/~takeiteasy/trivial-simd/45) |
-| Comparison, mask, select | [#46](https://todo.sr.ht/~takeiteasy/trivial-simd/46) |
 | Complex floats | [#47](https://todo.sr.ht/~takeiteasy/trivial-simd/47) |
 | Matrix support | [#70](https://todo.sr.ht/~takeiteasy/trivial-simd/70) |
 | Shifted overlap between destination and input slices | [#67](https://todo.sr.ht/~takeiteasy/trivial-simd/67) |

@@ -9,6 +9,9 @@ element type.
 | `add!`, `subtract!`, `multiply!`, `scale!`, `axpy!` | Wrap to the vector's width |
 | `divide!` | Quotient truncated toward zero; zero divisor signals `division-by-zero` |
 | `sum`, `dot` | Same-width wrapped integer result; empty slice returns `0` |
+| `negate!`, `abs!` | Wrap to the vector width |
+| `min!`, `max!`, `clamp!` | Compare values without wrapping |
+| `convert!` | Clamp to the destination integer range |
 | `define-kernel` | Wrap each arithmetic step and the result of a sum kernel |
 
 Signed results use the two's-complement range. For example, signed 8-bit
@@ -18,7 +21,9 @@ divided by `-1` wraps to signed minimum. Negation and `abs` wrap too, so
 
 The four binary operations accept one in-range integer scalar in place of a
 vector. `scale!` multiplies a vector in place; `axpy!` computes `y := a*x+y`
-with wrapping multiplication and addition. `fma!` remains float-only.
+with wrapping multiplication and addition. `sqrt!`, `reciprocal!`, and `fma!`
+remain float-only. See [elementwise operations](elementwise.md),
+[conversion](conversion.md), and [masks](masks.md) for their bulk APIs.
 
 ```lisp
 (let* ((a (make-array 3 :element-type '(unsigned-byte 8)

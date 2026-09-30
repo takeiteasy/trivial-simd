@@ -36,6 +36,44 @@
 (define-sbcl-binary %sbcl-divide-f64 double-float 2
   sb-simd-sse2:f64.2-aref sb-simd-sse2:f64.2/ /)
 
+(defmacro define-sbcl-extended-unary (name element width aref pack xor andc1 sqrt divide)
+  `(defun ,name (operation destination input count d-offset i-offset)
+     (declare (type (simple-array ,element (*)) destination input)
+              (type fixnum count d-offset i-offset))
+     (when (member operation '(:sqrt :reciprocal))
+       (dotimes (i count)
+         (let ((value (aref input (+ i-offset i))))
+           (when (or (and (eq operation :sqrt) (minusp value))
+                     (and (eq operation :reciprocal) (zerop value)))
+             (error "Invalid operand for ~A" operation)))))
+     (let ((i 0))
+       (declare (type fixnum i))
+       (loop while (<= (+ i ,width) count) do
+         (let ((value (,aref input (+ i-offset i))))
+           (setf (,aref destination (+ d-offset i))
+                 (ecase operation
+                   (:negate (,xor value (,pack ,(coerce -0.0 element))))
+                   (:abs (,andc1 (,pack ,(coerce -0.0 element)) value))
+                   (:sqrt (,sqrt value))
+                   (:reciprocal (,divide (,pack ,(coerce 1 element)) value)))))
+         (incf i ,width))
+       (loop while (< i count) do
+         (let ((value (aref input (+ i-offset i))))
+           (setf (aref destination (+ d-offset i))
+                 (ecase operation
+                   (:negate (- value)) (:abs (abs value))
+                   (:sqrt (kernel-sqrt value))
+                   (:reciprocal (/ ,(coerce 1 element) value)))))
+         (incf i)))
+     destination))
+
+(define-sbcl-extended-unary %sbcl-extended-unary-f32 single-float 4
+  sb-simd-sse:f32.4-aref sb-simd-sse:f32.4 sb-simd-sse:f32.4-xor
+  sb-simd-sse:f32.4-andc1 sb-simd-sse:f32.4-sqrt sb-simd-sse:f32.4/)
+(define-sbcl-extended-unary %sbcl-extended-unary-f64 double-float 2
+  sb-simd-sse2:f64.2-aref sb-simd-sse2:f64.2 sb-simd-sse2:f64.2-xor
+  sb-simd-sse2:f64.2-andc1 sb-simd-sse2:f64.2-sqrt sb-simd-sse2:f64.2/)
+
 (defmacro define-sbcl-scalar (suffix element width aref pack add sub mul div)
   (let ((binary (intern (format nil "%SBCL-SCALAR-BINARY-~A" suffix)))
         (axpy (intern (format nil "%SBCL-AXPY-~A" suffix))))

@@ -211,7 +211,8 @@ TS_REDUCTIONS(f64, double, TS_F64_WIDTH, TS_F64_VECTOR, TS_F64_LOAD, TS_F64_STOR
 enum {
     TS_OP_COPY, TS_OP_CONSTANT, TS_OP_ADD, TS_OP_SUBTRACT,
     TS_OP_MULTIPLY, TS_OP_DIVIDE, TS_OP_NEGATE, TS_OP_SPILL, TS_OP_RELOAD,
-    TS_OP_SQRT, TS_OP_ABS, TS_OP_MIN, TS_OP_MAX, TS_OP_FMA
+    TS_OP_SQRT, TS_OP_ABS, TS_OP_MIN, TS_OP_MAX, TS_OP_FMA,
+    TS_OP_EQ, TS_OP_NE, TS_OP_LT, TS_OP_LE, TS_OP_GT, TS_OP_GE, TS_OP_SELECT
 };
 
 #define TS_KERNEL_BLOCK 256
@@ -332,6 +333,16 @@ static int ts_kernel_run_##mode##_##suffix(const uint8_t *code, size_t code_leng
                     store(destination + i, fmav(load(left + i), load(right + i), load(destination + i))); \
                 for (; i < m; ++i) destination[i] = fmas(left[i], right[i], destination[i]); \
                 break; \
+            /* TODO: scalar comparison and selection lanes; add packed VM opcodes (#72). */ \
+            case TS_OP_EQ: for (; i < m; ++i) destination[i] = left[i] == right[i]; break; \
+            case TS_OP_NE: for (; i < m; ++i) destination[i] = left[i] != right[i]; break; \
+            case TS_OP_LT: for (; i < m; ++i) destination[i] = left[i] < right[i]; break; \
+            case TS_OP_LE: for (; i < m; ++i) destination[i] = left[i] <= right[i]; break; \
+            case TS_OP_GT: for (; i < m; ++i) destination[i] = left[i] > right[i]; break; \
+            case TS_OP_GE: for (; i < m; ++i) destination[i] = left[i] >= right[i]; break; \
+            case TS_OP_SELECT: \
+                for (; i < m; ++i) destination[i] = left[i] != 0 ? right[i] : destination[i]; \
+                break; \
             case TS_OP_NEGATE: \
                 for (; i + width <= m; i += width) \
                     store(destination + i, sub(zero(), load(left + i))); \
@@ -443,3 +454,37 @@ TS_KERNEL(f64, double, TS_F64_VECTOR, TS_F64_WIDTH, TS_F64_LOAD, TS_F64_STORE, T
           TS_F64_SQRT, TS_F64_ABS, TS_F64_MIN, TS_F64_MAX, TS_F64_FMA, sqrt, fabs, fma)
 
 #include "integer.h"
+
+#define TS_KERNEL_MASK(suffix, type) \
+int ts_kernel_mask_##suffix(const uint8_t *code, size_t code_length, const type *constants, \
+                            const type *const *inputs, size_t input_count, uint8_t *mask, \
+                            size_t n, size_t scratch_count, unsigned reduction, size_t *result) { \
+    size_t total = 0; \
+    for (size_t base = 0; base < n; base += TS_KERNEL_BLOCK) { \
+        size_t m = n - base < TS_KERNEL_BLOCK ? n - base : TS_KERNEL_BLOCK; \
+        const type *shifted[256]; \
+        type values[TS_KERNEL_BLOCK]; \
+        for (size_t j = 0; j < input_count; ++j) shifted[j] = inputs[j] + base; \
+        /* TODO: spilled mask kernels allocate per block; reuse one scratch buffer (#72). */ \
+        int status = ts_kernel_##suffix(code, code_length, constants, shifted, values, m, scratch_count); \
+        if (status) return status; \
+        for (size_t j = 0; j < m; ++j) { \
+            int truth = values[j] != 0; \
+            if (reduction == 0) mask[base + j] = (uint8_t)truth; \
+            else total += truth; \
+        } \
+    } \
+    if (reduction) *result = reduction == 1 ? total : reduction == 2 ? total != 0 : total == n; \
+    return 0; \
+}
+
+TS_KERNEL_MASK(f32, float)
+TS_KERNEL_MASK(f64, double)
+TS_KERNEL_MASK(s8, uint8_t)
+TS_KERNEL_MASK(u8, uint8_t)
+TS_KERNEL_MASK(s16, uint16_t)
+TS_KERNEL_MASK(u16, uint16_t)
+TS_KERNEL_MASK(s32, uint32_t)
+TS_KERNEL_MASK(u32, uint32_t)
+TS_KERNEL_MASK(s64, uint64_t)
+TS_KERNEL_MASK(u64, uint64_t)
