@@ -75,6 +75,7 @@ the addition order.[^order]
 
 `axpy!` uses separate multiplication and addition for floats. `fma!` uses
 the same single-rounding result as scalar [`fma`](kernels.md#numerical-behavior).
+The [BLAS subsystem](blas.md) provides specification-style counts and increments.
 
 ## Limitations
 
@@ -91,7 +92,7 @@ instead. The available integer operations and backend paths are described in
 | Type conversion | [#45](https://todo.sr.ht/~takeiteasy/trivial-simd/45) |
 | Comparison, mask, select | [#46](https://todo.sr.ht/~takeiteasy/trivial-simd/46) |
 | Complex floats | [#47](https://todo.sr.ht/~takeiteasy/trivial-simd/47) |
-| Matrix support | [#48](https://todo.sr.ht/~takeiteasy/trivial-simd/48) |
+| Matrix support | [#70](https://todo.sr.ht/~takeiteasy/trivial-simd/70) |
 | Shifted overlap between destination and input slices | [#67](https://todo.sr.ht/~takeiteasy/trivial-simd/67) |
 
 [^order]: SIMD reductions accumulate lanes separately before combining them.

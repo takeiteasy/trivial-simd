@@ -4,6 +4,10 @@ The runner loads declared test dependencies through Quicklisp when available.
 The FiveAM suite checks the Lisp reference and every locally available SIMD
 backend for both float types and eight integer types, empty vectors, SIMD
 tails, aliasing, wrapping arithmetic, division errors, and type boundaries.
+BLAS AXPY tests cover both precisions, offsets, increments, errors, and the
+convenience wrapper. They compare against an available system CBLAS (Accelerate
+on macOS, or OpenBLAS/BLAS on other platforms); only the reference comparison
+is skipped when no CBLAS is installed.
 Direct copy tests check both precisions, round trips, empty ranges, and partial
 copy-back, compact slice transfers, and overlapping copy-mode input snapshots. Native program tests check partial-initialization cleanup, finalization,
 retained functions after redefinition, and collection during active native calls.
