@@ -11,7 +11,8 @@ loads without the convenience system.
 
 The [Level 1](blas-level1.md), [Level 2](blas-level2.md), and
 [Level 3](blas-level3.md) references list
-routines, arguments, returns, and precision variants.
+routines, arguments, returns, and precision variants. The
+[benchmarks](blas-benchmarks.md) compare Level 2 and 3 against system CBLAS.
 [Complex vectors](complex.md) describes their storage and scalar types.
 
 ## AXPY

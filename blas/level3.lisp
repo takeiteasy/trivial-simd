@@ -39,7 +39,7 @@
   ;; TODO: Scalar loops without cache blocking or SIMD; native kernels (#79).
   (let ((array `(simple-array ,type (*))) (zero `(coerce 0 ',type)))
     `(progn
-       (defun ,(kernel-symbol 'gemm-kernel type)
+       (define-kernel gemm-kernel ,type
            (alpha a abase ars acs conj-a b bbase brs bcs conj-b beta
             c cbase crs ccs m n k)
          (declare (optimize (speed 3) (safety 0) (debug 0))
@@ -57,7 +57,7 @@
                      (let ((scaled (* alpha (conj-if ,type conj-a
                                                      (aref a (+ arow (* p acs))))))
                            (bpos (+ bbase (* p brs))) (cpos crow))
-                       (declare (type fixnum bpos cpos))
+                       (declare (type ,type scaled) (type fixnum bpos cpos))
                        (dotimes (j n)
                          (incf (aref c cpos)
                                (* scaled (conj-if ,type conj-b (aref b bpos))))
@@ -70,7 +70,7 @@
                      (let ((scaled (* alpha (conj-if ,type conj-b
                                                      (aref b (+ bcol (* p brs))))))
                            (apos (+ abase (* p acs))) (cpos ccol))
-                       (declare (type fixnum apos cpos))
+                       (declare (type ,type scaled) (type fixnum apos cpos))
                        (dotimes (i m)
                          (incf (aref c cpos)
                                (* scaled (conj-if ,type conj-a (aref a apos))))
@@ -78,7 +78,7 @@
                          (incf cpos crs))))))))
          nil)
 
-       (defun ,(kernel-symbol 'expand-kernel type)
+       (define-kernel expand-kernel ,type
            (a abase ars acs n upper hermitian full)
          (declare (optimize (speed 3) (safety 0) (debug 0))
                   (type ,array a full) (type blas-offset abase) (type blas-dim ars acs)
@@ -93,7 +93,7 @@
                                 (aref a (+ abase (* j ars) (* i acs))))))))
          nil)
 
-       (defun ,(kernel-symbol 'rank-kernel type)
+       (define-kernel rank-kernel ,type
            (alpha alpha2 a abase ars acs conj-a b bbase brs bcs conj-b beta
             c cbase crs ccs n k upper hermitian second)
          (declare (optimize (speed 3) (safety 0) (debug 0))
@@ -132,7 +132,7 @@
                          (if (and hermitian (= i j)) (realify ,type value) value))))))
            nil))
 
-       (defun ,(kernel-symbol 'triangular-kernel type)
+       (define-kernel triangular-kernel ,type
            (solve left upper unit alpha a abase ars acs conj b bbase brs bcs m n)
          (declare (optimize (speed 3) (safety 0) (debug 0))
                   (type ,type alpha) (type ,array a b)
@@ -229,7 +229,7 @@
       (multiple-value-bind (adata abase ars acs) (dense-strides a transa)
         (multiple-value-bind (bdata bbase brs bcs) (dense-strides b transb)
           (multiple-value-bind (cdata cbase crs ccs) (dense-strides c :no-transpose)
-            (funcall (kernel-symbol 'gemm-kernel type)
+            (funcall (find-kernel 'gemm-kernel type)
                      alpha adata abase ars acs (eq transa :conjugate-transpose)
                      bdata bbase brs bcs (eq transb :conjugate-transpose)
                      beta cdata cbase crs ccs m n k))))
@@ -255,15 +255,15 @@
     (validate-level3-overlap c a b)
     (let ((full (make-array (* order order) :element-type type)))
       (multiple-value-bind (adata abase ars acs) (dense-strides a :no-transpose)
-        (funcall (kernel-symbol 'expand-kernel type)
+        (funcall (find-kernel 'expand-kernel type)
                  adata abase ars acs order (eq uplo :upper) hermitian full))
       (multiple-value-bind (bdata bbase brs bcs) (dense-strides b :no-transpose)
         (multiple-value-bind (cdata cbase crs ccs) (dense-strides c :no-transpose)
           (if (eq side :left)
-              (funcall (kernel-symbol 'gemm-kernel type)
+              (funcall (find-kernel 'gemm-kernel type)
                        alpha full 0 order 1 nil bdata bbase brs bcs nil
                        beta cdata cbase crs ccs m n order)
-              (funcall (kernel-symbol 'gemm-kernel type)
+              (funcall (find-kernel 'gemm-kernel type)
                        alpha bdata bbase brs bcs nil full 0 order 1 nil
                        beta cdata cbase crs ccs m n order)))))
     c))
@@ -300,7 +300,7 @@
         (multiple-value-bind (bdata bbase brs bcs)
             (dense-strides (if second-input b a) transpose)
           (multiple-value-bind (cdata cbase crs ccs) (dense-strides c :no-transpose)
-            (funcall (kernel-symbol 'rank-kernel type)
+            (funcall (find-kernel 'rank-kernel type)
                      alpha (if hermitian (conjugate alpha) alpha)
                      adata abase ars acs conjugate bdata bbase brs bcs conjugate
                      beta cdata cbase crs ccs n k (eq uplo :upper) hermitian
@@ -322,7 +322,7 @@
     (validate-level3-overlap b a)
     (multiple-value-bind (adata abase ars acs) (dense-strides a transpose)
       (multiple-value-bind (bdata bbase brs bcs) (dense-strides b :no-transpose)
-        (funcall (kernel-symbol 'triangular-kernel type)
+        (funcall (find-kernel 'triangular-kernel type)
                  solve (eq side :left)
                  (if (eq transpose :no-transpose) (eq uplo :upper) (eq uplo :lower))
                  (eq diag :unit) alpha adata abase ars acs

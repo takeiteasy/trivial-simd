@@ -1,18 +1,12 @@
 (in-package #:trivial-simd/blas)
 
-;; TODO: Scalar loops limit Level 2 throughput; benchmark native kernels (#76).
-
-(defun level2-zero (type)
-  (if (consp type)
-      (complex (coerce 0 (second type)) (coerce 0 (second type)))
-      (coerce 0 type)))
-
 (defun validate-level2-view (view type kind &optional square)
   (unless (and (matrix-view-p view) (eq (matrix-view-kind view) kind)
                (equal (matrix-element-type (matrix-view-data view)) type)
                (or (not square) (= (matrix-view-rows view)
                                    (matrix-view-cols view))))
-    (error "Invalid Level 2 matrix view")))
+    (error "Invalid Level 2 matrix view"))
+  (validate-kernel-limits view))
 
 (defun validate-level2-scalar (value type)
   (unless (typep value type)
@@ -28,25 +22,273 @@
 (defun validate-diag (diag)
   (unless (member diag '(:unit :non-unit)) (error "Invalid diagonal flag: ~S" diag)))
 
-(defun vector-position (n increment offset i)
-  (+ (span-index n increment offset) (* i increment)))
+(defmacro define-level2-kernels (type)
+  ;; TODO: Scalar loops; native SIMD kernels (#79).
+  (let ((array `(simple-array ,type (*))) (zero `(coerce 0 ',type))
+        (declarations '(optimize (speed 3) (safety 0) (debug 0))))
+    (progn
+      `(progn
+         (define-kernel mv-general-kernel ,type
+             (code trans conj alpha a base row-major ld kl ku rows cols
+              x xstart incx beta y ystart incy ylen)
+           (declare ,declarations (type ,type alpha beta) (type ,array a x y)
+                    (type blas-offset base xstart ystart)
+                    (type blas-increment incx incy)
+                    (type blas-dim ld kl ku rows cols ylen) (type (integer 0 4) code))
+           (let ((n 0))
+             (declare (type blas-dim n))
+             (unless (and (zerop alpha) (= beta 1))
+               (let ((position ystart))
+                 (declare (type fixnum position))
+                 (dotimes (i ylen)
+                   (setf (aref y position)
+                         (if (zerop beta) ,zero (* beta (aref y position))))
+                   (incf position incy)))
+               (unless (zerop alpha)
+                 (let ((dot-form (eq (and row-major t) (not trans))))
+                   (dotimes (major (if row-major rows cols))
+                     (multiple-value-bind (lo hi position)
+                         (matrix-run code row-major nil rows cols ld kl ku n major base)
+                       (declare (type blas-dim lo) (type fixnum hi position))
+                       (if dot-form
+                           (let ((sum0 ,zero) (sum1 ,zero) (sum2 ,zero) (sum3 ,zero)
+                                 (xpos (+ xstart (* lo incx)))
+                                 (count (- (1+ hi) lo)))
+                             (declare (type ,type sum0 sum1 sum2 sum3)
+                                      (type fixnum xpos count))
+                             (loop while (>= count 4) do
+                               (incf sum0 (* (conj-if ,type conj (aref a position))
+                                             (aref x xpos)))
+                               (incf sum1 (* (conj-if ,type conj (aref a (+ position 1)))
+                                             (aref x (+ xpos incx))))
+                               (incf sum2 (* (conj-if ,type conj (aref a (+ position 2)))
+                                             (aref x (+ xpos incx incx))))
+                               (incf sum3 (* (conj-if ,type conj (aref a (+ position 3)))
+                                             (aref x (+ xpos incx incx incx))))
+                               (incf position 4) (incf xpos (* 4 incx)) (decf count 4))
+                             (loop repeat count do
+                               (incf sum0 (* (conj-if ,type conj (aref a position))
+                                             (aref x xpos)))
+                               (incf position) (incf xpos incx))
+                             (incf (aref y (+ ystart (* major incy)))
+                                   (* alpha (+ (+ sum0 sum1) (+ sum2 sum3)))))
+                           (let ((scale (* alpha (aref x (+ xstart (* major incx)))))
+                                 (ypos (+ ystart (* lo incy))))
+                             (declare (type ,type scale) (type fixnum ypos))
+                             (loop repeat (- (1+ hi) lo) do
+                               (incf (aref y ypos)
+                                     (* scale (conj-if ,type conj (aref a position))))
+                               (incf position) (incf ypos incy))))))))))
+           nil)
 
-(defun matrix-value (view row column type &optional uplo hermitian)
-  (let ((value
-          (if (or (null uplo)
-                  (if (eq uplo :upper) (<= row column) (>= row column)))
-              (stored-ref view row column uplo (level2-zero type))
-              (let ((reflected (stored-ref view column row uplo
-                                          (level2-zero type))))
-                (if hermitian (conjugate reflected) reflected)))))
-    (if (and hermitian (= row column))
-        (complex (realpart value) (coerce 0 (second type))) value)))
+         (define-kernel mv-symmetric-kernel ,type
+             (code upper hermitian alpha a base row-major ld k n
+              x xstart incx beta y ystart incy)
+           (declare ,declarations (type ,type alpha beta) (type ,array a x y)
+                    (type blas-offset xstart ystart base)
+                    (type blas-increment incx incy)
+                    (type blas-dim ld k n) (type (integer 0 4) code))
+           (unless (and (zerop alpha) (= beta 1))
+             (let ((position ystart))
+               (declare (type fixnum position))
+               (dotimes (i n)
+                 (setf (aref y position)
+                       (if (zerop beta) ,zero (* beta (aref y position))))
+                 (incf position incy)))
+             (unless (zerop alpha)
+               (let ((conj-dot (and hermitian (not row-major)))
+                     (conj-axpy (and hermitian row-major)))
+                 (dotimes (major n)
+                   (multiple-value-bind (lo hi position)
+                       (matrix-run code row-major upper n n ld k k n major base)
+                     (declare (type blas-dim lo) (type fixnum hi position))
+                     (let* ((xm (aref x (+ xstart (* major incx))))
+                            (scale (* alpha xm))
+                            (sum ,zero)
+                            (diagonal (aref a (+ position (- major lo)))))
+                       (declare (type ,type xm scale sum diagonal))
+                       (loop for t-index of-type fixnum from lo below major
+                             for apos of-type fixnum from position do
+                         (incf sum (* (conj-if ,type conj-dot (aref a apos))
+                                      (aref x (+ xstart (* t-index incx)))))
+                         (incf (aref y (+ ystart (* t-index incy)))
+                               (* scale (conj-if ,type conj-axpy (aref a apos)))))
+                       (loop for t-index of-type fixnum from (1+ major) to hi
+                             for apos of-type fixnum from (+ position (- (1+ major) lo))
+                             do
+                         (incf sum (* (conj-if ,type conj-dot (aref a apos))
+                                      (aref x (+ xstart (* t-index incx)))))
+                         (incf (aref y (+ ystart (* t-index incy)))
+                               (* scale (conj-if ,type conj-axpy (aref a apos)))))
+                       (incf (aref y (+ ystart (* major incy)))
+                             (* alpha (+ sum (* (if hermitian
+                                                    (realify ,type diagonal)
+                                                    diagonal)
+                                                xm))))))))))
+           nil)
 
-(defun operated-value (view row column transpose type &optional uplo hermitian)
-  (if (eq transpose :no-transpose)
-      (matrix-value view row column type uplo hermitian)
-      (let ((value (matrix-value view column row type uplo hermitian)))
-        (if (eq transpose :conjugate-transpose) (conjugate value) value))))
+         (define-kernel triangular-mv-kernel ,type
+             (code upper unit trans conj a base row-major ld k n x xstart incx)
+           (declare ,declarations (type ,array a x) (type blas-offset xstart base)
+                    (type blas-increment incx) (type blas-dim ld k n)
+                    (type (integer 0 4) code))
+           (let ((values (make-array n :element-type ',type))
+                 (dot-form (eq (and row-major t) (not trans))))
+             (declare (type ,array values))
+             (dotimes (i n)
+               (setf (aref values i) (aref x (+ xstart (* i incx)))
+                     (aref x (+ xstart (* i incx))) ,zero))
+             (dotimes (major n)
+               (multiple-value-bind (lo hi position)
+                   (matrix-run code row-major upper n n ld k k n major base)
+                 (declare (type blas-dim lo) (type fixnum hi position))
+                 (let ((vm (aref values major))
+                       (diagonal (aref a (+ position (- major lo)))))
+                   (declare (type ,type vm diagonal))
+                   (incf (aref x (+ xstart (* major incx)))
+                         (if unit vm (* (conj-if ,type conj diagonal) vm)))
+                   (if dot-form
+                       (let ((sum ,zero))
+                         (declare (type ,type sum))
+                         (loop for t-index of-type fixnum from lo to hi
+                               for apos of-type fixnum from position do
+                           (unless (= t-index major)
+                             (incf sum (* (conj-if ,type conj (aref a apos))
+                                          (aref values t-index)))))
+                         (incf (aref x (+ xstart (* major incx))) sum))
+                       (loop for t-index of-type fixnum from lo to hi
+                             for apos of-type fixnum from position do
+                         (unless (= t-index major)
+                           (incf (aref x (+ xstart (* t-index incx)))
+                                 (* (conj-if ,type conj (aref a apos)) vm))))))))
+             nil))
+
+         (define-kernel triangular-solve-kernel ,type
+             (code upper unit trans conj a base row-major ld k n x xstart incx)
+           (declare ,declarations (type ,array a x) (type blas-offset xstart base)
+                    (type blas-increment incx) (type blas-dim ld k n)
+                    (type (integer 0 4) code))
+           (let ((dot-form (eq (and row-major t) (not trans)))
+                 (forward (if trans upper (not upper))))
+             (dotimes (step n)
+               (let ((major (if forward step (- n step 1))))
+                 (declare (type blas-dim major))
+                 (multiple-value-bind (lo hi position)
+                     (matrix-run code row-major upper n n ld k k n major base)
+                   (declare (type blas-dim lo) (type fixnum hi position))
+                   (let ((mpos (+ xstart (* major incx)))
+                         (diagonal (aref a (+ position (- major lo)))))
+                     (declare (type fixnum mpos) (type ,type diagonal))
+                     (when dot-form
+                       (let ((sum ,zero))
+                         (declare (type ,type sum))
+                         (loop for t-index of-type fixnum from lo to hi
+                               for apos of-type fixnum from position do
+                           (unless (= t-index major)
+                             (incf sum (* (conj-if ,type conj (aref a apos))
+                                          (aref x (+ xstart (* t-index incx)))))))
+                         (decf (aref x mpos) sum)))
+                     (unless unit
+                       (setf (aref x mpos)
+                             (/ (aref x mpos) (conj-if ,type conj diagonal))))
+                     (unless dot-form
+                       (let ((xm (aref x mpos)))
+                         (declare (type ,type xm))
+                         (loop for t-index of-type fixnum from lo to hi
+                               for apos of-type fixnum from position do
+                           (unless (= t-index major)
+                             (decf (aref x (+ xstart (* t-index incx)))
+                                   (* (conj-if ,type conj (aref a apos)) xm)))))))))))
+           nil)
+
+         (define-kernel ger-kernel ,type
+             (alpha x xstart incx y ystart incy conj-y a base row-major ld rows cols)
+           (declare ,declarations (type ,type alpha) (type ,array a x y)
+                    (type blas-offset xstart ystart base)
+                    (type blas-increment incx incy) (type blas-dim ld rows cols))
+           (if row-major
+               (dotimes (major rows)
+                 (let ((scale (* alpha (aref x (+ xstart (* major incx)))))
+                       (position (+ base (* major ld))) (ypos ystart))
+                   (declare (type ,type scale) (type fixnum position ypos))
+                   (dotimes (minor cols)
+                     (incf (aref a position)
+                           (* scale (conj-if ,type conj-y (aref y ypos))))
+                     (incf position) (incf ypos incy))))
+               (dotimes (major cols)
+                 (let ((scale (* alpha (conj-if ,type conj-y
+                                                (aref y (+ ystart (* major incy))))))
+                       (position (+ base (* major ld))) (xpos xstart))
+                   (declare (type ,type scale) (type fixnum position xpos))
+                   (dotimes (minor rows)
+                     (incf (aref a position) (* scale (aref x xpos)))
+                     (incf position) (incf xpos incx)))))
+           nil)
+
+         (define-kernel rank-symmetric-kernel ,type
+             (code upper hermitian second alpha alpha2 x xstart incx y ystart incy
+              a base row-major ld n)
+           (declare ,declarations (type ,type alpha alpha2) (type ,array a x y)
+                    (type blas-offset xstart ystart base)
+                    (type blas-increment incx incy)
+                    (type blas-dim ld n) (type (integer 0 4) code))
+           (dotimes (major n)
+             (multiple-value-bind (lo hi position)
+                 (matrix-run code row-major upper n n ld n n n major base)
+               (declare (type blas-dim lo) (type fixnum hi position))
+               (let* ((xm (aref x (+ xstart (* major incx))))
+                      (ym (if second (aref y (+ ystart (* major incy))) ,zero))
+                      (first-scale (if row-major
+                                       (* alpha xm)
+                                       (* alpha (conj-if ,type hermitian
+                                                         (if second ym xm)))))
+                      (second-scale (if row-major
+                                        (* alpha2 ym)
+                                        (* alpha2 (conj-if ,type hermitian xm)))))
+                 (declare (type ,type xm ym first-scale second-scale))
+                 (loop for t-index of-type fixnum from lo to hi
+                       for apos of-type fixnum from position do
+                   (let ((xt (aref x (+ xstart (* t-index incx))))
+                         (yt (if second (aref y (+ ystart (* t-index incy))) ,zero)))
+                     (declare (type ,type xt yt))
+                     (incf (aref a apos)
+                           (if row-major
+                               (if second
+                                   (+ (* first-scale (conj-if ,type hermitian yt))
+                                      (* second-scale (conj-if ,type hermitian xt)))
+                                   (* first-scale (conj-if ,type hermitian xt)))
+                               (if second
+                                   (+ (* first-scale xt) (* second-scale yt))
+                                   (* first-scale xt))))))
+                 (when hermitian
+                   (let ((diagonal (+ position (- major lo))))
+                     (declare (type fixnum diagonal))
+                     (setf (aref a diagonal) (realify ,type (aref a diagonal))))))))
+           nil)))))
+
+(define-level2-kernels single-float)
+(define-level2-kernels double-float)
+(define-level2-kernels (complex single-float))
+(define-level2-kernels (complex double-float))
+
+(defun level2-run-code (kind uplo)
+  (ecase kind
+    (:dense (if uplo 1 0))
+    (:general 2)
+    ((:symmetric :hermitian :triangular) 3)
+    (:packed 4)))
+
+(defun level2-matrix-arguments (view)
+  (values (matrix-view-data view) (matrix-view-offset view)
+          (eq (matrix-view-layout view) :row-major)
+          (matrix-view-leading-dimension view)
+          (matrix-view-kl view) (matrix-view-ku view)))
+
+(defun level2-vector-start (n vector increment offset)
+  (declare (ignore vector))
+  (unless (typep increment 'blas-increment)
+    (error "BLAS increment is too large for the kernels"))
+  (span-index n increment offset))
 
 (defun level2-mv (kind transpose uplo hermitian alpha view x incx beta y incy
                   x-offset y-offset type)
@@ -56,22 +298,24 @@
   (validate-level2-scalar alpha type)
   (validate-level2-scalar beta type)
   (let* ((rows (matrix-view-rows view)) (cols (matrix-view-cols view))
-         (m (if (member transpose '(:transpose :conjugate-transpose)) cols rows))
-         (n (if (member transpose '(:transpose :conjugate-transpose)) rows cols))
-         (operation (or transpose :no-transpose)))
+         (trans (member transpose '(:transpose :conjugate-transpose)))
+         (m (if trans cols rows))
+         (n (if trans rows cols))
+         (code (level2-run-code kind uplo)))
     (validate-span n x incx x-offset type)
     (validate-span m y incy y-offset type)
-    (dotimes (i m y)
-      (let ((sum (level2-zero type)) (iy (vector-position m incy y-offset i)))
-        (unless (zerop alpha)
-          (dotimes (j n)
-            (incf sum (* (operated-value view i j operation type uplo hermitian)
-                         (aref x (vector-position n incx x-offset j))))))
-        (unless (and (zerop alpha) (= beta 1))
-          (setf (aref y iy)
-                (+ (if (zerop alpha) (level2-zero type) (* alpha sum))
-                   (if (zerop beta) (level2-zero type)
-                       (* beta (aref y iy))))))))))
+    (multiple-value-bind (data base row-major ld kl ku) (level2-matrix-arguments view)
+      (let ((xstart (level2-vector-start n x incx x-offset))
+            (ystart (level2-vector-start m y incy y-offset)))
+        (if uplo
+            (funcall (find-kernel 'mv-symmetric-kernel type)
+                     code (eq uplo :upper) hermitian alpha data base row-major ld
+                     (max kl ku) rows x xstart incx beta y ystart incy)
+            (funcall (find-kernel 'mv-general-kernel type)
+                     code (and trans t) (eq transpose :conjugate-transpose) alpha
+                     data base row-major ld kl ku rows cols x xstart incx beta y
+                     ystart incy m))))
+    y))
 
 (defmacro define-level2-mv (name type kind &key transpose uplo hermitian)
   `(defun ,name (,@(when transpose '(transpose)) ,@(when uplo '(uplo))
@@ -100,18 +344,6 @@
 (define-level2-mv chpmv (complex single-float) :packed :uplo t :hermitian t)
 (define-level2-mv zhpmv (complex double-float) :packed :uplo t :hermitian t)
 
-(defun triangular-value (view row column uplo transpose diag type)
-  (if (and (= row column) (eq diag :unit))
-      (if (consp type)
-          (complex (coerce 1 (second type)) (coerce 0 (second type)))
-          (coerce 1 type))
-      (let ((r (if (eq transpose :no-transpose) row column))
-            (c (if (eq transpose :no-transpose) column row)))
-        (if (if (eq uplo :upper) (<= r c) (>= r c))
-            (let ((value (stored-ref view r c uplo (level2-zero type))))
-              (if (eq transpose :conjugate-transpose) (conjugate value) value))
-            (level2-zero type)))))
-
 (defun level2-triangular (operation kind uplo transpose diag view x incx x-offset type)
   (validate-level2-view view type kind t)
   (validate-uplo uplo)
@@ -119,31 +351,14 @@
   (validate-diag diag)
   (let ((n (matrix-view-rows view)))
     (validate-span n x incx x-offset type)
-    (let ((values (make-array n :element-type type)))
-      (dotimes (i n)
-        (setf (aref values i) (aref x (vector-position n incx x-offset i))))
-      (if (eq operation :multiply)
-          (dotimes (i n)
-            (let ((sum (level2-zero type)))
-              (dotimes (j n)
-                (incf sum (* (triangular-value view i j uplo transpose diag type)
-                             (aref values j))))
-              (setf (aref x (vector-position n incx x-offset i)) sum)))
-          (let ((forward (if (eq transpose :no-transpose)
-                             (eq uplo :lower) (eq uplo :upper))))
-            (dotimes (step n)
-              (let* ((i (if forward step (- n step 1)))
-                     (sum (aref values i)))
-                (dotimes (j n)
-                  (when (if forward (< j i) (> j i))
-                    (decf sum (* (triangular-value view i j uplo transpose diag type)
-                                 (aref values j)))))
-                (setf (aref values i)
-                      (if (eq diag :unit) sum
-                          (/ sum (triangular-value view i i uplo transpose diag type))))))
-            (dotimes (i n)
-              (setf (aref x (vector-position n incx x-offset i))
-                    (aref values i))))))
+    (multiple-value-bind (data base row-major ld kl ku) (level2-matrix-arguments view)
+      (funcall (find-kernel (if (eq operation :multiply)
+                                'triangular-mv-kernel 'triangular-solve-kernel)
+                            type)
+               (level2-run-code kind uplo) (eq uplo :upper) (eq diag :unit)
+               (not (eq transpose :no-transpose))
+               (eq transpose :conjugate-transpose) data base row-major ld
+               (max kl ku) n x (level2-vector-start n x incx x-offset) incx))
     x))
 
 (defmacro define-level2-triangular (name operation kind type)
@@ -183,12 +398,11 @@
     (validate-span m x incx x-offset type)
     (validate-span n y incy y-offset type)
     (unless (zerop alpha)
-      (dotimes (i m)
-        (dotimes (j n)
-          (incf (matrix-ref view i j)
-                (* alpha (aref x (vector-position m incx x-offset i))
-                   (let ((value (aref y (vector-position n incy y-offset j))))
-                     (if conjugate-y (conjugate value) value)))))))
+      (multiple-value-bind (data base row-major ld) (level2-matrix-arguments view)
+        (funcall (find-kernel 'ger-kernel type)
+                 alpha x (level2-vector-start m x incx x-offset) incx
+                 y (level2-vector-start n y incy y-offset) incy conjugate-y
+                 data base row-major ld m n)))
     view))
 
 (defmacro define-level2-ger (name conjugate-y type)
@@ -210,29 +424,22 @@
   (validate-level2-scalar alpha
                           (if (member operation '(:her :hpr)) (second type) type))
   (let ((n (matrix-view-rows view))
-        (hermitian (member operation '(:her :hpr :her2 :hpr2)))
-        (second-vector (member operation '(:syr2 :spr2 :her2 :hpr2))))
+        (hermitian (and (member operation '(:her :hpr :her2 :hpr2)) t))
+        (second-vector (and (member operation '(:syr2 :spr2 :her2 :hpr2)) t)))
     (validate-span n x incx x-offset type)
     (when second-vector (validate-span n y incy y-offset type))
     (when (zerop alpha) (return-from level2-rank-symmetric view))
-    (dotimes (i n view)
-      (loop for j from (if (eq uplo :upper) i 0)
-            below (if (eq uplo :upper) n (1+ i)) do
-        (let* ((xi (aref x (vector-position n incx x-offset i)))
-               (xj (aref x (vector-position n incx x-offset j)))
-               (yi (when second-vector
-                     (aref y (vector-position n incy y-offset i))))
-               (yj (when second-vector
-                     (aref y (vector-position n incy y-offset j))))
-               (delta (if second-vector
-                          (+ (* alpha xi (if hermitian (conjugate yj) yj))
-                             (* (if hermitian (conjugate alpha) alpha) yi
-                                (if hermitian (conjugate xj) xj)))
-                          (* alpha xi (if hermitian (conjugate xj) xj))))
-               (value (+ (stored-ref view i j uplo (level2-zero type)) delta)))
-          (setf (stored-ref view i j uplo (level2-zero type))
-                (if (and hermitian (= i j))
-                    (complex (realpart value) (coerce 0 (second type))) value)))))))
+    (let ((alpha (coerce alpha type)))
+      (multiple-value-bind (data base row-major ld) (level2-matrix-arguments view)
+        (funcall (find-kernel 'rank-symmetric-kernel type)
+                 (level2-run-code kind uplo) (eq uplo :upper) hermitian
+                 second-vector alpha (if hermitian (conjugate alpha) alpha)
+                 x (level2-vector-start n x incx x-offset) incx
+                 (if second-vector y x)
+                 (if second-vector (level2-vector-start n y incy y-offset)
+                     (level2-vector-start n x incx x-offset))
+                 (if second-vector incy incx) data base row-major ld n)))
+    view))
 
 (defmacro define-level2-rank-symmetric (name operation kind type &optional second-vector)
   `(defun ,name (uplo alpha x incx ,@(when second-vector '(y incy)) view

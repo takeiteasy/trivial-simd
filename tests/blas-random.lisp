@@ -435,6 +435,230 @@
                       (check-case (list type family layout uplo incx)
                                   (result-matches-p a type)))))))))))))
 
+;;; Band and packed Level 2
+
+(defun view-ld (view) (trivial-simd/blas:matrix-view-leading-dimension view))
+
+(defun band-width (kind kl ku)
+  (if (eq kind :general) (+ kl ku 1) (1+ (max kl ku))))
+
+(defun make-random-band (type rows cols layout kind kl ku uplo dominant)
+  (let* ((ld (1+ (band-width kind kl ku))) (offset 2)
+         (major (if (eq layout :row-major) rows cols))
+         (data (blas-filled-vector type (+ offset (* major ld) 2)))
+         (view (trivial-simd/blas:make-band-matrix-view
+                data rows cols :kind kind :kl kl :ku ku :layout layout
+                :leading-dimension ld :offset offset)))
+    (when dominant
+      (dotimes (i (min rows cols))
+        (incf (aref data (+ offset (trivial-simd/blas::stored-index view i i uplo)))
+              (coerce 4 type))))
+    view))
+
+(defun new-band (type rows cols layout kind kl ku &key uplo dominant)
+  (let* ((view (make-random-band type rows cols layout kind kl ku uplo dominant))
+         (base (foreign-from-lisp (trivial-simd/blas:matrix-view-data view) type)))
+    (push (cons view base) *blas-bases*)
+    (values view (cffi:inc-pointer base (* 2 (blas-width type)
+                                           (cffi:foreign-type-size (blas-ftype type)))))))
+
+(defun new-packed (type n layout &key uplo dominant)
+  (let* ((offset 3)
+         (data (blas-filled-vector type (+ offset (floor (* n (1+ n)) 2) 2)))
+         (view (trivial-simd/blas:make-packed-matrix-view
+                data n :layout layout :offset offset)))
+    (when dominant
+      (dotimes (i n)
+        (incf (aref data (+ offset (trivial-simd/blas::stored-index view i i uplo)))
+              (coerce 4 type))))
+    (let ((base (foreign-from-lisp data type)))
+      (push (cons view base) *blas-bases*)
+      (values view (cffi:inc-pointer base (* offset (blas-width type)
+                                             (cffi:foreign-type-size
+                                              (blas-ftype type))))))))
+
+(defun cblas-name (type family)
+  (format nil "cblas_~A~A" (blas-prefix type) family))
+
+(test blas-random-gbmv
+  (dolist (type *blas-random-types*)
+    (when (cblas-available-p type "gbmv")
+      (dolist (layout '(:row-major :column-major))
+        (dolist (transpose *blas-transposes*)
+          (dolist (shape '((9 7 2 1) (6 6 0 3) (5 8 3 0)))
+            (dolist (increments '((1 1) (-2 3)))
+              (destructuring-bind (rows cols kl ku) shape
+                (destructuring-bind (incx incy) increments
+                  (with-blas-cleanup
+                    (let* ((trans (not (eq transpose :no-transpose)))
+                           (x-count (if trans rows cols)) (y-count (if trans cols rows))
+                           (alpha (blas-scalar type 3/4 -1/4))
+                           (beta (blas-scalar type 1/2 1/4)))
+                      (multiple-value-bind (a ap)
+                          (new-band type rows cols layout :general kl ku)
+                        (multiple-value-bind (x xb) (new-vector type x-count incx)
+                          (multiple-value-bind (y yb) (new-vector type y-count incy)
+                            (cblas-call (cblas-name type "gbmv")
+                                        (arg-enum layout) (arg-enum transpose)
+                                        (arg-int rows) (arg-int cols) (arg-int kl)
+                                        (arg-int ku) (arg-scalar type alpha)
+                                        (arg-pointer ap) (arg-int (view-ld a))
+                                        (arg-pointer xb) (arg-int incx)
+                                        (arg-scalar type beta)
+                                        (arg-pointer yb) (arg-int incy))
+                            (funcall (blas-routine type "gbmv") transpose alpha a x
+                                     incx beta y incy)
+                            (check-case (list type layout transpose shape increments)
+                                        (and (result-matches-p y type)
+                                             (result-matches-p a type)))))))))))))))))
+
+(test blas-random-sbmv-spmv
+  (dolist (type *blas-random-types*)
+    (let ((band-family (if (consp type) "hbmv" "sbmv"))
+          (packed-family (if (consp type) "hpmv" "spmv"))
+          (kind (if (consp type) :hermitian :symmetric)))
+      (dolist (layout '(:row-major :column-major))
+        (dolist (uplo '(:upper :lower))
+          (dolist (increments '((1 1) (-2 3)))
+            (destructuring-bind (incx incy) increments
+              (when (cblas-available-p type band-family)
+                (dolist (k '(0 2 5))
+                  (with-blas-cleanup
+                    (let ((n 9) (alpha (blas-scalar type 3/4 -1/4))
+                          (beta (blas-scalar type 1/2 1/4)))
+                      (multiple-value-bind (a ap) (new-band type n n layout kind k k)
+                        (multiple-value-bind (x xb) (new-vector type n incx)
+                          (multiple-value-bind (y yb) (new-vector type n incy)
+                            (cblas-call (cblas-name type band-family)
+                                        (arg-enum layout) (arg-enum uplo) (arg-int n)
+                                        (arg-int k) (arg-scalar type alpha)
+                                        (arg-pointer ap) (arg-int (view-ld a))
+                                        (arg-pointer xb) (arg-int incx)
+                                        (arg-scalar type beta)
+                                        (arg-pointer yb) (arg-int incy))
+                            (funcall (blas-routine type band-family) uplo alpha a x
+                                     incx beta y incy)
+                            (check-case (list type band-family layout uplo k incx)
+                                        (and (result-matches-p y type)
+                                             (result-matches-p a type))))))))))
+              (when (cblas-available-p type packed-family)
+                (with-blas-cleanup
+                  (let ((n 9) (alpha (blas-scalar type 3/4 -1/4))
+                        (beta (blas-scalar type 1/2 1/4)))
+                    (multiple-value-bind (a ap) (new-packed type n layout)
+                      (multiple-value-bind (x xb) (new-vector type n incx)
+                        (multiple-value-bind (y yb) (new-vector type n incy)
+                          (cblas-call (cblas-name type packed-family)
+                                      (arg-enum layout) (arg-enum uplo) (arg-int n)
+                                      (arg-scalar type alpha) (arg-pointer ap)
+                                      (arg-pointer xb) (arg-int incx)
+                                      (arg-scalar type beta)
+                                      (arg-pointer yb) (arg-int incy))
+                          (funcall (blas-routine type packed-family) uplo alpha a x
+                                   incx beta y incy)
+                          (check-case (list type packed-family layout uplo incx)
+                                      (result-matches-p y type)))))))))))))))
+
+(test blas-random-triangular-band-and-packed
+  (dolist (type *blas-random-types*)
+    (dolist (operation '("mv" "sv"))
+      (let ((band-family (concatenate 'string "tb" operation))
+            (packed-family (concatenate 'string "tp" operation)))
+        (dolist (layout '(:row-major :column-major))
+          (dolist (uplo '(:upper :lower))
+            (dolist (transpose *blas-transposes*)
+              (dolist (diag '(:non-unit :unit))
+                (dolist (incx '(1 -2))
+                  (when (cblas-available-p type band-family)
+                    (dolist (k '(0 3))
+                      (with-blas-cleanup
+                        (let ((n 9))
+                          (multiple-value-bind (a ap)
+                              (new-band type n n layout :triangular k k
+                                        :uplo uplo :dominant t)
+                            (multiple-value-bind (x xb) (new-vector type n incx)
+                              (cblas-call (cblas-name type band-family)
+                                          (arg-enum layout) (arg-enum uplo)
+                                          (arg-enum transpose) (arg-enum diag)
+                                          (arg-int n) (arg-int k) (arg-pointer ap)
+                                          (arg-int (view-ld a)) (arg-pointer xb)
+                                          (arg-int incx))
+                              (funcall (blas-routine type band-family) uplo transpose
+                                       diag a x incx)
+                              (check-case (list type band-family layout uplo transpose
+                                                diag k incx)
+                                          (result-matches-p x type))))))))
+                  (when (cblas-available-p type packed-family)
+                    (with-blas-cleanup
+                      (let ((n 9))
+                        (multiple-value-bind (a ap)
+                            (new-packed type n layout :uplo uplo :dominant t)
+                          (multiple-value-bind (x xb) (new-vector type n incx)
+                            (cblas-call (cblas-name type packed-family)
+                                        (arg-enum layout) (arg-enum uplo)
+                                        (arg-enum transpose) (arg-enum diag)
+                                        (arg-int n) (arg-pointer ap) (arg-pointer xb)
+                                        (arg-int incx))
+                            (funcall (blas-routine type packed-family) uplo transpose
+                                     diag a x incx)
+                            (check-case (list type packed-family layout uplo transpose
+                                              diag incx)
+                                        (result-matches-p x type))))))))))))))))
+
+(test blas-random-rank-updates-two-vectors-and-packed
+  (dolist (type *blas-random-types*)
+    (let ((hermitian (consp type)))
+      (dolist (layout '(:row-major :column-major))
+        (dolist (uplo '(:upper :lower))
+          (dolist (increments '((1 1) (-2 3)))
+            (destructuring-bind (incx incy) increments
+              ;; dense syr2/her2 and packed syr/spr2/hpr/hpr2
+              (let ((family (if hermitian "her2" "syr2")))
+                (when (cblas-available-p type family)
+                  (with-blas-cleanup
+                    (let ((n 9) (alpha (blas-scalar type 3/4 -1/4)))
+                      (multiple-value-bind (a ap) (new-matrix type n n layout)
+                        (multiple-value-bind (x xb) (new-vector type n incx)
+                          (multiple-value-bind (y yb) (new-vector type n incy)
+                            (cblas-call (cblas-name type family)
+                                        (arg-enum layout) (arg-enum uplo) (arg-int n)
+                                        (arg-scalar type alpha) (arg-pointer xb)
+                                        (arg-int incx) (arg-pointer yb) (arg-int incy)
+                                        (arg-pointer ap) (arg-int (view-ld a)))
+                            (funcall (blas-routine type family) uplo alpha x incx y
+                                     incy a)
+                            (check-case (list type family layout uplo incx incy)
+                                        (result-matches-p a type)))))))))
+              (let ((family (if hermitian "hpr" "spr")))
+                (when (cblas-available-p type family)
+                  (with-blas-cleanup
+                    (let ((n 9) (alpha (coerce 3/4 (blas-component type))))
+                      (multiple-value-bind (a ap) (new-packed type n layout)
+                        (multiple-value-bind (x xb) (new-vector type n incx)
+                          (cblas-call (cblas-name type family)
+                                      (arg-enum layout) (arg-enum uplo) (arg-int n)
+                                      (arg-real type alpha) (arg-pointer xb)
+                                      (arg-int incx) (arg-pointer ap))
+                          (funcall (blas-routine type family) uplo alpha x incx a)
+                          (check-case (list type family layout uplo incx)
+                                      (result-matches-p a type))))))))
+              (let ((family (if hermitian "hpr2" "spr2")))
+                (when (cblas-available-p type family)
+                  (with-blas-cleanup
+                    (let ((n 9) (alpha (blas-scalar type 3/4 -1/4)))
+                      (multiple-value-bind (a ap) (new-packed type n layout)
+                        (multiple-value-bind (x xb) (new-vector type n incx)
+                          (multiple-value-bind (y yb) (new-vector type n incy)
+                            (cblas-call (cblas-name type family)
+                                        (arg-enum layout) (arg-enum uplo) (arg-int n)
+                                        (arg-scalar type alpha) (arg-pointer xb)
+                                        (arg-int incx) (arg-pointer yb) (arg-int incy)
+                                        (arg-pointer ap))
+                            (funcall (blas-routine type family) uplo alpha x incx y
+                                     incy a)
+                            (check-case (list type family layout uplo incx incy)
+                                        (result-matches-p a type))))))))))))))))
+
 ;;; Zero scalars never read the operands they scale
 
 (defun blas-poison (type)

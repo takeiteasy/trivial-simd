@@ -57,10 +57,18 @@ to no transpose and zero `beta`; `ger!` accepts `:conjugate t` for complex
 storage; `trsv!` defaults to upper, no transpose, nonunit diagonal.
 The [runnable example](../examples/blas.lisp) shows `gemv!`.
 
+## Performance
+
+Each routine walks the stored matrix one contiguous line at a time, so dense,
+band, and packed views share one typed kernel per precision.[^runs] Band
+routines visit only the band and triangular routines only their triangle. On
+the measured Apple M1 with SBCL, a 64×64 `dgemv` takes 2.5 µs against 271 µs
+for the earlier loops; see the [BLAS benchmarks](blas-benchmarks.md).
+
 ## Limitations
 
-Level 2 uses portable Lisp loops; optimized kernels are tracked by
-[#76](https://todo.sr.ht/~takeiteasy/trivial-simd/76). Core strided SIMD access
+Level 2 kernels are scalar Lisp loops. Native and SIMD kernels are tracked by
+[#79](https://todo.sr.ht/~takeiteasy/trivial-simd/79). Core strided SIMD access
 is tracked by [#43](https://todo.sr.ht/~takeiteasy/trivial-simd/43).
 Shared input/output
 storage follows the [overlap limitation](api.md#limitations).
@@ -69,3 +77,7 @@ storage follows the [overlap limitation](api.md#limitations).
     Symmetric, Hermitian, and triangular band views use their matching
     `:kind` and `:bandwidth`. Packed views store one triangle of an `n × n`
     matrix. Banded and packed views share storage but do not expose subviews.
+
+[^runs]: A line is a row for row-major views and a column for column-major
+    views. Kernels skip bounds checks after validation, so views and
+    increments must fit 30 bits.
