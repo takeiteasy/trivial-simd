@@ -95,7 +95,6 @@
 #define TS_BLAS_F64_COLUMNS 4
 #endif
 
-/* Cache blocking is tuned on Apple M1; the x86 values are provisional (#82). */
 #ifndef TS_BLAS_DEPTH
 #define TS_BLAS_DEPTH 256
 #endif

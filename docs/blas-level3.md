@@ -71,9 +71,9 @@ native library is built; everything else runs typed Lisp loops.[^kernels] On the
 ## Limitations
 
 Complex routines use scalar Lisp loops without cache blocking or SIMD. Native
-complex kernels are tracked by [#80](https://todo.sr.ht/~takeiteasy/trivial-simd/80);
-x86 tile sizes and thresholds are not yet measured on x86-64 hardware;
-tracked by [#82](https://todo.sr.ht/~takeiteasy/trivial-simd/82).
+complex kernels are tracked by [#80](https://todo.sr.ht/~takeiteasy/trivial-simd/80).
+The blocked routines repack panels they have already packed, tracked by
+[#83](https://todo.sr.ht/~takeiteasy/trivial-simd/83).
 
 [^kernels]: Native `gemm` packs `A` and `B` panels so any layout or transpose
     runs the same micro-kernel; `trmm`, `trsm`, `syrk`, and `syr2k` split into

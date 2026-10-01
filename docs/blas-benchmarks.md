@@ -77,6 +77,24 @@ views.
 Row-major times; column-major follows the same pattern.[^trsv] Level 2 at 16 × 16 and `dgbmv` run the Lisp kernels. All
 layouts are in the recorded runs.
 
+## x86-64 results
+
+Microseconds per warmed call on SBCL 2.2.9 with an AMD EPYC 9V45 (GitHub
+`ubuntu-latest`, AVX+FMA path), row-major, against the system CBLAS.[^x86]
+
+| Routine | 64 × 64 native | 64 × 64 Lisp | 256 × 256 native | 256 × 256 Lisp | 256 × 256 CBLAS |
+|---|---:|---:|---:|---:|---:|
+| `dgemm` | 11.2 | 129 | 555 | 8,500 | 168 |
+| `dsyrk` | 10.7 | 139 | 453 | 8,250 | 135 |
+| `dtrsm` | 9.4 | 74.2 | 445 | 4,438 | 195 |
+| `dgemv` | 0.55 | 3.42 | 5.31 | 28.3 | 3.48 |
+| `dtrsv` | 1.05 | 1.65 | 5.98 | 18.1 | 6.84 |
+| `dger` | 0.58 | 1.47 | 7.69 | 21.7 | 3.60 |
+
+The default 8 × 6 (`f64`) and 16 × 6 (`f32`) tiles beat 12 × 4, 8 × 4 and 4 × 8
+by 5% to 30%. Depth, row and column blocks stay within 5% of each other, so
+the M1 values (256, 128, 1024) apply.[^sweep]
+
 ## Thresholds
 
 Native is used when the work is at least the threshold; Lisp is faster below it
@@ -87,13 +105,14 @@ on SBCL and CCL, and native wins at every size on ECL.
 | SBCL, CCL | 1,000 | 1,000 |
 | ECL | 1 | 1 |
 
+On x86-64 native is at least as fast as Lisp from 8 × 8, so the same
+thresholds apply.
+
 ## Limitations
 
 Complex routines and band, packed, and symmetric Level 2 routines run scalar
 Lisp loops, tracked by [#80](https://todo.sr.ht/~takeiteasy/trivial-simd/80) and
-[#81](https://todo.sr.ht/~takeiteasy/trivial-simd/81). x86 tile sizes and thresholds are
-not yet measured on x86-64 hardware, tracked by
-[#82](https://todo.sr.ht/~takeiteasy/trivial-simd/82). The Lisp kernels box
+[#81](https://todo.sr.ht/~takeiteasy/trivial-simd/81). The Lisp kernels box
 double-floats on ECL unless each array read is bound to a typed variable.
 
 [^scope]: The benchmark covers `dgemm`, `dsyrk`, `dtrsm`, `dgemv`, `dgbmv`,
@@ -102,6 +121,12 @@ double-floats on ECL unless each array read is bound to a typed variable.
 [^trsv]: Column-major `dtrsv` at 256 × 256 takes 9.0 µs natively against 31.9 µs
     in Lisp; see
     [`benchmark-runs/2026-10-01-blas-native-sbcl-trsv.txt`](benchmark-runs/2026-10-01-blas-native-sbcl-trsv.txt).
+[^x86]: Logs:
+    [`benchmark-runs/2026-10-01-blas-x86-sbcl.txt`](benchmark-runs/2026-10-01-blas-x86-sbcl.txt).
+[^sweep]: Twelve tile and blocking configurations, two runs each, in
+    [`benchmark-runs/2026-10-01-blas-x86-sweep.txt`](benchmark-runs/2026-10-01-blas-x86-sweep.txt).
+    On the same CPU the AVX+FMA kernels run `dgemm` at 64 × 64 in 10.8 µs
+    against 24.3 µs for SSE2, and at 512 × 512 at 117 GFLOP/s.
 [^method]: Each time is the median of three batches of at least 50 ms.
     In-place routines (`dtrsm`, `dtrsv`) restore their operand before each
     call in both columns. CBLAS calls run with floating-point traps masked.
