@@ -77,6 +77,18 @@ SBCL_X86_VERSION=2.6.8 TRIVIAL_SIMD_X86_CACHE=~/.cache/trivial-simd/x86-sbcl tes
 
 Delete the cache directory to reset it.
 
+`tests/x86-ecl.sh` does the same with x86-64 ECL, built from source under
+Rosetta on the first run (several minutes). It also needs `make` and Xcode
+command line tools.
+
+```sh
+tests/x86-ecl.sh
+ECL_X86_VERSION=26.5.5 TRIVIAL_SIMD_X86_ECL_CACHE=~/.cache/trivial-simd/x86-ecl tests/x86-ecl.sh
+```
+
+It caches the ECL install and the work copy under `$TRIVIAL_SIMD_X86_ECL_CACHE`
+(default `~/.cache/trivial-simd/x86-ecl`) and writes build logs there.
+
 Clozure CL preview builds for ARM64 run the suite with the `ccl` command shown
 above once the preview binary is on `PATH`. Tested locally: CCL `Version 1.13 (v1.13-459-g690ff7ea) DarwinARM64`. CI pins
 `v1.13-arm64-pre2`.

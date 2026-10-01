@@ -42,6 +42,7 @@ See [local platform runs](testing.md#local-platform-runs) for setup.
 | Platform | Lisp implementation | Backends exercised |
 |---|---|---|
 | macOS x86-64 (Rosetta) | SBCL 2.6.8 | `:sbcl`, `:native`, `:lisp`[^rosetta] |
+| macOS x86-64 (Rosetta) | ECL 26.5.5 | `:native`, `:lisp`[^rosetta] |
 | macOS ARM64 | CCL `v1.13-459-g690ff7ea` preview build | `:native` |
 
 

@@ -72,7 +72,7 @@ supported yet. Blank is not planned.
 | Linux x86-64 | X | X | X |
 | Linux ARM64 | X | X | X |
 | macOS ARM64 | X | X | X |
-| macOS x86-64 | L | X | |
+| macOS x86-64 | L | X | L |
 | Windows x86-64 | X | [P](https://todo.sr.ht/~takeiteasy/trivial-simd/28) | [P](https://todo.sr.ht/~takeiteasy/trivial-simd/29) |
 | Windows ARM64 | X | | |
 | [FreeBSD](https://todo.sr.ht/~takeiteasy/trivial-simd/14) | P | P | P |
