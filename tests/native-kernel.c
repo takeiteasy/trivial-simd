@@ -386,8 +386,29 @@ static void check_blas_##suffix(void) { \
     assert(ts_blas_gemm_##suffix(M, N, K, 1, a, K, 1, b, 1, K, 1, c, N, 1) == 1); \
     fail_allocation = 0; \
 } \
+static void check_blas_rank_##suffix(void) { \
+    enum { N = 150, K = 270 }; \
+    static type a[N * K], b[N * K], c[N * N], expected[N * N]; \
+    for (int i = 0; i < N * K; ++i) { a[i] = blas_value_##suffix(i); b[i] = blas_value_##suffix(i + 5); } \
+    for (int second = 0; second < 2; ++second) \
+        for (int upper = 0; upper < 2; ++upper) { \
+            for (int i = 0; i < N * N; ++i) c[i] = expected[i] = blas_value_##suffix(i + 9); \
+            for (int i = 0; i < N; ++i) \
+                for (int j = upper ? i : 0; j < (upper ? N : i + 1); ++j) { \
+                    type sum = 0; \
+                    for (int p = 0; p < K; ++p) { \
+                        sum += a[i * K + p] * (second ? b[j * K + p] : a[j * K + p]); \
+                        if (second) sum += b[i * K + p] * a[j * K + p]; \
+                    } \
+                    expected[i * N + j] = (type)0.5 * expected[i * N + j] + (type)0.75 * sum; \
+                } \
+            assert(ts_blas_rank_##suffix(N, K, (type)0.75, a, K, 1, second ? b : a, K, 1, (type)0.5, \
+                                         c, N, 1, upper, second) == 0); \
+            for (int i = 0; i < N * N; ++i) assert(fabs((double)(c[i] - expected[i])) < 1e-2); \
+        } \
+} \
 static void check_blas_solve_##suffix(void) { \
-    enum { N = 45, C = 7 }; \
+    enum { N = 150, C = 7 }; \
     static type a[N * N], at[N * N], x[N * C], b[N * C], y[N], z[N]; \
     for (int i = 0; i < N; ++i) \
         for (int j = 0; j < N; ++j) a[i * N + j] = blas_value_##suffix(i * N + j) / N + (i == j ? 2 : 0); \
@@ -464,14 +485,18 @@ int main(void) {
     check_blas_f32();
     check_blas_f64();
     check_blas_solve_f32();
+    check_blas_rank_f32();
     check_blas_solve_f64();
+    check_blas_rank_f64();
     check_blas_level2_f32();
     check_blas_level2_f64();
 #ifdef TS_BLAS_DISPATCH
     check_blas_f32_sse();
     check_blas_f64_sse();
     check_blas_solve_f32_sse();
+    check_blas_rank_f32_sse();
     check_blas_solve_f64_sse();
+    check_blas_rank_f64_sse();
     check_blas_level2_f32_sse();
     check_blas_level2_f64_sse();
     printf("BLAS AVX+FMA checks: %s\n", ts_fma_supported() ? "run" : "skipped");
@@ -479,7 +504,9 @@ int main(void) {
         check_blas_f32_fma();
         check_blas_f64_fma();
         check_blas_solve_f32_fma();
+        check_blas_rank_f32_fma();
         check_blas_solve_f64_fma();
+        check_blas_rank_f64_fma();
         check_blas_level2_f32_fma();
         check_blas_level2_f64_fma();
     }

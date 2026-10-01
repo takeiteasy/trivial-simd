@@ -104,6 +104,7 @@
 #ifndef TS_BLAS_COLUMN_BLOCK
 #define TS_BLAS_COLUMN_BLOCK 1024
 #endif
+enum { TS_BLAS_FULL, TS_BLAS_UPPER, TS_BLAS_LOWER };
 #define TS_BLAS_MIN(a, b) ((a) < (b) ? (a) : (b))
 #define TS_BLAS_MAX(a, b) ((a) > (b) ? (a) : (b))
 #define TS_BLAS_ROUND_UP(a, to) (((a) + (to) - 1) / (to) * (to))
@@ -192,7 +193,7 @@ static size_t ts_blas_gemm_size_##suffix(int64_t m, int64_t n, int64_t k) { \
 TS_BLAS_NOINLINE static void ts_blas_gemm_run_##suffix(int64_t m, int64_t n, int64_t k, type alpha, \
                                       const type *a, int64_t ars, int64_t acs, \
                                       const type *b, int64_t brs, int64_t bcs, type beta, \
-                                      type *c, int64_t crs, int64_t ccs, type *work) { \
+                                      type *c, int64_t crs, int64_t ccs, type *work, int part) { \
     if (m <= 0 || n <= 0) return; \
     ts_blas_scale_##suffix(m, n, beta, c, crs, ccs); \
     if (k <= 0 || alpha == 0) return; \
@@ -212,11 +213,17 @@ TS_BLAS_NOINLINE static void ts_blas_gemm_run_##suffix(int64_t m, int64_t n, int
                     ptrdiff_t live_columns = TS_BLAS_MIN(TS_BLAS_NR_##suffix, nc - jr); \
                     for (ptrdiff_t ir = 0; ir < mc; ir += TS_BLAS_MR_##suffix) { \
                         ptrdiff_t live_rows = TS_BLAS_MIN(TS_BLAS_MR_##suffix, mc - ir); \
-                        type *target = c + (ic + ir) * crs + (jc + jr) * ccs; \
+                        ptrdiff_t row = ic + ir, column = jc + jr; \
+                        if (part == TS_BLAS_UPPER && column + live_columns - 1 < row) continue; \
+                        if (part == TS_BLAS_LOWER && column > row + live_rows - 1) continue; \
+                        type *target = c + row * crs + column * ccs; \
                         ts_blas_micro_##suffix(kc, packed_a + ir * kc, packed_b + jr * kc, tile); \
                         for (ptrdiff_t j = 0; j < live_columns; ++j) \
-                            for (ptrdiff_t i = 0; i < live_rows; ++i) \
+                            for (ptrdiff_t i = 0; i < live_rows; ++i) { \
+                                ptrdiff_t offset = column + j - row - i; \
+                                if ((part == TS_BLAS_UPPER && offset < 0) || (part == TS_BLAS_LOWER && offset > 0)) continue; \
                                 target[i * crs + j * ccs] += tile[j * TS_BLAS_MR_##suffix + i]; \
+                            } \
                     } \
                 } \
             } \
@@ -230,21 +237,24 @@ int ts_blas_gemm_##suffix(int64_t m, int64_t n, int64_t k, type alpha, \
                           type *c, int64_t crs, int64_t ccs) { \
     if (m <= 0 || n <= 0) return 0; \
     if (k <= 0 || alpha == 0) { \
-        ts_blas_gemm_run_##suffix(m, n, k, alpha, a, ars, acs, b, brs, bcs, beta, c, crs, ccs, NULL); \
+        ts_blas_gemm_run_##suffix(m, n, k, alpha, a, ars, acs, b, brs, bcs, beta, c, crs, ccs, NULL, TS_BLAS_FULL); \
         return 0; \
     } \
     type *work = malloc(ts_blas_gemm_size_##suffix(m, n, k) * sizeof(type)); \
     if (!work) return 1; \
-    ts_blas_gemm_run_##suffix(m, n, k, alpha, a, ars, acs, b, brs, bcs, beta, c, crs, ccs, work); \
+    ts_blas_gemm_run_##suffix(m, n, k, alpha, a, ars, acs, b, brs, bcs, beta, c, crs, ccs, work, TS_BLAS_FULL); \
     free(work); \
     return 0; \
 }
 
 
 #define TS_BLAS_BLOCK 16
+#ifndef TS_BLAS_TRIANGLE_BLOCK
+#define TS_BLAS_TRIANGLE_BLOCK 64
+#endif
 
-/* Level 3 routines split into diagonal blocks handled here and off-diagonal
-   panels handed to gemm, so they share its packing and micro-kernel. */
+/* syrk and syr2k are one gemm that skips tiles outside the triangle. trmm and
+   trsm walk diagonal blocks, then update the remaining rows with one gemm each. */
 #define TS_BLAS_LEVEL3(suffix, type) \
 static void ts_blas_scale_triangle_##suffix(int64_t n, type beta, type *c, int64_t rs, \
                                             int64_t cs, int upper) { \
@@ -265,33 +275,14 @@ int ts_blas_rank_##suffix(int64_t n, int64_t k, type alpha, \
         ts_blas_scale_triangle_##suffix(n, beta, c, crs, ccs, upper); \
         return 0; \
     } \
-    type *tile = malloc((TS_BLAS_BLOCK * TS_BLAS_BLOCK + ts_blas_gemm_size_##suffix(TS_BLAS_BLOCK, n, k)) \
-                        * sizeof(type)); \
-    if (!tile) return 1; \
-    type *work = tile + TS_BLAS_BLOCK * TS_BLAS_BLOCK; \
-    for (int64_t i0 = 0; i0 < n; i0 += TS_BLAS_BLOCK) { \
-        int64_t nb = TS_BLAS_MIN(TS_BLAS_BLOCK, n - i0); \
-        ts_blas_gemm_run_##suffix(nb, nb, k, alpha, a + i0 * ars, ars, acs, \
-                                  b + i0 * brs, bcs, brs, 0, tile, nb, 1, work); \
-        if (second) \
-            ts_blas_gemm_run_##suffix(nb, nb, k, alpha, b + i0 * brs, brs, bcs, \
-                                      a + i0 * ars, acs, ars, 1, tile, nb, 1, work); \
-        for (int64_t i = 0; i < nb; ++i) \
-            for (int64_t j = upper ? i : 0; j < (upper ? nb : i + 1); ++j) { \
-                type *item = c + (i0 + i) * crs + (i0 + j) * ccs; \
-                *item = beta == 0 ? tile[i * nb + j] : tile[i * nb + j] + beta * *item; \
-            } \
-        int64_t first = upper ? i0 + nb : 0; \
-        int64_t count = upper ? n - first : i0; \
-        if (count <= 0) continue; \
-        type *panel = c + i0 * crs + first * ccs; \
-        ts_blas_gemm_run_##suffix(nb, count, k, alpha, a + i0 * ars, ars, acs, \
-                                  b + first * brs, bcs, brs, beta, panel, crs, ccs, work); \
-        if (second) \
-            ts_blas_gemm_run_##suffix(nb, count, k, alpha, b + i0 * brs, brs, bcs, \
-                                      a + first * ars, acs, ars, 1, panel, crs, ccs, work); \
-    } \
-    free(tile); \
+    type *work = malloc(ts_blas_gemm_size_##suffix(n, n, k) * sizeof(type)); \
+    if (!work) return 1; \
+    int part = upper ? TS_BLAS_UPPER : TS_BLAS_LOWER; \
+    ts_blas_scale_triangle_##suffix(n, beta, c, crs, ccs, upper); \
+    ts_blas_gemm_run_##suffix(n, n, k, alpha, a, ars, acs, b, bcs, brs, 1, c, crs, ccs, work, part); \
+    if (second) \
+        ts_blas_gemm_run_##suffix(n, n, k, alpha, b, brs, bcs, a, acs, ars, 1, c, crs, ccs, work, part); \
+    free(work); \
     return 0; \
 } \
 \
@@ -323,7 +314,7 @@ int ts_blas_triangular_##suffix(int solve, int left, int upper, int unit, type a
     int64_t tars = left ? ars : acs, tacs = left ? acs : ars; \
     int effective_upper = left ? upper : !upper; \
     if (rows <= 0 || cols <= 0) return 0; \
-    type *w = malloc(((size_t)(rows * cols) + ts_blas_gemm_size_##suffix(TS_BLAS_BLOCK, cols, rows)) \
+    type *w = malloc(((size_t)(rows * cols) + ts_blas_gemm_size_##suffix(rows, cols, TS_BLAS_TRIANGLE_BLOCK)) \
                      * sizeof(type)); \
     if (!w) return 1; \
     type *work = w + rows * cols; \
@@ -332,26 +323,20 @@ int ts_blas_triangular_##suffix(int solve, int left, int upper, int unit, type a
             w[r * cols + c] = alpha == 0 ? 0 : alpha * b[r * rs + c * cs]; \
     if (alpha != 0) { \
         int forward = solve ? !effective_upper : effective_upper; \
-        for (int64_t step = 0; step < rows; step += TS_BLAS_BLOCK) { \
-            int64_t i0 = forward ? step : TS_BLAS_MAX(0, rows - step - TS_BLAS_BLOCK); \
-            int64_t i1 = forward ? TS_BLAS_MIN(rows, step + TS_BLAS_BLOCK) : rows - step; \
-            int64_t first = effective_upper ? i1 : 0; \
-            int64_t count = effective_upper ? rows - i1 : i0; \
-            if (solve) { \
-                if (count > 0) \
-                    ts_blas_gemm_run_##suffix(i1 - i0, cols, count, -1, \
-                                              a + i0 * tars + first * tacs, tars, tacs, \
-                                              w + first * cols, cols, 1, 1, \
-                                              w + i0 * cols, cols, 1, work); \
+        for (int64_t step = 0; step < rows; step += TS_BLAS_TRIANGLE_BLOCK) { \
+            int64_t i0 = forward ? step : TS_BLAS_MAX(0, rows - step - TS_BLAS_TRIANGLE_BLOCK); \
+            int64_t i1 = forward ? TS_BLAS_MIN(rows, step + TS_BLAS_TRIANGLE_BLOCK) : rows - step; \
+            int64_t first = effective_upper ? 0 : i1; \
+            int64_t count = effective_upper ? i0 : rows - i1; \
+            if (solve) \
                 ts_blas_diagonal_##suffix(1, effective_upper, unit, a, tars, tacs, w, cols, i0, i1); \
-            } else { \
+            if (count > 0) \
+                ts_blas_gemm_run_##suffix(count, cols, i1 - i0, solve ? -1 : 1, \
+                                          a + first * tars + i0 * tacs, tars, tacs, \
+                                          w + i0 * cols, cols, 1, 1, \
+                                          w + first * cols, cols, 1, work, TS_BLAS_FULL); \
+            if (!solve) \
                 ts_blas_diagonal_##suffix(0, effective_upper, unit, a, tars, tacs, w, cols, i0, i1); \
-                if (count > 0) \
-                    ts_blas_gemm_run_##suffix(i1 - i0, cols, count, 1, \
-                                              a + i0 * tars + first * tacs, tars, tacs, \
-                                              w + first * cols, cols, 1, 1, \
-                                              w + i0 * cols, cols, 1, work); \
-            } \
         } \
     } \
     for (int64_t r = 0; r < rows; ++r) \

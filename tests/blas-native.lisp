@@ -156,7 +156,7 @@
         (dolist (uplo '(:upper :lower))
           (dolist (transpose '(:no-transpose :transpose))
             (dolist (layout '(:row-major :column-major))
-              (dolist (shape '((5 3) (40 33) (17 70)))
+              (dolist (shape '((5 3) (40 33) (17 70) (130 260) (300 7)))
                 (destructuring-bind (n k) shape
                   (multiple-value-bind (rows cols) (operated-dimensions transpose n k)
                     (let* ((a (padded-view type rows cols layout))
@@ -183,7 +183,7 @@
             (dolist (transpose '(:no-transpose :transpose))
               (dolist (diag '(:unit :non-unit))
                 (dolist (layout '(:row-major :column-major))
-                  (dolist (shape '((5 3) (40 33) (19 50)))
+                  (dolist (shape '((5 3) (40 33) (19 50) (150 70) (70 131)))
                     (destructuring-bind (m n) shape
                       (let* ((order (if (eq side :left) m n))
                              (a (padded-view type order order layout t))
