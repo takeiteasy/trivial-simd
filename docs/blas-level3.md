@@ -72,16 +72,15 @@ native library is built; everything else runs typed Lisp loops.[^kernels] On the
 
 Complex routines use scalar Lisp loops without cache blocking or SIMD. Native
 complex kernels are tracked by [#80](https://todo.sr.ht/~takeiteasy/trivial-simd/80).
-Native `trsm` is no faster than before on Apple M1: its diagonal blocks run
-scalar row solves. A fused solve micro-kernel is tracked by
-[#85](https://todo.sr.ht/~takeiteasy/trivial-simd/85).
 
 [^kernels]: Native `gemm` packs `A` and `B` panels so any layout or transpose
     runs the same micro-kernel; `syrk` and `syr2k` run one `gemm` that skips
     tiles outside the stored triangle, so each operand is packed once per cache
-    block. `trmm` and `trsm` walk 64-row diagonal blocks (`TS_BLAS_TRIANGLE_BLOCK`),
-    updating the remaining rows with one `gemm` per block; all share one
-    packing workspace allocated per call. The native path needs
+    block. `trsm` walks `TS_BLAS_DEPTH`-row blocks, packing the triangle with
+    inverted diagonals and solving each tile in a fused `gemm`+solve
+    micro-kernel, then updates the remaining rows with one `gemm` per block.
+    `trmm` walks 64-row diagonal blocks (`TS_BLAS_TRIANGLE_BLOCK`) the same way.
+    All share one packing workspace allocated per call. The native path needs
     the built library, pointer array access, and `m·n·k` at or above
     `trivial-simd/blas::*native-blas-threshold*` (1,000; 1 on ECL). Binding it
     to `most-positive-fixnum` forces the Lisp kernels. `symm` and `hemm` expand the stored triangle to a dense matrix and

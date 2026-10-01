@@ -183,7 +183,7 @@
             (dolist (transpose '(:no-transpose :transpose))
               (dolist (diag '(:unit :non-unit))
                 (dolist (layout '(:row-major :column-major))
-                  (dolist (shape '((5 3) (40 33) (19 50) (150 70) (70 131)))
+                  (dolist (shape '((5 3) (40 33) (19 50) (150 70) (70 131) (300 20) (20 300)))
                     (destructuring-bind (m n) shape
                       (let* ((order (if (eq side :left) m n))
                              (a (padded-view type order order layout t))

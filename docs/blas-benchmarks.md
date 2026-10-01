@@ -68,13 +68,13 @@ views.
 |---|---:|---:|---:|---:|
 | `dgemm` | 0.79 | 0.43 | 827 | 107 |
 | `dsyrk` | 0.87 | 0.70 | 460 | 70.6 |
-| `dtrsm` | 0.99 | 0.45 | 664 | 128 |
+| `dtrsm` | 0.99 | 0.45 | 631 | 128 |
 | `dgemv` | 0.49 | 0.14 | 11.0 | 4.05 |
 | `dtrsv` | 0.45 | 0.23 | 10.1 | 7.12 |
 | `dger` | 0.44 | 0.13 | 16.5 | 14.1 |
 | `dgbmv` | 0.40 | 0.13 | 2.12 | 0.57 |
 
-Row-major times; column-major follows the same pattern.[^trsv] Level 2 at 16 × 16 and `dgbmv` run the Lisp kernels. All
+Row-major times; column-major follows the same pattern.[^trsv] `dtrsm` takes 0.76× the time of `dgemm` at 256 × 256 on M1.[^trsm] Level 2 at 16 × 16 and `dgbmv` run the Lisp kernels. All
 layouts are in the recorded runs.
 
 ## x86-64 results
@@ -121,6 +121,8 @@ double-floats on ECL unless each array read is bound to a typed variable.
 [^trsv]: Column-major `dtrsv` at 256 × 256 takes 9.0 µs natively against 31.9 µs
     in Lisp; see
     [`benchmark-runs/2026-10-01-blas-native-sbcl-trsv.txt`](benchmark-runs/2026-10-01-blas-native-sbcl-trsv.txt).
+[^trsm]: Fused solve kernel, 631 µs against 855 µs for `dgemm`; column-major takes 852 µs. See
+    [`benchmark-runs/2026-10-01-blas-native-sbcl-fused-trsm.txt`](benchmark-runs/2026-10-01-blas-native-sbcl-fused-trsm.txt).
 [^x86]: Logs:
     [`benchmark-runs/2026-10-01-blas-x86-sbcl.txt`](benchmark-runs/2026-10-01-blas-x86-sbcl.txt).
 [^sweep]: Twelve tile and blocking configurations, two runs each, in

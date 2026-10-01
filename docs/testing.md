@@ -244,7 +244,7 @@ build/native_blas_profile
 ```
 
 `BLAS_PROFILE_DEFINITIONS` overrides `TS_BLAS_DEPTH`, `TS_BLAS_ROW_BLOCK`,
-`TS_BLAS_COLUMN_BLOCK`, `TS_BLAS_TRIANGLE_BLOCK`, and the AVX tile shapes
+`TS_BLAS_COLUMN_BLOCK`, `TS_BLAS_TRIANGLE_BLOCK` (`trmm` only), and the AVX tile shapes
 `TS_BLAS_AVX_{F32,F64}_{ROWS,COLUMNS}`.[^tiles] The `blas` job of the manual
 **FMA profile** workflow sweeps these on x86-64 Linux; see [CI](ci.md#blas-measurements).
 

@@ -408,15 +408,18 @@ static void check_blas_rank_##suffix(void) { \
         } \
 } \
 static void check_blas_solve_##suffix(void) { \
-    enum { N = 150, C = 7 }; \
+    enum { N = 300, C = 7 }; \
     static type a[N * N], at[N * N], x[N * C], b[N * C], y[N], z[N]; \
     for (int i = 0; i < N; ++i) \
         for (int j = 0; j < N; ++j) a[i * N + j] = blas_value_##suffix(i * N + j) / N + (i == j ? 2 : 0); \
     for (int i = 0; i < N * C; ++i) x[i] = b[i] = blas_value_##suffix(i + 1); \
     for (int upper = 0; upper < 2; ++upper) { \
-        assert(ts_blas_triangular_##suffix(0, 1, upper, 0, 1, a, N, 1, b, C, 1, N, C) == 0); \
-        assert(ts_blas_triangular_##suffix(1, 1, upper, 0, 1, a, N, 1, b, C, 1, N, C) == 0); \
-        for (int i = 0; i < N * C; ++i) assert(fabs((double)(b[i] - x[i])) < 1e-3); \
+        for (int unit = 0; unit < 2; ++unit) { \
+            for (int i = 0; i < N * C; ++i) b[i] = x[i]; \
+            assert(ts_blas_triangular_##suffix(0, 1, upper, unit, 1, a, N, 1, b, C, 1, N, C) == 0); \
+            assert(ts_blas_triangular_##suffix(1, 1, upper, unit, 1, a, N, 1, b, C, 1, N, C) == 0); \
+            for (int i = 0; i < N * C; ++i) assert(fabs((double)(b[i] - x[i])) < 1e-3); \
+        } \
         for (int i = 0; i < N; ++i) y[i] = x[i * C]; \
         assert(ts_blas_trsv_##suffix(upper, 0, a, N, 1, N, y, 1) == 0); \
         for (int i = 0; i < N; ++i) { \
