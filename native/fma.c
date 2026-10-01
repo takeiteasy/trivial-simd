@@ -32,7 +32,9 @@ static int detect_fma(void) {
 #else
     unsigned int low, high;
     __asm__ volatile ("xgetbv" : "=a"(low), "=d"(high) : "c"(0));
-    return (low & 6) == 6;
+    if ((low & 6) != 6 || __get_cpuid_max(0, 0) < 7) return 0;
+    __cpuid_count(7, 0, eax, ebx, ecx, edx);
+    return (ebx & (1u << 5)) != 0;
 #endif
 }
 #endif
