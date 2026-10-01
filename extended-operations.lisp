@@ -1,47 +1,61 @@
 (in-package #:trivial-simd)
 
-(defun resolve-mixed-slice (vectors starts start end)
+(defun resolve-mixed-slice (vectors starts start end &optional own-strides stride)
+  "Like RESOLVE-SLICE for vectors of different element types; returns the count,
+per-vector offsets and per-vector strides."
   (let* ((length (length (first vectors)))
          (start (or start 0))
          (end-supplied-p end)
-         (end (or end length)))
+         (end (or end length))
+         (strides (resolve-strides own-strides stride (length vectors))))
     (unless (and (integerp start) (integerp end) (<= 0 start end))
       (error "Invalid slice: :START ~S, :END ~S" start end))
     (unless (or end-supplied-p (every (lambda (vector) (= (length vector) length)) vectors))
       (error "All vectors must have the same length without :END"))
     (let ((count (- end start))
           (offsets (mapcar (lambda (own) (or own start)) starts)))
-      (loop for vector in vectors for offset in offsets do
-        (unless (and (integerp offset) (<= 0 offset)
-                     (<= (+ offset count) (length vector)))
-          (error "Invalid slice of ~D elements at offset ~S for vector length ~D"
-                 count offset (length vector))))
-      (values count offsets))))
+      (loop for vector in vectors for offset in offsets for index from 0
+            for stride = (if strides (nth index strides) 1) do
+        (unless (span-valid-p offset count stride (length vector))
+          (error "Invalid slice of ~D elements at offset ~S, stride ~D, for vector length ~D"
+                 count offset stride (length vector))))
+      (values count offsets strides))))
 
 (defun extended-slice (destination operands operand-starts start end destination-start
-                       &key numeric-type mask-operand)
+                       &key numeric-type mask-operand operand-strides stride destination-stride)
+  "Resolve DESTINATION and OPERANDS; return the type, count, and the offsets and
+strides of DESTINATION then every operand, with NIL for scalars."
   (let* ((type (or numeric-type (vector-type destination)))
+         (strided (or stride destination-stride (some #'identity operand-strides)))
          (vectors (list destination))
-         (starts (list destination-start)))
-    (loop for operand in operands for own in operand-starts for index from 0 do
-      (if (vectorp operand)
-          (progn
-            (unless (eq (vector-type operand) (if (eql index mask-operand) :u8 type))
-              (error "Operand has the wrong element type"))
-            (push operand vectors)
-            (push own starts))
-          (progn
-            (when (or (eql index mask-operand) own)
-              (error "A mask must be a vector and a scalar has no start offset"))
-            (unless (typep operand (second (numeric-type type)))
-              (error 'type-error :datum operand
-                     :expected-type (second (numeric-type type)))))))
-    (multiple-value-bind (count vector-offsets)
-        (resolve-mixed-slice (nreverse vectors) (nreverse starts) start end)
-      (let ((remaining (rest vector-offsets)) (result (list (first vector-offsets))))
+         (starts (list destination-start))
+         (own-strides (and strided (list destination-stride))))
+    (loop for operand in operands
+          for own in operand-starts
+          for index from 0
+          for own-stride = (nth index operand-strides)
+          do (if (vectorp operand)
+                 (progn
+                   (unless (eq (vector-type operand) (if (eql index mask-operand) :u8 type))
+                     (error "Operand has the wrong element type"))
+                   (push operand vectors)
+                   (push own starts)
+                   (when strided (push own-stride own-strides)))
+                 (progn
+                   (when (or (eql index mask-operand) own)
+                     (error "A mask must be a vector and a scalar has no start offset"))
+                   (when own-stride (error "A scalar operand has no stride"))
+                   (unless (typep operand (second (numeric-type type)))
+                     (error 'type-error :datum operand
+                            :expected-type (second (numeric-type type)))))))
+    (multiple-value-bind (count vector-offsets vector-strides)
+        (resolve-mixed-slice (nreverse vectors) (nreverse starts) start end
+                             (nreverse own-strides) stride)
+      (let ((remaining-offsets (rest vector-offsets)) (offsets (list (first vector-offsets))))
         (dolist (operand operands)
-          (push (when (vectorp operand) (pop remaining)) result))
-        (values type count (nreverse result))))))
+          (push (when (vectorp operand) (pop remaining-offsets)) offsets))
+        (values type count (nreverse offsets)
+                (and vector-strides (spread-strides operands vector-strides)))))))
 
 (defun operand-value (operand offset index)
   (if offset (aref operand (+ offset index)) operand))
@@ -135,17 +149,24 @@
             (%native-extended-f64-to-f32 output source count)
             (%native-extended-f32-to-f64 output source count))))))
 
-(defun extended-unary (operation destination input start end destination-start input-start)
+(defun extended-unary (operation destination input start end destination-start input-start
+                       stride destination-stride input-stride)
   (unless (vectorp input) (error "A unary operation needs a vector input"))
   (when (and (eq operation :abs) (complex-type-p (vector-type input)))
     (return-from extended-unary
-      (complex-magnitude! destination input start end destination-start input-start)))
+      (complex-magnitude! destination input start end destination-start input-start
+                          stride destination-stride input-stride)))
   (let ((type (vector-type destination)))
     (when (and (integer-type-p type) (member operation '(:sqrt :reciprocal)))
       (error "~A requires float vectors" operation)))
-  (multiple-value-bind (type count offsets)
-      (extended-slice destination (list input) (list input-start) start end destination-start)
+  (multiple-value-bind (type count offsets strides)
+      (extended-slice destination (list input) (list input-start) start end destination-start
+                      :operand-strides (list input-stride) :stride stride
+                      :destination-stride destination-stride)
     (destructuring-bind (d-offset i-offset) offsets
+     (with-gathered ((destination d-offset (first strides) :out)
+                     (input i-offset (second strides)))
+         count
       (cond ((complex-type-p type)
              (complex-unary operation destination input count d-offset i-offset))
             ((eq *backend* :native)
@@ -165,12 +186,14 @@
                          ((:negate :abs) (wrapped-unary operation type value))
                          (:sqrt (kernel-sqrt value))
                          (:reciprocal (/ (coerce 1 (second (numeric-type type)))
-                                         value))))))))))
+                                         value)))))))))))
   destination)
 
 (defmacro define-extended-unary (name operation)
-  `(defun ,name (destination input &key start end destination-start input-start)
-     (extended-unary ,operation destination input start end destination-start input-start)))
+  `(defun ,name (destination input &key start end destination-start input-start
+                                     stride destination-stride input-stride)
+     (extended-unary ,operation destination input start end destination-start input-start
+                     stride destination-stride input-stride)))
 
 (define-extended-unary negate! :negate)
 (define-extended-unary abs! :abs)
@@ -183,53 +206,71 @@
 (defun kernel-max-left (left right)
   (if (> right left) right left))
 
-(defun extended-minmax (operation destination left right start end d-start l-start r-start)
+(defun extended-minmax (operation destination left right start end d-start l-start r-start
+                        stride d-stride l-stride r-stride)
   (when (complex-type-p (vector-type destination))
     (error "Complex vectors have no ordering for MIN!/MAX!"))
   (unless (or (vectorp left) (vectorp right))
     (error "MIN!/MAX! needs a vector operand"))
-  (multiple-value-bind (type count offsets)
-      (extended-slice destination (list left right) (list l-start r-start) start end d-start)
+  (multiple-value-bind (type count offsets strides)
+      (extended-slice destination (list left right) (list l-start r-start) start end d-start
+                      :operand-strides (list l-stride r-stride) :stride stride
+                      :destination-stride d-stride)
     (declare (ignore type))
     (destructuring-bind (d-offset l-offset r-offset) offsets
-      (if (eq *backend* :native)
-          (native-extended-minmax operation destination left right count d-offset l-offset r-offset)
-          (dotimes (i count)
-            (setf (aref destination (+ d-offset i))
-                  (funcall (if (eq operation :min) #'kernel-min-left #'kernel-max-left)
-                           (operand-value left l-offset i)
-                           (operand-value right r-offset i)))))))
+      (with-gathered ((destination d-offset (first strides) :out)
+                      (left l-offset (second strides))
+                      (right r-offset (third strides)))
+          count
+        (if (eq *backend* :native)
+            (native-extended-minmax operation destination left right count d-offset l-offset r-offset)
+            (dotimes (i count)
+              (setf (aref destination (+ d-offset i))
+                    (funcall (if (eq operation :min) #'kernel-min-left #'kernel-max-left)
+                             (operand-value left l-offset i)
+                             (operand-value right r-offset i))))))))
   destination)
 
 (defmacro define-extended-minmax (name operation)
-  `(defun ,name (destination left right &key start end destination-start left-start right-start)
+  `(defun ,name (destination left right &key start end destination-start left-start right-start
+                                          stride destination-stride left-stride right-stride)
      (extended-minmax ,operation destination left right start end
-                      destination-start left-start right-start)))
+                      destination-start left-start right-start
+                      stride destination-stride left-stride right-stride)))
 
 (define-extended-minmax min! :min)
 (define-extended-minmax max! :max)
 
 (defun clamp! (destination input lower upper &key start end destination-start
-                                             input-start lower-start upper-start)
+                                             input-start lower-start upper-start
+                                             stride destination-stride input-stride
+                                             lower-stride upper-stride)
   (when (complex-type-p (vector-type destination))
     (error "Complex vectors have no ordering for CLAMP!"))
   (unless (vectorp input) (error "CLAMP! needs a vector input"))
   (when (and (not (vectorp lower)) (not (vectorp upper)) (> lower upper))
     (error "CLAMP! lower bound exceeds upper bound"))
-  (multiple-value-bind (type count offsets)
+  (multiple-value-bind (type count offsets strides)
       (extended-slice destination (list input lower upper)
-                      (list input-start lower-start upper-start) start end destination-start)
+                      (list input-start lower-start upper-start) start end destination-start
+                      :operand-strides (list input-stride lower-stride upper-stride)
+                      :stride stride :destination-stride destination-stride)
     (declare (ignore type))
     (destructuring-bind (d-offset i-offset l-offset u-offset) offsets
-      (if (eq *backend* :native)
-          (native-extended-clamp destination input lower upper count
-                                 d-offset i-offset l-offset u-offset)
-          (dotimes (i count)
-            (let ((low (operand-value lower l-offset i))
-                  (high (operand-value upper u-offset i)))
-              (when (> low high) (error "CLAMP! lower bound exceeds upper bound"))
-              (setf (aref destination (+ d-offset i))
-                    (kernel-min-left (kernel-max-left (aref input (+ i-offset i)) low) high)))))))
+      (with-gathered ((destination d-offset (first strides) :out)
+                      (input i-offset (second strides))
+                      (lower l-offset (third strides))
+                      (upper u-offset (fourth strides)))
+          count
+        (if (eq *backend* :native)
+            (native-extended-clamp destination input lower upper count
+                                   d-offset i-offset l-offset u-offset)
+            (dotimes (i count)
+              (let ((low (operand-value lower l-offset i))
+                    (high (operand-value upper u-offset i)))
+                (when (> low high) (error "CLAMP! lower bound exceeds upper bound"))
+                (setf (aref destination (+ d-offset i))
+                      (kernel-min-left (kernel-max-left (aref input (+ i-offset i)) low) high))))))))
   destination)
 
 (defun integer-limits (type)
@@ -264,24 +305,29 @@
         (t (coerce value (second (numeric-type destination-type))))))
 
 (defun convert! (destination input &key start end destination-start input-start
+                                    stride destination-stride input-stride
                                     (rounding :nearest-even))
   (unless (member rounding '(:nearest-even :truncate :floor :ceiling))
     (error "Unknown conversion rounding mode ~S" rounding))
   (let ((destination-type (vector-type destination)))
     (vector-type input)
-    (multiple-value-bind (count offsets)
+    (multiple-value-bind (count offsets strides)
         (resolve-mixed-slice (list destination input)
-                             (list destination-start input-start) start end)
+                             (list destination-start input-start) start end
+                             (list destination-stride input-stride) stride)
       (destructuring-bind (d-offset i-offset) offsets
-        ;; TODO: scalar paths for other type pairs; add packed conversions where safe (#72).
-        (if (and (member *backend* '(:native :sbcl)) *native-available-p*
-                 (member destination-type '(:f32 :f64))
-                 (member (vector-type input) '(:f32 :f64))
-                 (not (eq destination-type (vector-type input))))
-            (native-extended-float-convert destination input count d-offset i-offset)
-            (dotimes (i count)
-              (setf (aref destination (+ d-offset i))
-                    (convert-element (aref input (+ i-offset i)) destination-type rounding)))))))
+        (with-gathered ((destination d-offset (first strides) :out)
+                        (input i-offset (second strides)))
+            count
+          ;; TODO: scalar paths for other type pairs; add packed conversions where safe (#72).
+          (if (and (member *backend* '(:native :sbcl)) *native-available-p*
+                   (member destination-type '(:f32 :f64))
+                   (member (vector-type input) '(:f32 :f64))
+                   (not (eq destination-type (vector-type input))))
+              (native-extended-float-convert destination input count d-offset i-offset)
+              (dotimes (i count)
+                (setf (aref destination (+ d-offset i))
+                      (convert-element (aref input (+ i-offset i)) destination-type rounding))))))))
   destination)
 
 (defun compare-values (operator left right)
@@ -290,7 +336,8 @@
     (:lt (< left right)) (:le (<= left right))
     (:gt (> left right)) (:ge (>= left right))))
 
-(defun compare! (mask operator left right &key start end mask-start left-start right-start)
+(defun compare! (mask operator left right &key start end mask-start left-start right-start
+                                            stride mask-stride left-stride right-stride)
   (unless (eq (vector-type mask) :u8) (error "Comparison mask must be an unsigned-byte-8 vector"))
   (unless (member operator '(:eq :ne :lt :le :gt :ge))
     (error "Unknown comparison operator ~S" operator))
@@ -299,56 +346,72 @@
                     (t (error "COMPARE! needs a vector operand")))))
     (when (and (complex-type-p type) (not (member operator '(:eq :ne))))
       (error "Complex vectors support only equality comparisons"))
-    (multiple-value-bind (resolved count offsets)
+    (multiple-value-bind (resolved count offsets strides)
         (extended-slice mask (list left right) (list left-start right-start)
-                        start end mask-start :numeric-type type)
+                        start end mask-start :numeric-type type
+                        :operand-strides (list left-stride right-stride)
+                        :stride stride :destination-stride mask-stride)
       (declare (ignore resolved))
       (destructuring-bind (m-offset l-offset r-offset) offsets
-        (if (and (eq *backend* :native) (not (complex-type-p type)))
-            (native-extended-compare mask operator left right type count m-offset l-offset r-offset)
-            (dotimes (i count)
-              (setf (aref mask (+ m-offset i))
-                    (if (compare-values operator (operand-value left l-offset i)
-                                        (operand-value right r-offset i)) 1 0)))))))
+        (with-gathered ((mask m-offset (first strides) :out)
+                        (left l-offset (second strides))
+                        (right r-offset (third strides)))
+            count
+          (if (and (eq *backend* :native) (not (complex-type-p type)))
+              (native-extended-compare mask operator left right type count m-offset l-offset r-offset)
+              (dotimes (i count)
+                (setf (aref mask (+ m-offset i))
+                      (if (compare-values operator (operand-value left l-offset i)
+                                          (operand-value right r-offset i)) 1 0))))))))
   mask)
 
 (defun select! (destination mask on-true on-false &key start end destination-start
-                                                mask-start true-start false-start)
-  (multiple-value-bind (type count offsets)
+                                                mask-start true-start false-start
+                                                stride destination-stride mask-stride
+                                                true-stride false-stride)
+  (multiple-value-bind (type count offsets strides)
       (extended-slice destination (list mask on-true on-false)
                       (list mask-start true-start false-start) start end destination-start
-                      :mask-operand 0)
+                      :mask-operand 0
+                      :operand-strides (list mask-stride true-stride false-stride)
+                      :stride stride :destination-stride destination-stride)
     (destructuring-bind (d-offset m-offset t-offset f-offset) offsets
-      (if (and (eq *backend* :native) (not (complex-type-p type)))
-          (native-extended-select destination mask on-true on-false count
-                                  d-offset m-offset t-offset f-offset)
-          (dotimes (i count)
-            (setf (aref destination (+ d-offset i))
-                  (if (zerop (aref mask (+ m-offset i)))
-                      (operand-value on-false f-offset i)
-                      (operand-value on-true t-offset i)))))))
+      (with-gathered ((destination d-offset (first strides) :out)
+                      (mask m-offset (second strides))
+                      (on-true t-offset (third strides))
+                      (on-false f-offset (fourth strides)))
+          count
+        (if (and (eq *backend* :native) (not (complex-type-p type)))
+            (native-extended-select destination mask on-true on-false count
+                                    d-offset m-offset t-offset f-offset)
+            (dotimes (i count)
+              (setf (aref destination (+ d-offset i))
+                    (if (zerop (aref mask (+ m-offset i)))
+                        (operand-value on-false f-offset i)
+                        (operand-value on-true t-offset i))))))))
   destination)
 
-(defun mask-reduction (operation mask start end mask-start)
+(defun mask-reduction (operation mask start end mask-start stride mask-stride)
   (unless (eq (vector-type mask) :u8) (error "Mask must be an unsigned-byte-8 vector"))
-  (multiple-value-bind (length offsets)
-      (resolve-mixed-slice (list mask) (list mask-start) start end)
+  (multiple-value-bind (length offsets strides)
+      (resolve-mixed-slice (list mask) (list mask-start) start end (list mask-stride) stride)
     (let ((offset (first offsets)))
-      (if (eq *backend* :native)
-          (native-extended-reduction operation mask length offset)
-          (ecase operation
-            (:count (loop for i below length count (not (zerop (aref mask (+ offset i))))))
-            (:any (loop for i below length thereis (not (zerop (aref mask (+ offset i))))))
-            (:all (loop for i below length always (not (zerop (aref mask (+ offset i)))))))))))
+      (with-gathered ((mask offset (first strides))) length
+        (if (eq *backend* :native)
+            (native-extended-reduction operation mask length offset)
+            (ecase operation
+              (:count (loop for i below length count (not (zerop (aref mask (+ offset i))))))
+              (:any (loop for i below length thereis (not (zerop (aref mask (+ offset i))))))
+              (:all (loop for i below length always (not (zerop (aref mask (+ offset i))))))))))))
 
-(defun count (mask &key start end mask-start)
-  (mask-reduction :count mask start end mask-start))
+(defun count (mask &key start end mask-start stride mask-stride)
+  (mask-reduction :count mask start end mask-start stride mask-stride))
 
-(defun any (mask &key start end mask-start)
-  (mask-reduction :any mask start end mask-start))
+(defun any (mask &key start end mask-start stride mask-stride)
+  (mask-reduction :any mask start end mask-start stride mask-stride))
 
-(defun all (mask &key start end mask-start)
-  (mask-reduction :all mask start end mask-start))
+(defun all (mask &key start end mask-start stride mask-stride)
+  (mask-reduction :all mask start end mask-start stride mask-stride))
 
 (defvar *kernel-operators*)
 

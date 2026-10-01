@@ -101,15 +101,22 @@
               (:negate (- value))
               (:sqrt (sqrt value)) (:reciprocal (/ value)))))))
 
-(defun complex-magnitude! (destination input start end destination-start input-start)
+(defun complex-magnitude! (destination input start end destination-start input-start
+                           stride destination-stride input-stride)
   (let* ((source-type (vector-type input))
          (target-type (vector-type destination)))
     (unless (and (complex-type-p source-type)
                  (eq target-type (if (eq source-type :c32) :f32 :f64)))
       (error "Complex magnitude requires matching real destination precision"))
-    (multiple-value-bind (count offsets)
+    (multiple-value-bind (count offsets strides)
         (resolve-mixed-slice (list destination input)
-                             (list destination-start input-start) start end)
-      (dotimes (i count destination)
-        (setf (aref destination (+ (first offsets) i))
-              (abs (aref input (+ (second offsets) i))))))))
+                             (list destination-start input-start) start end
+                             (list destination-stride input-stride) stride)
+      (destructuring-bind (d-offset i-offset) offsets
+        (with-gathered ((destination d-offset (first strides) :out)
+                        (input i-offset (second strides)))
+            count
+          (dotimes (i count)
+            (setf (aref destination (+ d-offset i))
+                  (abs (aref input (+ i-offset i))))))
+        destination))))

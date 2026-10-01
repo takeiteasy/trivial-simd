@@ -85,6 +85,32 @@ operand signals an error.
   a) ; => #(2.0d0 6.0d0 12.0d0)
 ```
 
+## Strides
+
+`:stride` (default 1) steps through a slice: element *i* of a vector is at
+`start + i*stride`, and the count stays `end - start`. Every `...-start`
+keyword has a matching `...-stride` keyword that overrides the stride for one
+vector (`:input-start` and `:input-stride`, `:left-start` and `:left-stride`).
+`scale!` and `fill!` take only `:stride`.
+
+```lisp
+(trivial-simd:sum a :end 4 :stride 2)                            ; a[0] + a[2] + a[4] + a[6]
+(trivial-simd:sum a :end 4 :input-start 7 :stride -2)            ; a[7] + a[5] + a[3] + a[1]
+(trivial-simd:add! out a b :end 4 :left-start 7 :left-stride -1) ; out[i] = a[7-i] + b[i]
+(trivial-simd:copy! out a :end 4 :destination-stride 2)          ; out[0], out[2], out[4], out[6]
+```
+
+- A stride is a nonzero integer. A negative stride walks down from the start
+  element, so give that vector's start.
+- The first and last visited elements must lie inside the vector; the last is
+  `start + (count-1)*stride`.
+- A stride keyword for a scalar operand signals an error.
+- A call reads every strided input before it writes, so an output that is also
+  an input behaves as if the input were copied first.
+- `argmin` and `argmax` return the index into the vector, not the position
+  along the stride. `define-kernel` functions take no strides.
+- Strided calls run the contiguous kernels on gathered copies.[^gather]
+
 The [kernel API](kernels.md#reduction-kernels) composes arithmetic inside a scalar
 reduction without a full-length intermediate vector.
 
@@ -104,8 +130,11 @@ instead. The available integer operations and backend paths are described in
 
 | Area | Ticket |
 |---|---|
-| Strided access | [#43](https://todo.sr.ht/~takeiteasy/trivial-simd/43) |
+| Native strided kernels | [#101](https://todo.sr.ht/~takeiteasy/trivial-simd/101) |
 | Shifted overlap between destination and input slices | [#67](https://todo.sr.ht/~takeiteasy/trivial-simd/67) |
 
+[^gather]: Each strided vector costs one temporary and one extra pass per call.
+    At 1,024 elements a strided call takes 3x to 7x a contiguous native call.
+    See [benchmarks](benchmarks.md#strided-access).
 [^order]: SIMD reductions accumulate lanes separately before combining them.
     Compare results with a tolerance when the operation order matters.

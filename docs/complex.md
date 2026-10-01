@@ -37,9 +37,7 @@ Lisp backend.
 ## Limitations
 
 Complex numbers have no ordering for `min!`, `max!`, `clamp!`, or ordered
-comparisons. `fma!` retains its real floating-point contract. Core strided
-access is tracked by [#43](https://todo.sr.ht/~takeiteasy/trivial-simd/43).
-`define-kernel` mask expressions require real or integer vectors; complex mask
+comparisons. `fma!` retains its real floating-point contract. `define-kernel` mask expressions require real or integer vectors; complex mask
 kernels are tracked by [#75](https://todo.sr.ht/~takeiteasy/trivial-simd/75).
 The native complex path copies vectors into temporary buffers; reducing that
 overhead is tracked by [#74](https://todo.sr.ht/~takeiteasy/trivial-simd/74).

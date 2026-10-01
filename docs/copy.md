@@ -15,13 +15,20 @@
 (trivial-simd:copy! out a :end 8 :destination-start 16)       ; out[16..24) = a[0..8)
 (trivial-simd:fill! out 0.0f0 :start 2 :end 10)
 (trivial-simd:swap! x y :end 8 :y-start 8)                    ; x[0..8) <-> y[8..16)
+(trivial-simd:copy! out a :end 4 :source-stride 2)            ; out[0..4) = a[0], a[2], a[4], a[6]
+(trivial-simd:fill! out 0.0f0 :end 4 :stride 3)               ; out[0], out[3], out[6], out[9]
 ```
+
+The `-stride` keywords step through a slice; see [strides](api.md#strides).
 
 | Keyword | Applies to |
 |---|---|
 | `:start`, `:end` | Every function |
 | `:destination-start`, `:source-start` | `copy!` |
 | `:x-start`, `:y-start` | `swap!` |
+| `:stride` | Every function |
+| `:destination-stride`, `:source-stride` | `copy!` |
+| `:x-stride`, `:y-stride` | `swap!` |
 
 ## Rules
 
@@ -29,7 +36,7 @@
   needs a `value` of exactly the element type; integer values fit the vector's
   signed or unsigned range.
 - Overlapping slices of one vector copy as if the source were read first, in
-  either direction.[^overlap] `swap!` of overlapping, unequal slices of one
+  either direction, with or without strides.[^overlap] `swap!` of overlapping, unequal slices of one
   vector is a [shifted overlap](api.md#limitations); swapping a slice with
   itself leaves it unchanged.
 - Slice errors, empty slices and start keywords behave as in the
@@ -44,7 +51,7 @@
 | `swap!` | C block swap from 64 bytes upward;[^threshold] otherwise a typed loop | Typed loop |
 
 Complex vectors, and native calls in `:copy` array-access mode, use the Lisp
-forms.
+forms. Strided calls gather, run the contiguous operation, and scatter.
 
 [^overlap]: `replace` on one vector copies as if through a temporary, which is
     the same result as `memmove`.

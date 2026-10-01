@@ -75,8 +75,7 @@ from about 1,000 elements.[^native]
 Complex routines and band, packed, and symmetric routines are scalar Lisp
 loops. Native kernels are tracked by
 [#80](https://todo.sr.ht/~takeiteasy/trivial-simd/80) (complex) and
-[#81](https://todo.sr.ht/~takeiteasy/trivial-simd/81) (band and packed). Core
-strided SIMD access is tracked by [#43](https://todo.sr.ht/~takeiteasy/trivial-simd/43).
+[#81](https://todo.sr.ht/~takeiteasy/trivial-simd/81) (band and packed).
 Shared input/output
 storage follows the [overlap limitation](api.md#limitations).
 

@@ -18,11 +18,14 @@
         (error "All vectors must have the same length")))
     (values type length (zero-offsets (length vectors)))))
 
-(defun resolve-slice (vectors starts start end)
-  "Validate VECTORS and return the element type, count, and per-vector offsets.
-STARTS holds each vector's own start or NIL to use START."
-  (when (and (null start) (null end) (dolist (own starts t) (when own (return nil))))
-    (return-from resolve-slice (resolve-whole vectors)))
+(defun spread-strides (operands strides)
+  "Place the strides of the vectors among OPERANDS, after the destination's, with NIL for scalars."
+  (let ((remaining (rest strides)) (result (list (first strides))))
+    (dolist (operand operands (nreverse result))
+      (push (when (vectorp operand) (pop remaining)) result))))
+
+(declaim (inline resolve-strided-slice))
+(defun resolve-strided-slice (vectors starts start end strides)
   (let* ((type (vector-type (first vectors)))
          (length (length (first vectors)))
          (start (or start 0)))
@@ -40,117 +43,161 @@ STARTS holds each vector's own start or NIL to use START."
              (offsets (mapcar (lambda (offset) (or offset start)) starts)))
         (loop for vector in vectors
               for offset in offsets
-              do (unless (and (integerp offset) (<= 0 offset)
-                              (<= (+ offset count) (length vector)))
-                   (error "Invalid slice of ~D elements at offset ~S for vector length ~D"
-                          count offset (length vector))))
-        (values type count offsets)))))
+              for index from 0
+              for stride = (if strides (nth index strides) 1)
+              do (unless (span-valid-p offset count stride (length vector))
+                   (error "Invalid slice of ~D elements at offset ~S, stride ~D, for vector length ~D"
+                          count offset stride (length vector))))
+        (values type count offsets strides)))))
+
+(defun resolve-slice (vectors starts start end &optional own-strides stride)
+  "Validate VECTORS and return the element type, count, per-vector offsets and
+per-vector strides. STARTS and OWN-STRIDES hold each vector's own start or
+stride, or NIL to use START or STRIDE (default 1)."
+  (let ((strides (resolve-strides own-strides stride (length vectors))))
+    (when (and (null start) (null end) (null strides)
+               (dolist (own starts t) (when own (return nil))))
+      (multiple-value-bind (type length offsets) (resolve-whole vectors)
+        (return-from resolve-slice (values type length offsets strides))))
+    (resolve-strided-slice vectors starts start end strides)))
 
 (defun binary-operation (operation destination left right
-                         start end destination-start left-start right-start)
+                         start end destination-start left-start right-start
+                         stride destination-stride left-stride right-stride)
   (unless (or (vectorp left) (vectorp right))
     (error "A binary operation needs a vector operand"))
-  (multiple-value-bind (type count offsets)
+  (multiple-value-bind (type count offsets strides)
       (resolve-bulk-operands destination (list left right)
-                             (list left-start right-start) start end destination-start)
+                             (list left-start right-start) start end destination-start
+                             (list left-stride right-stride) stride destination-stride)
     (destructuring-bind (destination-offset left-offset right-offset) offsets
-      (cond ((complex-type-p type)
-             (complex-binary operation destination left right count
-                             destination-offset left-offset right-offset))
-            ((and (vectorp left) (vectorp right))
-             (ecase *backend*
-               (:sbcl (sbcl-binary operation destination left right count
-                                   destination-offset left-offset right-offset))
-               (:native (native-binary operation destination left right count
+      (destructuring-bind (&optional destination-stride left-stride right-stride) strides
+        (with-gathered ((destination destination-offset destination-stride :out)
+                        (left left-offset left-stride)
+                        (right right-offset right-stride))
+            count
+          (cond ((complex-type-p type)
+                 (complex-binary operation destination left right count
+                                 destination-offset left-offset right-offset))
+                ((and (vectorp left) (vectorp right))
+                 (ecase *backend*
+                   (:sbcl (sbcl-binary operation destination left right count
                                        destination-offset left-offset right-offset))
-               (:lisp (lisp-binary operation destination left right count
-                                   destination-offset left-offset right-offset))))
-            (t
-             (ecase *backend*
-               (:sbcl (sbcl-scalar-binary operation destination left right count
-                                          destination-offset left-offset right-offset))
-               (:native (native-scalar-binary operation destination left right count
-                                            destination-offset left-offset right-offset))
-               (:lisp (lisp-scalar-binary operation destination left right count
-                                          destination-offset left-offset right-offset)))))))
+                   (:native (native-binary operation destination left right count
+                                           destination-offset left-offset right-offset))
+                   (:lisp (lisp-binary operation destination left right count
+                                       destination-offset left-offset right-offset))))
+                (t
+                 (ecase *backend*
+                   (:sbcl (sbcl-scalar-binary operation destination left right count
+                                              destination-offset left-offset right-offset))
+                   (:native (native-scalar-binary operation destination left right count
+                                                destination-offset left-offset right-offset))
+                   (:lisp (lisp-scalar-binary operation destination left right count
+                                              destination-offset left-offset right-offset)))))))))
   destination)
 
-(defun resolve-bulk-operands (destination operands starts start end destination-start)
-  (let ((type (vector-type destination))
-        (vectors (list destination))
-        (vector-starts (list destination-start)))
-    (loop for operand in operands for offset in starts do
-      (if (vectorp operand)
-          (progn (push operand vectors) (push offset vector-starts))
-          (progn
-            (when offset (error "A scalar operand has no start offset"))
-            (unless (typep operand (second (numeric-type type)))
-              (error 'type-error :datum operand
-                     :expected-type (second (numeric-type type)))))))
-    (multiple-value-bind (resolved count offsets)
-        (resolve-slice (nreverse vectors) (nreverse vector-starts) start end)
-      (let ((remaining (rest offsets)) (result (list (first offsets))))
+(defun resolve-bulk-operands (destination operands starts start end destination-start
+                              &optional operand-strides stride destination-stride)
+  "Like RESOLVE-SLICE for DESTINATION and the vectors among OPERANDS. The offsets
+and strides cover DESTINATION then every operand, with NIL for scalars."
+  (let* ((type (vector-type destination))
+         (strided (or stride destination-stride (some #'identity operand-strides)))
+         (vectors (list destination))
+         (vector-starts (list destination-start))
+         (vector-strides (and strided (list destination-stride))))
+    (loop for operand in operands
+          for offset in starts
+          for index from 0
+          for own-stride = (nth index operand-strides)
+          do (if (vectorp operand)
+                 (progn (push operand vectors) (push offset vector-starts)
+                        (when strided (push own-stride vector-strides)))
+                 (progn
+                   (when offset (error "A scalar operand has no start offset"))
+                   (when own-stride (error "A scalar operand has no stride"))
+                   (unless (typep operand (second (numeric-type type)))
+                     (error 'type-error :datum operand
+                            :expected-type (second (numeric-type type)))))))
+    (multiple-value-bind (resolved count offsets strides)
+        (resolve-slice (nreverse vectors) (nreverse vector-starts) start end
+                       (nreverse vector-strides) stride)
+      (let ((remaining-offsets (rest offsets)) (result-offsets (list (first offsets))))
         (dolist (operand operands)
-          (push (when (vectorp operand) (pop remaining)) result))
-        (values resolved count (nreverse result))))))
+          (push (when (vectorp operand) (pop remaining-offsets)) result-offsets))
+        (values resolved count (nreverse result-offsets)
+                (and strides (spread-strides operands strides)))))))
 
 (defmacro define-binary-operation (name operation verb)
   `(defun ,name (destination left right &key start end
-                                          destination-start left-start right-start)
+                                          destination-start left-start right-start
+                                          stride destination-stride left-stride right-stride)
      ,(format nil "~A LEFT and RIGHT elementwise into DESTINATION and return it.
-The slice is :START to :END (default the whole vector); the ...-START keywords
-override the start for one vector." verb)
+The slice is :START to :END (default the whole vector) at :STRIDE (default 1);
+the ...-START and ...-STRIDE keywords override one vector." verb)
      (binary-operation ,operation destination left right
-                       start end destination-start left-start right-start)))
+                       start end destination-start left-start right-start
+                       stride destination-stride left-stride right-stride)))
 
 (define-binary-operation add! :add "Add")
 (define-binary-operation subtract! :subtract "Subtract RIGHT from")
 (define-binary-operation multiply! :multiply "Multiply")
 (define-binary-operation divide! :divide "Divide LEFT by RIGHT,")
 
-(defun scale! (x a &key start end)
+(defun scale! (x a &key start end stride)
   "Multiply X by scalar A in place and return X."
   (when (vectorp a) (error "SCALE! needs a scalar multiplier"))
-  (multiple-value-bind (type count offsets)
-      (resolve-bulk-operands x (list a) (list nil) start end nil)
+  (multiple-value-bind (type count offsets strides)
+      (resolve-bulk-operands x (list a) (list nil) start end nil nil stride)
     (let ((offset (first offsets)))
-      (if (complex-type-p type)
-          (complex-scale x a count offset)
-          (ecase *backend*
-            (:sbcl (sbcl-scale x a count offset))
-            (:native (native-scale x a count offset))
-            (:lisp (lisp-scale x a count offset))))))
+      (with-gathered ((x offset (first strides) :in-out)) count
+        (if (complex-type-p type)
+            (complex-scale x a count offset)
+            (ecase *backend*
+              (:sbcl (sbcl-scale x a count offset))
+              (:native (native-scale x a count offset))
+              (:lisp (lisp-scale x a count offset)))))))
   x)
 
-(defun axpy! (y a x &key start end y-start x-start)
+(defun axpy! (y a x &key start end y-start x-start stride y-stride x-stride)
   "Set Y to A*X+Y in place with separate multiplication and addition."
   (when (vectorp a) (error "AXPY! needs a scalar multiplier"))
   (unless (vectorp x) (error "AXPY! needs a vector input"))
-  (multiple-value-bind (type count offsets)
-      (resolve-bulk-operands y (list a x) (list nil x-start) start end y-start)
+  (multiple-value-bind (type count offsets strides)
+      (resolve-bulk-operands y (list a x) (list nil x-start) start end y-start
+                             (list nil x-stride) stride y-stride)
     (destructuring-bind (y-offset scalar-offset x-offset) offsets
       (declare (ignore scalar-offset))
-      (if (complex-type-p type)
-          (complex-axpy y a x count y-offset x-offset)
-          (ecase *backend*
-            (:sbcl (sbcl-axpy y a x count y-offset x-offset))
-            (:native (native-axpy y a x count y-offset x-offset))
-            (:lisp (lisp-axpy y a x count y-offset x-offset))))))
+      (with-gathered ((y y-offset (first strides) :in-out)
+                      (x x-offset (third strides)))
+          count
+        (if (complex-type-p type)
+            (complex-axpy y a x count y-offset x-offset)
+            (ecase *backend*
+              (:sbcl (sbcl-axpy y a x count y-offset x-offset))
+              (:native (native-axpy y a x count y-offset x-offset))
+              (:lisp (lisp-axpy y a x count y-offset x-offset)))))))
   y)
 
-(defun fma! (destination x y z &key start end destination-start x-start y-start z-start)
+(defun fma! (destination x y z &key start end destination-start x-start y-start z-start
+                                   stride destination-stride x-stride y-stride z-stride)
   "Set DESTINATION to fused X*Y+Z elementwise and return it."
   (unless (member (vector-type destination) '(:f32 :f64))
     (error "FMA requires float vectors"))
-  (multiple-value-bind (type count offsets)
+  (multiple-value-bind (type count offsets strides)
       (resolve-bulk-operands destination (list x y z) (list x-start y-start z-start)
-                             start end destination-start)
+                             start end destination-start
+                             (list x-stride y-stride z-stride) stride destination-stride)
     (declare (ignore type))
     (destructuring-bind (d-offset x-offset y-offset z-offset) offsets
-      (ecase *backend*
-        (:sbcl (sbcl-bulk-fma destination x y z count d-offset x-offset y-offset z-offset))
-        (:native (native-bulk-fma destination x y z count d-offset x-offset y-offset z-offset))
-        (:lisp (lisp-bulk-fma destination x y z count d-offset x-offset y-offset z-offset)))))
+      (destructuring-bind (&optional d-stride x-stride y-stride z-stride) strides
+        (with-gathered ((destination d-offset d-stride :out)
+                        (x x-offset x-stride) (y y-offset y-stride) (z z-offset z-stride))
+            count
+          (ecase *backend*
+            (:sbcl (sbcl-bulk-fma destination x y z count d-offset x-offset y-offset z-offset))
+            (:native (native-bulk-fma destination x y z count d-offset x-offset y-offset z-offset))
+            (:lisp (lisp-bulk-fma destination x y z count d-offset x-offset y-offset z-offset)))))))
   destination)
 
 (declaim (ftype function lisp-sum-wide lisp-dot-wide))
@@ -164,46 +211,58 @@ override the start for one vector." verb)
          (error ":ACCUMULATE does not apply to integer vectors"))
         (t (and (member type '(:f32 :c32)) t))))
 
-(defun sum (input &key start end input-start accumulate)
-  "Return the sum of the :START to :END slice of INPUT, or a zero if empty.
+(defun sum (input &key start end input-start accumulate stride input-stride)
+  "Return the sum of the :START to :END slice of INPUT at :STRIDE, or a zero if empty.
 With :ACCUMULATE :F64, single-float and complex single-float sums accumulate and
 return double precision."
-  (multiple-value-bind (type count offsets)
-      (resolve-slice (list input) (list input-start) start end)
+  (multiple-value-bind (type count offsets strides)
+      (resolve-slice (list input) (list input-start) start end (list input-stride) stride)
     (let ((offset (first offsets))
           (wide (wide-accumulation-p type accumulate)))
-      (cond ((complex-type-p type) (complex-sum input count offset wide))
-            (wide (if (eq *backend* :native)
-                      (native-sum-acc input count offset)
-                      (lisp-sum-wide input count offset)))
-            (t (ecase *backend*
-                 (:sbcl (sbcl-sum input count offset))
-                 (:native (native-sum input count offset))
-                 (:lisp (lisp-sum input count offset))))))))
+      (with-gathered ((input offset (first strides))) count
+        (cond ((complex-type-p type) (complex-sum input count offset wide))
+              (wide (if (eq *backend* :native)
+                        (native-sum-acc input count offset)
+                        (lisp-sum-wide input count offset)))
+              (t (ecase *backend*
+                   (:sbcl (sbcl-sum input count offset))
+                   (:native (native-sum input count offset))
+                   (:lisp (lisp-sum input count offset)))))))))
 
-(defun dot (left right &key start end left-start right-start accumulate)
-  "Return the dot product of the :START to :END slices of LEFT and RIGHT.
+(defun dot (left right &key start end left-start right-start accumulate
+                         stride left-stride right-stride)
+  "Return the dot product of the :START to :END slices of LEFT and RIGHT at :STRIDE.
 With :ACCUMULATE :F64, single-float and complex single-float products accumulate
 and return double precision."
-  (multiple-value-bind (type count offsets)
-      (resolve-slice (list left right) (list left-start right-start) start end)
+  (multiple-value-bind (type count offsets strides)
+      (resolve-slice (list left right) (list left-start right-start) start end
+                     (list left-stride right-stride) stride)
     (destructuring-bind (left-offset right-offset) offsets
       (let ((wide (wide-accumulation-p type accumulate)))
-        (cond ((complex-type-p type)
-               (complex-dot left right count left-offset right-offset nil wide))
-              (wide (if (eq *backend* :native)
-                        (native-dot-acc left right count left-offset right-offset)
-                        (lisp-dot-wide left right count left-offset right-offset)))
-              (t (ecase *backend*
-                   (:sbcl (sbcl-dot left right count left-offset right-offset))
-                   (:native (native-dot left right count left-offset right-offset))
-                   (:lisp (lisp-dot left right count left-offset right-offset)))))))))
+        (with-gathered ((left left-offset (first strides))
+                        (right right-offset (second strides)))
+            count
+          (cond ((complex-type-p type)
+                 (complex-dot left right count left-offset right-offset nil wide))
+                (wide (if (eq *backend* :native)
+                          (native-dot-acc left right count left-offset right-offset)
+                          (lisp-dot-wide left right count left-offset right-offset)))
+                (t (ecase *backend*
+                     (:sbcl (sbcl-dot left right count left-offset right-offset))
+                     (:native (native-dot left right count left-offset right-offset))
+                     (:lisp (lisp-dot left right count left-offset right-offset))))))))))
 
-(defun dotc (left right &key start end left-start right-start accumulate)
+(defun dotc (left right &key start end left-start right-start accumulate
+                          stride left-stride right-stride)
   "Return the dot product with LEFT conjugated."
-  (multiple-value-bind (type count offsets)
-      (resolve-slice (list left right) (list left-start right-start) start end)
+  (multiple-value-bind (type count offsets strides)
+      (resolve-slice (list left right) (list left-start right-start) start end
+                     (list left-stride right-stride) stride)
     (unless (complex-type-p type)
       (error "DOTC requires complex vectors"))
-    (complex-dot left right count (first offsets) (second offsets) t
-                 (wide-accumulation-p type accumulate))))
+    (destructuring-bind (left-offset right-offset) offsets
+      (with-gathered ((left left-offset (first strides))
+                      (right right-offset (second strides)))
+          count
+        (complex-dot left right count left-offset right-offset t
+                     (wide-accumulation-p type accumulate))))))

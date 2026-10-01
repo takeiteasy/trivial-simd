@@ -16,6 +16,10 @@
 (defun span-index (n increment offset)
   (+ offset (if (minusp increment) (* (1- n) (- increment)) 0)))
 
+(defun span-start (n increment offset)
+  "First visited index of a span, or OFFSET when the span is empty."
+  (if (zerop n) offset (span-index n increment offset)))
+
 (defun validate-axpy (n alpha x incx y incy x-offset y-offset type)
   (unless (typep alpha type)
     (error 'type-error :datum alpha :expected-type type))
@@ -25,15 +29,9 @@
 (defun axpy (n alpha x incx y incy x-offset y-offset type)
   (validate-axpy n alpha x incx y incy x-offset y-offset type)
   (unless (or (zerop n) (zerop alpha))
-    (if (and (= incx 1) (= incy 1))
-        (trivial-simd:axpy! y alpha x :start 0 :end n
-                                  :x-start x-offset :y-start y-offset)
-        (let ((ix (span-index n incx x-offset))
-              (iy (span-index n incy y-offset)))
-          (loop repeat n do
-            (setf (aref y iy) (+ (* alpha (aref x ix)) (aref y iy)))
-            (incf ix incx)
-            (incf iy incy)))))
+    (trivial-simd:axpy! y alpha x :start 0 :end n
+                                  :x-start (span-index n incx x-offset) :x-stride incx
+                                  :y-start (span-index n incy y-offset) :y-stride incy))
   y)
 
 (defun saxpy (n alpha x incx y incy &key (x-offset 0) (y-offset 0))

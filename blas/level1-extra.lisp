@@ -6,33 +6,25 @@
   (when (eq operation :axpy)
     (unless (typep alpha type)
       (error 'type-error :datum alpha :expected-type type)))
-  (when (and (= incx 1) (= incy 1) (member operation '(:copy :swap)))
-    (return-from blas-pair
-      (if (eq operation :copy)
-          (trivial-simd:copy! y x :start 0 :end n
-                                  :destination-start y-offset :source-start x-offset)
-          (trivial-simd:swap! x y :start 0 :end n
-                                  :x-start x-offset :y-start y-offset))))
-  (let ((ix (span-index n incx x-offset))
-        (iy (span-index n incy y-offset))
-        (sum (if (eq type 'single-float) 0.0f0
-                 (if (eq type 'double-float) 0.0d0
-                     (if (equal type '(complex single-float)) #C(0.0f0 0.0f0)
-                         #C(0.0d0 0.0d0))))))
-    (dotimes (i n)
-      (let ((a (aref x ix)) (b (aref y iy)))
-        (case operation
-          (:swap (setf (aref x ix) b (aref y iy) a))
-          (:copy (setf (aref y iy) a))
-          (:axpy (setf (aref y iy) (+ (* alpha a) b)))
-          (:dot (incf sum (* a b)))
-          (:dotc (incf sum (* (conjugate a) b)))))
-      (incf ix incx)
-      (incf iy incy))
-    (case operation
-      (:swap (values x y))
-      ((:copy :axpy) y)
-      (otherwise sum))))
+  (let ((x-start (span-start n incx x-offset))
+        (y-start (span-start n incy y-offset)))
+    (ecase operation
+      (:copy (trivial-simd:copy! y x :start 0 :end n
+                                     :source-start x-start :source-stride incx
+                                     :destination-start y-start :destination-stride incy))
+      (:swap (trivial-simd:swap! x y :start 0 :end n
+                                     :x-start x-start :x-stride incx
+                                     :y-start y-start :y-stride incy))
+      (:axpy (unless (zerop alpha)
+               (trivial-simd:axpy! y alpha x :start 0 :end n
+                                             :x-start x-start :x-stride incx
+                                             :y-start y-start :y-stride incy))
+       y)
+      ((:dot :dotc)
+       (funcall (if (eq operation :dot) #'trivial-simd:dot #'trivial-simd:dotc)
+                x y :start 0 :end n
+                    :left-start x-start :left-stride incx
+                    :right-start y-start :right-stride incy)))))
 
 (defmacro define-pair (name operation type &optional alpha-p)
   `(defun ,name (n ,@(when alpha-p '(alpha)) x incx y incy
@@ -61,10 +53,13 @@
   (validate-span n x incx x-offset type)
   (unless (typep alpha alpha-type)
     (error "Scale factor has the wrong type"))
-  (let ((ix (span-index n incx x-offset)))
-    (dotimes (i n x)
-      (setf (aref x ix) (* alpha (aref x ix)))
-      (incf ix incx))))
+  (if (equal type alpha-type)
+      (let ((start (span-start n incx x-offset)))
+        (trivial-simd:scale! x alpha :start start :end (+ start n) :stride incx))
+      (let ((ix (span-index n incx x-offset)))
+        (dotimes (i n x)
+          (setf (aref x ix) (* alpha (aref x ix)))
+          (incf ix incx)))))
 
 (defmacro define-scale (name type &optional real-alpha)
   `(defun ,name (n alpha x incx &key (x-offset 0))
@@ -84,13 +79,16 @@
 
 (defun blas-reduce (operation n x incx x-offset type)
   (validate-span n x incx x-offset type)
-  (if (and (= incx 1) (plusp n) (member type '(single-float double-float)))
-      (let ((end (+ x-offset n)))
-        (ecase operation
-          (:asum (trivial-simd:asum x :start x-offset :end end))
-          (:nrm2 (trivial-simd:nrm2 x :start x-offset :end end))
-          (:iamax (- (trivial-simd::absolute-argmax x n x-offset) x-offset))))
-      (blas-reduce-strided operation n x incx x-offset type)))
+  (let ((start (span-start n incx x-offset)))
+    (if (and (plusp n)
+             (or (member type '(single-float double-float))
+                 (eq operation :nrm2)))
+        (let ((end (+ start n)))
+          (ecase operation
+            (:asum (trivial-simd:asum x :start start :end end :stride incx))
+            (:nrm2 (trivial-simd:nrm2 x :start start :end end :stride incx))
+            (:iamax (/ (- (trivial-simd::absolute-argmax x n start incx) start) incx))))
+        (blas-reduce-strided operation n x incx x-offset type))))
 
 (defun blas-reduce-strided (operation n x incx x-offset type)
   (let* ((real-type (if (consp type) (second type) type))
@@ -141,14 +139,10 @@
 (defun dsdot (n x incx y incy &key (x-offset 0) (y-offset 0))
   (validate-span n x incx x-offset 'single-float)
   (validate-span n y incy y-offset 'single-float)
-  (let ((ix (span-index n incx x-offset))
-        (iy (span-index n incy y-offset))
-        (sum 0.0d0))
-    (dotimes (i n sum)
-      (incf sum (* (float (aref x ix) 0.0d0)
-                   (float (aref y iy) 0.0d0)))
-      (incf ix incx)
-      (incf iy incy))))
+  (trivial-simd:dot x y :start 0 :end n
+                        :left-start (span-start n incx x-offset) :left-stride incx
+                        :right-start (span-start n incy y-offset) :right-stride incy
+                        :accumulate :f64))
 
 (defun sdsdot (n alpha x incx y incy &key (x-offset 0) (y-offset 0))
   (unless (typep alpha 'single-float)

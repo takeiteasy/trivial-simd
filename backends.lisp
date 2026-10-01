@@ -69,7 +69,7 @@
                                                            (integer-operation-symbol op key)
                                                            (case op (:add '+) (:subtract '-)
                                                                  (:multiply '*) (:divide '/)))
-                                        collect `(,op (,function a b)))))))
+                                        collect `(,op (,function a b))))))))
                   destination)
                 (defun ,scale-name (x a count offset)
                   (declare (type (simple-array ,element (*)) x)
@@ -88,7 +88,7 @@
                            (,(if (integer-type-p key) (integer-operation-symbol :multiply key) '*)
                             a (aref x (+ x-offset i)))
                            (aref y (+ y-offset i)))))
-                  y))))))
+                  y)))))
 
 (define-lisp-bulk-loops)
 

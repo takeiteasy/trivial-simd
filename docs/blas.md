@@ -61,8 +61,8 @@ for Level 2 and 3 operands.
 
 ## Limitations
 
-The core bulk API does not accept increments yet ([#43](https://todo.sr.ht/~takeiteasy/trivial-simd/43));
-BLAS routines handle nonunit increments with scalar loops. Shifted overlap
+Level 1 routines pass nonunit increments to the core [strides](api.md#strides),
+which gather into temporaries ([#101](https://todo.sr.ht/~takeiteasy/trivial-simd/101)). Shifted overlap
 between `x` and `y` can affect results ([#67](https://todo.sr.ht/~takeiteasy/trivial-simd/67)).
 
 [^negative]: The [reference SAXPY routine](https://www.netlib.org/lapack/explore-html/d5/d4b/group__axpy_gabe0745849954ad2106e633fd2ebfc920.html)

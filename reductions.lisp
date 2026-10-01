@@ -84,11 +84,14 @@
 
 (define-lisp-iamax)
 
-(defun absolute-argmax (input count offset)
-  "Index in INPUT of the first element of largest magnitude among COUNT > 0 real floats."
-  (if (eq *backend* :native)
-      (native-iamax input count offset)
-      (lisp-iamax (vector-type input) input count offset)))
+(defun absolute-argmax (input count offset &optional (stride 1))
+  "Index in INPUT of the first element of largest magnitude among COUNT > 0 real
+floats at STRIDE."
+  (if (or (null stride) (= stride 1))
+      (if (eq *backend* :native)
+          (native-iamax input count offset)
+          (lisp-iamax (vector-type input) input count offset))
+      (+ offset (* stride (absolute-argmax (gather-slice input offset stride count) count 0)))))
 
 ;; TODO: SBCL and integer vectors use typed scalar loops; SIMD paths in #92
 (defun real-argext (maximum-p input count offset)
@@ -98,44 +101,49 @@
           (native-argmin input count offset))
       (lisp-argext (vector-type input) input count offset maximum-p)))
 
-(defun argext (name maximum-p input start end input-start)
-  (multiple-value-bind (type count offsets)
-      (resolve-slice (list input) (list input-start) start end)
+(defun argext (name maximum-p input start end input-start input-stride stride)
+  (multiple-value-bind (type count offsets strides)
+      (resolve-slice (list input) (list input-start) start end (list input-stride) stride)
     (when (complex-type-p type)
       (error "~A requires real vectors" name))
     (unless (zerop count)
-      (real-argext maximum-p input count (first offsets)))))
+      (let ((offset (first offsets)) (stride (first strides)))
+        (if (or (null stride) (= stride 1))
+            (real-argext maximum-p input count offset)
+            (+ offset (* stride (real-argext maximum-p (gather-slice input offset stride count)
+                                             count 0))))))))
 
-(defun argmin (input &key start end input-start)
+(defun argmin (input &key start end input-start stride input-stride)
   "Return the index in INPUT of the first smallest element of the slice, or NIL if empty."
-  (argext 'argmin nil input start end input-start))
+  (argext 'argmin nil input start end input-start input-stride stride))
 
-(defun argmax (input &key start end input-start)
+(defun argmax (input &key start end input-start stride input-stride)
   "Return the index in INPUT of the first largest element of the slice, or NIL if empty."
-  (argext 'argmax t input start end input-start))
+  (argext 'argmax t input start end input-start input-stride stride))
 
-(defun minimum (input &key start end input-start)
+(defun minimum (input &key start end input-start stride input-stride)
   "Return the smallest element of the slice, or NIL if empty."
-  (let ((index (argext 'minimum nil input start end input-start)))
+  (let ((index (argext 'minimum nil input start end input-start input-stride stride)))
     (and index (aref input index))))
 
-(defun maximum (input &key start end input-start)
+(defun maximum (input &key start end input-start stride input-stride)
   "Return the largest element of the slice, or NIL if empty."
-  (let ((index (argext 'maximum t input start end input-start)))
+  (let ((index (argext 'maximum t input start end input-start input-stride stride)))
     (and index (aref input index))))
 
-(defun asum (input &key start end input-start accumulate)
+(defun asum (input &key start end input-start accumulate stride input-stride)
   "Return the sum of absolute values (complex moduli) of the slice."
-  (multiple-value-bind (type count offsets)
-      (resolve-slice (list input) (list input-start) start end)
+  (multiple-value-bind (type count offsets strides)
+      (resolve-slice (list input) (list input-start) start end (list input-stride) stride)
     (let ((wide (wide-accumulation-p type accumulate))
           (offset (first offsets)))
-      (cond ((complex-type-p type) (complex-asum input count offset wide))
-            ((and (eq *backend* :native) (not (integer-type-p type)))
-             (if wide
-                 (native-asum-acc input count offset)
-                 (native-asum input count offset)))
-            (t (lisp-asum type input count offset wide))))))
+      (with-gathered ((input offset (first strides))) count
+        (cond ((complex-type-p type) (complex-asum input count offset wide))
+              ((and (eq *backend* :native) (not (integer-type-p type)))
+               (if wide
+                   (native-asum-acc input count offset)
+                   (native-asum input count offset)))
+              (t (lisp-asum type input count offset wide)))))))
 
 (defun scaled-norm-function (count element)
   "Euclidean norm of the real or complex values (funcall ELEMENT i) for i below COUNT,
@@ -170,18 +178,19 @@ scaled to avoid overflow and underflow."
         (sqrt sum)
         (scaled-norm input count offset))))
 
-(defun nrm2 (input &key start end input-start accumulate)
+(defun nrm2 (input &key start end input-start accumulate stride input-stride)
   "Return the Euclidean norm of the slice, scaled to avoid overflow and underflow."
-  (multiple-value-bind (type count offsets)
-      (resolve-slice (list input) (list input-start) start end)
+  (multiple-value-bind (type count offsets strides)
+      (resolve-slice (list input) (list input-start) start end (list input-stride) stride)
     (when (integer-type-p type)
       (error "NRM2 requires float or complex vectors"))
     (let ((wide (wide-accumulation-p type accumulate))
           (offset (first offsets)))
-      (flet ((narrow (value) (if wide value (coerce value 'single-float))))
-        (ecase type
-          (:f32 (narrow (sqrt (dot input input :start offset :end (+ offset count)
-                                               :accumulate :f64))))
-          (:f64 (nrm2-double input count offset))
-          (:c32 (narrow (complex-nrm2 input count offset)))
-          (:c64 (scaled-norm input count offset)))))))
+      (with-gathered ((input offset (first strides))) count
+        (flet ((narrow (value) (if wide value (coerce value 'single-float))))
+          (ecase type
+            (:f32 (narrow (sqrt (dot input input :start offset :end (+ offset count)
+                                                 :accumulate :f64))))
+            (:f64 (nrm2-double input count offset))
+            (:c32 (narrow (complex-nrm2 input count offset)))
+            (:c64 (scaled-norm input count offset))))))))

@@ -62,39 +62,48 @@
                (native-scalar-bits type value)
                count))))
 
-(defun copy! (destination source &key start end destination-start source-start)
+(defun copy! (destination source &key start end destination-start source-start
+                                    stride destination-stride source-stride)
   "Copy the SOURCE slice into DESTINATION and return DESTINATION.
 Overlapping slices of one vector copy as if SOURCE were read first."
-  (multiple-value-bind (type count offsets)
+  (multiple-value-bind (type count offsets strides)
       (resolve-slice (list destination source) (list destination-start source-start)
-                     start end)
+                     start end (list destination-stride source-stride) stride)
     (declare (ignore type))
     (destructuring-bind (destination-offset source-offset) offsets
-      (replace destination source
-               :start1 destination-offset :end1 (+ destination-offset count)
-               :start2 source-offset :end2 (+ source-offset count))))
+      (with-gathered ((destination destination-offset (first strides) :out)
+                      (source source-offset (second strides)))
+          count
+        (replace destination source
+                 :start1 destination-offset :end1 (+ destination-offset count)
+                 :start2 source-offset :end2 (+ source-offset count)))))
   destination)
 
-(defun fill! (destination value &key start end)
+(defun fill! (destination value &key start end stride)
   "Set the slice of DESTINATION to VALUE and return DESTINATION."
-  (multiple-value-bind (type count offsets)
-      (resolve-slice (list destination) (list nil) start end)
+  (multiple-value-bind (type count offsets strides)
+      (resolve-slice (list destination) (list nil) start end nil stride)
     (unless (typep value (second (numeric-type type)))
       (error 'type-error :datum value :expected-type (second (numeric-type type))))
     (let ((offset (first offsets)))
-      (if (native-copy-p type count +native-fill-minimum-bytes+)
-          (native-fill destination value count offset)
-          (fill destination value :start offset :end (+ offset count)))))
+      (with-gathered ((destination offset (first strides) :out)) count
+        (if (native-copy-p type count +native-fill-minimum-bytes+)
+            (native-fill destination value count offset)
+            (fill destination value :start offset :end (+ offset count))))))
   destination)
 
-(defun swap! (x y &key start end x-start y-start)
+(defun swap! (x y &key start end x-start y-start stride x-stride y-stride)
   "Exchange the slices of X and Y and return both vectors as two values."
-  (multiple-value-bind (type count offsets)
-      (resolve-slice (list x y) (list x-start y-start) start end)
+  (multiple-value-bind (type count offsets strides)
+      (resolve-slice (list x y) (list x-start y-start) start end
+                     (list x-stride y-stride) stride)
     (destructuring-bind (x-offset y-offset) offsets
-      (cond ((zerop count))
-            ((native-copy-p type count +native-swap-minimum-bytes+)
-             (native-swap x y count x-offset y-offset))
-            (t (funcall (lisp-bulk-function "%LISP-SWAP-" x)
-                        x y count x-offset y-offset)))))
+      (with-gathered ((x x-offset (first strides) :in-out)
+                      (y y-offset (second strides) :in-out))
+          count
+        (cond ((zerop count))
+              ((native-copy-p type count +native-swap-minimum-bytes+)
+               (native-swap x y count x-offset y-offset))
+              (t (funcall (lisp-bulk-function "%LISP-SWAP-" x)
+                          x y count x-offset y-offset))))))
   (values x y))

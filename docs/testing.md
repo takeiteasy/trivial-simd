@@ -8,6 +8,9 @@ Extended operation tests cover unary and bounded arithmetic, all conversion
 type pairs and rounding modes, byte masks, selection, and mask kernels.
 Copy tests cover `copy!`, `fill!` and `swap!` on every element type and backend,
 including overlap, large unaligned slices and error cases.
+Stride tests compare every bulk operation and reduction with a contiguous call on
+plainly gathered copies for strides 1, 2, 3 and negative values on every
+backend, and cover bounds, empty slices, scalar operands and aliased outputs.
 Reduction tests cover `minimum`, `maximum`, `argmin`, `argmax`, `asum`, `nrm2`
 and `:accumulate` on every backend, including ties, signed zeros, absolute
 indexes, overflow, wrapping and error cases.

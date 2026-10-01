@@ -2,8 +2,8 @@
 
 Scalar reductions over a slice of one vector: `sum`, `dot`, `dotc`, `asum`,
 `nrm2`, `minimum`, `maximum`, `argmin` and `argmax`. All accept the
-[bulk slice keywords](api.md#slices); the single-vector functions take
-`:input-start`. [Kernels](kernels.md#reduction-kernels) apply the same reducers
+[bulk slice keywords](api.md#slices) and [strides](api.md#strides); the
+single-vector functions take `:input-start` and `:input-stride`. [Kernels](kernels.md#reduction-kernels) apply the same reducers
 to an expression.
 
 | Function | Result | Types |
@@ -17,6 +17,7 @@ to an expression.
 
 ```lisp
 (trivial-simd:argmax v :start 2 :end 10)   ; => 7, an index into V
+(trivial-simd:argmax v :end 4 :stride 3)   ; => 9: visits V[0], V[3], V[6], V[9]
 (trivial-simd:nrm2 v)                      ; no overflow for 1d200 elements
 (trivial-simd:sum singles :accumulate :f64) ; => double-float
 ```
