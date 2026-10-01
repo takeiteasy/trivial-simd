@@ -694,3 +694,34 @@ TS_REDUCE_INTEGER(u32, uint32_t)
 TS_REDUCE_INTEGER(s64, uint64_t)
 TS_REDUCE_INTEGER(u64, uint64_t)
 #undef TS_REDUCE_INTEGER
+
+void ts_swap_bytes(void *a, void *b, size_t bytes) {
+    unsigned char *x = a, *y = b;
+    for (; bytes >= 16; bytes -= 16, x += 16, y += 16) {
+        unsigned char block[16];
+        memcpy(block, x, 16);
+        memcpy(x, y, 16);
+        memcpy(y, block, 16);
+    }
+    for (; bytes; --bytes, ++x, ++y) {
+        unsigned char value = *x;
+        *x = *y;
+        *y = value;
+    }
+}
+
+#define TS_FILL(suffix, type) \
+void ts_fill_##suffix(type *out, type value, size_t n) { \
+    for (size_t i = 0; i < n; ++i) out[i] = value; \
+}
+TS_FILL(f32, float)
+TS_FILL(f64, double)
+TS_FILL(s8, uint8_t)
+TS_FILL(u8, uint8_t)
+TS_FILL(s16, uint16_t)
+TS_FILL(u16, uint16_t)
+TS_FILL(s32, uint32_t)
+TS_FILL(u32, uint32_t)
+TS_FILL(s64, uint64_t)
+TS_FILL(u64, uint64_t)
+#undef TS_FILL

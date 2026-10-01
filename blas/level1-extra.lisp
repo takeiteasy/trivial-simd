@@ -6,6 +6,13 @@
   (when (eq operation :axpy)
     (unless (typep alpha type)
       (error 'type-error :datum alpha :expected-type type)))
+  (when (and (= incx 1) (= incy 1) (member operation '(:copy :swap)))
+    (return-from blas-pair
+      (if (eq operation :copy)
+          (trivial-simd:copy! y x :start 0 :end n
+                                  :destination-start y-offset :source-start x-offset)
+          (trivial-simd:swap! x y :start 0 :end n
+                                  :x-start x-offset :y-start y-offset))))
   (let ((ix (span-index n incx x-offset))
         (iy (span-index n incy y-offset))
         (sum (if (eq type 'single-float) 0.0f0

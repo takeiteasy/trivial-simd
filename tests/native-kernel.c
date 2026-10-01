@@ -623,7 +623,35 @@ static void check_first_extreme_wins(void) {
     }
 }
 
+static void check_swap_and_fill(void) {
+    size_t sizes[] = {0, 1, 15, 16, 17, 31, 32, 33, 90};
+    for (size_t s = 0; s < sizeof(sizes) / sizeof(sizes[0]); ++s) {
+        size_t n = sizes[s];
+        uint8_t a[100], b[100];
+        for (size_t i = 0; i < 100; ++i) { a[i] = (uint8_t)i; b[i] = (uint8_t)(200 + i); }
+        ts_swap_bytes(a + 3, b + 5, n);
+        for (size_t i = 0; i < 100; ++i) {
+            int moved_a = i >= 3 && i < 3 + n, moved_b = i >= 5 && i < 5 + n;
+            assert(a[i] == (moved_a ? (uint8_t)(200 + i - 3 + 5) : (uint8_t)i));
+            assert(b[i] == (moved_b ? (uint8_t)(i - 5 + 3) : (uint8_t)(200 + i)));
+        }
+    }
+    float f[9] = {0};
+    ts_fill_f32(f + 1, -0.0f, 7);
+    assert(f[0] == 0 && !signbit(f[0]) && f[8] == 0 && !signbit(f[8]));
+    for (size_t i = 1; i < 8; ++i) assert(f[i] == 0 && signbit(f[i]));
+    uint64_t wide[5] = {1, 1, 1, 1, 1};
+    ts_fill_u64(wide + 1, UINT64_MAX, 3);
+    assert(wide[0] == 1 && wide[1] == UINT64_MAX && wide[3] == UINT64_MAX && wide[4] == 1);
+    uint8_t bytes[4] = {1, 1, 1, 1};
+    ts_fill_s8(bytes, 0xFE, 0);
+    assert(bytes[0] == 1);
+    ts_fill_s8(bytes, 0xFE, 4);
+    assert(bytes[3] == 0xFE);
+}
+
 int main(void) {
+    check_swap_and_fill();
     check_reductions_f32();
     check_reductions_f64();
     check_first_extreme_wins();

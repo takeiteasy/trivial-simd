@@ -17,7 +17,7 @@ Invalid types or spans signal an error before the routine starts.
 | Maximum absolute index | `isamax`, `idamax`, `icamax`, `izamax` | Zero-based logical index |
 | Rotation | `srotg`, `drotg`, `crotg`, `zrotg`, `srotmg`, `drotmg`, `srot`, `drot`, `csrot`, `zdrot`, `crot`, `zrot`, `srotm`, `drotm` | Parameters or modified vectors |
 
-Unit-stride real `asum`, `nrm2` and `i?amax` call the core [reductions](reductions.md)
+Unit-increment `?copy` and `?swap` call core [`copy!` and `swap!`](copy.md). Unit-stride real `asum`, `nrm2` and `i?amax` call the core [reductions](reductions.md)
 and their native paths. Complex absolute sums and index searches use `abs(realpart) + abs(imagpart)`;
 norms use Euclidean magnitude. Index ties select the first visited element.
 The empty index result is zero. `dotu` does not conjugate; `dotc` conjugates

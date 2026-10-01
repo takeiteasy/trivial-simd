@@ -96,6 +96,23 @@ elements, the measured reduction takes 45.5% less time for single-float and
 | double-float | 1,024 | 0.642 | 0.345 | 1.86x |
 | double-float | 65,536 | 42.785 | 21.342 | 2.00x |
 
+## Copy, fill and swap
+
+`copy!` uses `replace`, which matches libc `memmove` on SBCL at 1,024 and
+65,536 elements, so no native copy exists. `fill!` and `swap!` have native C
+paths that win above a size threshold. Cells show microseconds per call
+on SBCL 2.6.8, Apple M1, measured 2026-10-01 with `single-float` vectors.
+
+| Elements | `fill` | Native fill | Typed swap | Native swap |
+|---:|---:|---:|---:|---:|
+| 16 | 0.063 | 0.266 | 0.210 | 0.168 |
+| 256 | 0.139 | 0.286 | 0.586 | 0.192 |
+| 1,024 | 0.304 | 0.309 | 1.774 | 0.277 |
+| 65,536 | 16.446 | 4.200 | 100.272 | 10.144 |
+
+Native fill breaks even near 4,096 bytes and swap near 64 bytes, for any
+element type. Native call setup is the fixed cost.
+
 ## Spill scratch evaluation
 
 Five independent SBCL runs compare complete calls with per-call allocation and

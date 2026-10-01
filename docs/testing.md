@@ -6,6 +6,8 @@ backend for both float types and eight integer types, empty vectors, SIMD
 tails, aliasing, wrapping arithmetic, division errors, and type boundaries.
 Extended operation tests cover unary and bounded arithmetic, all conversion
 type pairs and rounding modes, byte masks, selection, and mask kernels.
+Copy tests cover `copy!`, `fill!` and `swap!` on every element type and backend,
+including overlap, large unaligned slices and error cases.
 Reduction tests cover `minimum`, `maximum`, `argmin`, `argmax`, `asum`, `nrm2`
 and `:accumulate` on every backend, including ties, signed zeros, absolute
 indexes, overflow, wrapping and error cases.

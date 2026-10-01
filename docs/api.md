@@ -17,6 +17,7 @@ Integer arithmetic [wraps at the vector width](integers.md).
 | `(scale! x a &key ...)` | Replace `x` with `a*x` |
 | `(axpy! y a x &key ...)` | Replace `y` with `a*x+y` |
 | `(fma! destination x y z &key ...)` | Fused elementwise `x*y+z` for floats |
+| [`copy!`, `fill!`, `swap!`](copy.md) | Copy, set or exchange slices of any numeric vector |
 | [Unary and bounded operations](elementwise.md) | Negate, absolute value, square root, reciprocal, min, max, clamp |
 | [`convert!`](conversion.md) | Convert among numeric vector types |
 | [Masks and selection](masks.md) | Compare, select, count, any, all |
@@ -49,6 +50,8 @@ vector while the element count stays `end - start`.
 | `:start`, `:end` | Every vector |
 | `:destination-start`, `:left-start`, `:right-start` | `add!`, `subtract!`, `multiply!`, `divide!` |
 | `:y-start`, `:x-start` | `axpy!` |
+| `:destination-start`, `:source-start` | `copy!` |
+| `:x-start`, `:y-start` | `swap!` |
 | `:destination-start`, `:x-start`, `:y-start`, `:z-start` | `fma!` |
 | `:left-start`, `:right-start` | `dot`, `dotc` |
 | `:input-start` | `sum`, `asum`, `nrm2`, `minimum`, `maximum`, `argmin`, `argmax` |
@@ -102,7 +105,6 @@ instead. The available integer operations and backend paths are described in
 | Area | Ticket |
 |---|---|
 | Strided access | [#43](https://todo.sr.ht/~takeiteasy/trivial-simd/43) |
-| Copy, fill, swap | [#44](https://todo.sr.ht/~takeiteasy/trivial-simd/44) |
 | Shifted overlap between destination and input slices | [#67](https://todo.sr.ht/~takeiteasy/trivial-simd/67) |
 
 [^order]: SIMD reductions accumulate lanes separately before combining them.

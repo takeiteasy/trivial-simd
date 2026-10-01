@@ -28,6 +28,7 @@ and `cmake --build build --config Release`. The Lisp fallback loads without it.
 
 - [API](docs/api.md)
 - [Elementwise operations](docs/elementwise.md)
+- [Copy, fill and swap](docs/copy.md)
 - [Type conversion](docs/conversion.md)
 - [Masks and selection](docs/masks.md)
 - [Integer vectors](docs/integers.md)

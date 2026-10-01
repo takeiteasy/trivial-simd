@@ -16,6 +16,7 @@
                (:file "extended-operations")
                (:file "complex-operations")
                (:file "reductions")
+               (:file "copy-operations")
                (:file "kernel"))
   :in-order-to ((asdf:test-op (asdf:test-op "trivial-simd/tests"))))
 
@@ -25,6 +26,7 @@
   :components ((:file "tests/package")
                (:file "tests/operations")
                (:file "tests/extended")
+               (:file "tests/copy")
                (:file "tests/native")
                (:file "tests/kernels")
                (:file "tests/integers")
