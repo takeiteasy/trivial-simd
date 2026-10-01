@@ -50,6 +50,10 @@
           (loop for n = (read stream nil) while n collect n))
         '(16 64))))
 
+(defun dispatch-threshold ()
+  (let ((value (uiop:getenv "BLAS_BENCH_THRESHOLD")))
+    (and value (plusp (length value)) (parse-integer value))))
+
 (defun fill-random (vector seed)
   (let ((state seed))
     (dotimes (i (length vector) vector)
@@ -206,4 +210,9 @@
                        bench-trsv bench-ger))
         (funcall bench layout n)))))
 
-(run-blas-benchmarks)
+(let ((threshold (dispatch-threshold)))
+  (if threshold
+      (let ((trivial-simd/blas::*native-blas-threshold* threshold)
+            (trivial-simd/blas::*native-blas-level2-threshold* threshold))
+        (run-blas-benchmarks))
+      (run-blas-benchmarks)))

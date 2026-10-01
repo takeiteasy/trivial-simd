@@ -1,6 +1,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include "fma.h"
 
 #pragma STDC FP_CONTRACT OFF
 
@@ -25,8 +26,7 @@
 #define TS_BLAS_F64_ROWS 4
 #define TS_BLAS_F64_COLUMNS 4
 #elif !defined(TS_SCALAR) && (defined(__x86_64__) || defined(_M_X64))
-#include <emmintrin.h>
-#include <xmmintrin.h>
+#include <immintrin.h>
 #define TS_BLAS_F32_VECTOR __m128
 #define TS_BLAS_F64_VECTOR __m128d
 #define TS_BLAS_F32_WIDTH 4
@@ -45,6 +45,35 @@
 #define TS_BLAS_F32_COLUMNS 4
 #define TS_BLAS_F64_ROWS 2
 #define TS_BLAS_F64_COLUMNS 4
+#ifdef TS_HAVE_HARDWARE_FMA
+#define TS_BLAS_DISPATCH
+#define TS_BLAS_AVX_F32_VECTOR __m256
+#define TS_BLAS_AVX_F64_VECTOR __m256d
+#define TS_BLAS_AVX_F32_WIDTH 8
+#define TS_BLAS_AVX_F64_WIDTH 4
+#define TS_BLAS_AVX_F32_LOAD(p) _mm256_loadu_ps(p)
+#define TS_BLAS_AVX_F64_LOAD(p) _mm256_loadu_pd(p)
+#define TS_BLAS_AVX_F32_STORE(p, v) _mm256_storeu_ps(p, v)
+#define TS_BLAS_AVX_F64_STORE(p, v) _mm256_storeu_pd(p, v)
+#define TS_BLAS_AVX_F32_ZERO() _mm256_setzero_ps()
+#define TS_BLAS_AVX_F64_ZERO() _mm256_setzero_pd()
+#define TS_BLAS_AVX_F32_SPLAT(a) _mm256_set1_ps(a)
+#define TS_BLAS_AVX_F64_SPLAT(a) _mm256_set1_pd(a)
+#define TS_BLAS_AVX_F32_MULADD(acc, a, b) _mm256_fmadd_ps(a, b, acc)
+#define TS_BLAS_AVX_F64_MULADD(acc, a, b) _mm256_fmadd_pd(a, b, acc)
+#ifndef TS_BLAS_AVX_F32_ROWS
+#define TS_BLAS_AVX_F32_ROWS 2
+#endif
+#ifndef TS_BLAS_AVX_F32_COLUMNS
+#define TS_BLAS_AVX_F32_COLUMNS 6
+#endif
+#ifndef TS_BLAS_AVX_F64_ROWS
+#define TS_BLAS_AVX_F64_ROWS 2
+#endif
+#ifndef TS_BLAS_AVX_F64_COLUMNS
+#define TS_BLAS_AVX_F64_COLUMNS 6
+#endif
+#endif
 #else
 #define TS_BLAS_F32_VECTOR float
 #define TS_BLAS_F64_VECTOR double
@@ -66,13 +95,24 @@
 #define TS_BLAS_F64_COLUMNS 4
 #endif
 
-/* TODO: x86 uses SSE2 mul+add rather than FMA, blocking is tuned on M1 only, and
-   every gemm call allocates its own packing buffers (#82). */
+/* Cache blocking is tuned on Apple M1; the x86 values are provisional (#82). */
+#ifndef TS_BLAS_DEPTH
 #define TS_BLAS_DEPTH 256
+#endif
+#ifndef TS_BLAS_ROW_BLOCK
 #define TS_BLAS_ROW_BLOCK 128
+#endif
+#ifndef TS_BLAS_COLUMN_BLOCK
 #define TS_BLAS_COLUMN_BLOCK 1024
+#endif
 #define TS_BLAS_MIN(a, b) ((a) < (b) ? (a) : (b))
 #define TS_BLAS_MAX(a, b) ((a) > (b) ? (a) : (b))
+#define TS_BLAS_ROUND_UP(a, to) (((a) + (to) - 1) / (to) * (to))
+#ifdef _MSC_VER
+#define TS_BLAS_NOINLINE __declspec(noinline)
+#else
+#define TS_BLAS_NOINLINE __attribute__((noinline))
+#endif
 
 /* Packed panels follow the BLIS layout: A in MR-row slivers, B in NR-column
    slivers, so the micro-kernel streams both contiguously whatever the strides. */
@@ -144,22 +184,23 @@ static void ts_blas_scale_##suffix(ptrdiff_t m, ptrdiff_t n, type beta, type *c,
     } \
 } \
 \
-int ts_blas_gemm_##suffix(int64_t m, int64_t n, int64_t k, type alpha, \
-                          const type *a, int64_t ars, int64_t acs, \
-                          const type *b, int64_t brs, int64_t bcs, type beta, \
-                          type *c, int64_t crs, int64_t ccs) { \
-    if (m <= 0 || n <= 0) return 0; \
+static size_t ts_blas_gemm_size_##suffix(int64_t m, int64_t n, int64_t k) { \
+    return (size_t)(TS_BLAS_MIN(k, TS_BLAS_DEPTH) \
+                    * (TS_BLAS_ROUND_UP(TS_BLAS_MIN(m, TS_BLAS_ROW_BLOCK), TS_BLAS_MR_##suffix) \
+                       + TS_BLAS_ROUND_UP(TS_BLAS_MIN(n, TS_BLAS_COLUMN_BLOCK), TS_BLAS_NR_##suffix))); \
+} \
+\
+TS_BLAS_NOINLINE static void ts_blas_gemm_run_##suffix(int64_t m, int64_t n, int64_t k, type alpha, \
+                                      const type *a, int64_t ars, int64_t acs, \
+                                      const type *b, int64_t brs, int64_t bcs, type beta, \
+                                      type *c, int64_t crs, int64_t ccs, type *work) { \
+    if (m <= 0 || n <= 0) return; \
     ts_blas_scale_##suffix(m, n, beta, c, crs, ccs); \
-    if (k <= 0 || alpha == 0) return 0; \
-    ptrdiff_t depth_block = TS_BLAS_MIN(k, TS_BLAS_DEPTH); \
-    ptrdiff_t row_block = TS_BLAS_MIN((m + TS_BLAS_MR_##suffix - 1) / TS_BLAS_MR_##suffix \
-                                          * TS_BLAS_MR_##suffix, TS_BLAS_ROW_BLOCK); \
-    ptrdiff_t column_block = TS_BLAS_MIN((n + TS_BLAS_NR_##suffix - 1) / TS_BLAS_NR_##suffix \
-                                             * TS_BLAS_NR_##suffix, TS_BLAS_COLUMN_BLOCK); \
-    type *packed_a = malloc((size_t)(row_block * depth_block) * sizeof(type)); \
-    type *packed_b = malloc((size_t)(depth_block * column_block) * sizeof(type)); \
+    if (k <= 0 || alpha == 0) return; \
+    type *packed_a = work; \
+    type *packed_b = work + TS_BLAS_ROUND_UP(TS_BLAS_MIN(m, TS_BLAS_ROW_BLOCK), TS_BLAS_MR_##suffix) \
+                                * TS_BLAS_MIN(k, TS_BLAS_DEPTH); \
     type tile[TS_BLAS_MR_##suffix * TS_BLAS_NR_##suffix]; \
-    if (!packed_a || !packed_b) { free(packed_a); free(packed_b); return 1; } \
     for (ptrdiff_t jc = 0; jc < n; jc += TS_BLAS_COLUMN_BLOCK) { \
         ptrdiff_t nc = TS_BLAS_MIN(TS_BLAS_COLUMN_BLOCK, n - jc); \
         for (ptrdiff_t pc = 0; pc < k; pc += TS_BLAS_DEPTH) { \
@@ -182,17 +223,24 @@ int ts_blas_gemm_##suffix(int64_t m, int64_t n, int64_t k, type alpha, \
             } \
         } \
     } \
-    free(packed_a); \
-    free(packed_b); \
+} \
+\
+int ts_blas_gemm_##suffix(int64_t m, int64_t n, int64_t k, type alpha, \
+                          const type *a, int64_t ars, int64_t acs, \
+                          const type *b, int64_t brs, int64_t bcs, type beta, \
+                          type *c, int64_t crs, int64_t ccs) { \
+    if (m <= 0 || n <= 0) return 0; \
+    if (k <= 0 || alpha == 0) { \
+        ts_blas_gemm_run_##suffix(m, n, k, alpha, a, ars, acs, b, brs, bcs, beta, c, crs, ccs, NULL); \
+        return 0; \
+    } \
+    type *work = malloc(ts_blas_gemm_size_##suffix(m, n, k) * sizeof(type)); \
+    if (!work) return 1; \
+    ts_blas_gemm_run_##suffix(m, n, k, alpha, a, ars, acs, b, brs, bcs, beta, c, crs, ccs, work); \
+    free(work); \
     return 0; \
 }
 
-TS_BLAS_GEMM(f32, float, TS_BLAS_F32_VECTOR, TS_BLAS_F32_WIDTH, TS_BLAS_F32_LOAD,
-             TS_BLAS_F32_STORE, TS_BLAS_F32_ZERO, TS_BLAS_F32_SPLAT, TS_BLAS_F32_MULADD,
-             TS_BLAS_F32_ROWS, TS_BLAS_F32_COLUMNS)
-TS_BLAS_GEMM(f64, double, TS_BLAS_F64_VECTOR, TS_BLAS_F64_WIDTH, TS_BLAS_F64_LOAD,
-             TS_BLAS_F64_STORE, TS_BLAS_F64_ZERO, TS_BLAS_F64_SPLAT, TS_BLAS_F64_MULADD,
-             TS_BLAS_F64_ROWS, TS_BLAS_F64_COLUMNS)
 
 #define TS_BLAS_BLOCK 16
 
@@ -218,17 +266,17 @@ int ts_blas_rank_##suffix(int64_t n, int64_t k, type alpha, \
         ts_blas_scale_triangle_##suffix(n, beta, c, crs, ccs, upper); \
         return 0; \
     } \
-    type *tile = malloc(TS_BLAS_BLOCK * TS_BLAS_BLOCK * sizeof(type)); \
+    type *tile = malloc((TS_BLAS_BLOCK * TS_BLAS_BLOCK + ts_blas_gemm_size_##suffix(TS_BLAS_BLOCK, n, k)) \
+                        * sizeof(type)); \
     if (!tile) return 1; \
-    int status = 0; \
-    for (int64_t i0 = 0; i0 < n && !status; i0 += TS_BLAS_BLOCK) { \
+    type *work = tile + TS_BLAS_BLOCK * TS_BLAS_BLOCK; \
+    for (int64_t i0 = 0; i0 < n; i0 += TS_BLAS_BLOCK) { \
         int64_t nb = TS_BLAS_MIN(TS_BLAS_BLOCK, n - i0); \
-        status = ts_blas_gemm_##suffix(nb, nb, k, alpha, a + i0 * ars, ars, acs, \
-                                       b + i0 * brs, bcs, brs, 0, tile, nb, 1); \
-        if (!status && second) \
-            status = ts_blas_gemm_##suffix(nb, nb, k, alpha, b + i0 * brs, brs, bcs, \
-                                           a + i0 * ars, acs, ars, 1, tile, nb, 1); \
-        if (status) break; \
+        ts_blas_gemm_run_##suffix(nb, nb, k, alpha, a + i0 * ars, ars, acs, \
+                                  b + i0 * brs, bcs, brs, 0, tile, nb, 1, work); \
+        if (second) \
+            ts_blas_gemm_run_##suffix(nb, nb, k, alpha, b + i0 * brs, brs, bcs, \
+                                      a + i0 * ars, acs, ars, 1, tile, nb, 1, work); \
         for (int64_t i = 0; i < nb; ++i) \
             for (int64_t j = upper ? i : 0; j < (upper ? nb : i + 1); ++j) { \
                 type *item = c + (i0 + i) * crs + (i0 + j) * ccs; \
@@ -238,14 +286,14 @@ int ts_blas_rank_##suffix(int64_t n, int64_t k, type alpha, \
         int64_t count = upper ? n - first : i0; \
         if (count <= 0) continue; \
         type *panel = c + i0 * crs + first * ccs; \
-        status = ts_blas_gemm_##suffix(nb, count, k, alpha, a + i0 * ars, ars, acs, \
-                                       b + first * brs, bcs, brs, beta, panel, crs, ccs); \
-        if (!status && second) \
-            status = ts_blas_gemm_##suffix(nb, count, k, alpha, b + i0 * brs, brs, bcs, \
-                                           a + first * ars, acs, ars, 1, panel, crs, ccs); \
+        ts_blas_gemm_run_##suffix(nb, count, k, alpha, a + i0 * ars, ars, acs, \
+                                  b + first * brs, bcs, brs, beta, panel, crs, ccs, work); \
+        if (second) \
+            ts_blas_gemm_run_##suffix(nb, count, k, alpha, b + i0 * brs, brs, bcs, \
+                                      a + first * ars, acs, ars, 1, panel, crs, ccs, work); \
     } \
     free(tile); \
-    return status; \
+    return 0; \
 } \
 \
 static void ts_blas_diagonal_##suffix(int solve, int upper, int unit, const type *a, \
@@ -276,45 +324,43 @@ int ts_blas_triangular_##suffix(int solve, int left, int upper, int unit, type a
     int64_t tars = left ? ars : acs, tacs = left ? acs : ars; \
     int effective_upper = left ? upper : !upper; \
     if (rows <= 0 || cols <= 0) return 0; \
-    type *w = malloc((size_t)(rows * cols) * sizeof(type)); \
+    type *w = malloc(((size_t)(rows * cols) + ts_blas_gemm_size_##suffix(TS_BLAS_BLOCK, cols, rows)) \
+                     * sizeof(type)); \
     if (!w) return 1; \
-    int status = 0; \
+    type *work = w + rows * cols; \
     for (int64_t r = 0; r < rows; ++r) \
         for (int64_t c = 0; c < cols; ++c) \
             w[r * cols + c] = alpha == 0 ? 0 : alpha * b[r * rs + c * cs]; \
     if (alpha != 0) { \
         int forward = solve ? !effective_upper : effective_upper; \
-        for (int64_t step = 0; step < rows && !status; step += TS_BLAS_BLOCK) { \
+        for (int64_t step = 0; step < rows; step += TS_BLAS_BLOCK) { \
             int64_t i0 = forward ? step : TS_BLAS_MAX(0, rows - step - TS_BLAS_BLOCK); \
             int64_t i1 = forward ? TS_BLAS_MIN(rows, step + TS_BLAS_BLOCK) : rows - step; \
             int64_t first = effective_upper ? i1 : 0; \
             int64_t count = effective_upper ? rows - i1 : i0; \
             if (solve) { \
                 if (count > 0) \
-                    status = ts_blas_gemm_##suffix(i1 - i0, cols, count, -1, \
-                                                   a + i0 * tars + first * tacs, tars, tacs, \
-                                                   w + first * cols, cols, 1, 1, \
-                                                   w + i0 * cols, cols, 1); \
+                    ts_blas_gemm_run_##suffix(i1 - i0, cols, count, -1, \
+                                              a + i0 * tars + first * tacs, tars, tacs, \
+                                              w + first * cols, cols, 1, 1, \
+                                              w + i0 * cols, cols, 1, work); \
                 ts_blas_diagonal_##suffix(1, effective_upper, unit, a, tars, tacs, w, cols, i0, i1); \
             } else { \
                 ts_blas_diagonal_##suffix(0, effective_upper, unit, a, tars, tacs, w, cols, i0, i1); \
                 if (count > 0) \
-                    status = ts_blas_gemm_##suffix(i1 - i0, cols, count, 1, \
-                                                   a + i0 * tars + first * tacs, tars, tacs, \
-                                                   w + first * cols, cols, 1, 1, \
-                                                   w + i0 * cols, cols, 1); \
+                    ts_blas_gemm_run_##suffix(i1 - i0, cols, count, 1, \
+                                              a + i0 * tars + first * tacs, tars, tacs, \
+                                              w + first * cols, cols, 1, 1, \
+                                              w + i0 * cols, cols, 1, work); \
             } \
         } \
     } \
-    if (!status) \
-        for (int64_t r = 0; r < rows; ++r) \
-            for (int64_t c = 0; c < cols; ++c) b[r * rs + c * cs] = w[r * cols + c]; \
+    for (int64_t r = 0; r < rows; ++r) \
+        for (int64_t c = 0; c < cols; ++c) b[r * rs + c * cs] = w[r * cols + c]; \
     free(w); \
-    return status; \
+    return 0; \
 }
 
-TS_BLAS_LEVEL3(f32, float)
-TS_BLAS_LEVEL3(f64, double)
 
 /* Level 2 routines take the operated matrix as base pointer plus strides, and
    vectors with arbitrary increments. One stride of the matrix is always 1. */
@@ -392,7 +438,16 @@ int ts_blas_trsv_##suffix(int upper, int unit, const type *a, int64_t ars, int64
     type *w = malloc((size_t)n * sizeof(type)); \
     if (!w) return 1; \
     for (int64_t i = 0; i < n; ++i) w[i] = x[i * incx]; \
-    for (int64_t step = 0; step < n; step += TS_BLAS_BLOCK) { \
+    if (acs != 1) { \
+        for (int64_t s = 0; s < n; ++s) { \
+            int64_t i = upper ? n - 1 - s : s; \
+            if (!unit) w[i] /= a[i * ars + i * acs]; \
+            int64_t from = upper ? 0 : i + 1; \
+            ts_blas_axpy_##suffix(upper ? i : n - i - 1, -w[i], a + from * ars + i * acs, ars, \
+                                  w + from, 1); \
+        } \
+    } \
+    for (int64_t step = 0; step < (acs == 1 ? n : 0); step += TS_BLAS_BLOCK) { \
         int64_t i0 = upper ? TS_BLAS_MAX(0, n - step - TS_BLAS_BLOCK) : step; \
         int64_t i1 = upper ? n - step : TS_BLAS_MIN(n, step + TS_BLAS_BLOCK); \
         int64_t first = upper ? i1 : 0, count = upper ? n - i1 : i0; \
@@ -413,7 +468,87 @@ int ts_blas_trsv_##suffix(int upper, int unit, const type *a, int64_t ars, int64
     return 0; \
 }
 
-TS_BLAS_LEVEL2(f32, float, TS_BLAS_F32_VECTOR, TS_BLAS_F32_WIDTH, TS_BLAS_F32_LOAD,
-               TS_BLAS_F32_STORE, TS_BLAS_F32_ZERO, TS_BLAS_F32_SPLAT, TS_BLAS_F32_MULADD)
-TS_BLAS_LEVEL2(f64, double, TS_BLAS_F64_VECTOR, TS_BLAS_F64_WIDTH, TS_BLAS_F64_LOAD,
-               TS_BLAS_F64_STORE, TS_BLAS_F64_ZERO, TS_BLAS_F64_SPLAT, TS_BLAS_F64_MULADD)
+#define TS_BLAS_KERNELS(suffix, type, vector, width, load, store, zero, splat, muladd, rows, columns) \
+    TS_BLAS_GEMM(suffix, type, vector, width, load, store, zero, splat, muladd, rows, columns) \
+    TS_BLAS_LEVEL3(suffix, type) \
+    TS_BLAS_LEVEL2(suffix, type, vector, width, load, store, zero, splat, muladd)
+
+#ifdef TS_BLAS_DISPATCH
+TS_BLAS_KERNELS(f32_sse, float, TS_BLAS_F32_VECTOR, TS_BLAS_F32_WIDTH, TS_BLAS_F32_LOAD,
+                TS_BLAS_F32_STORE, TS_BLAS_F32_ZERO, TS_BLAS_F32_SPLAT, TS_BLAS_F32_MULADD,
+                TS_BLAS_F32_ROWS, TS_BLAS_F32_COLUMNS)
+TS_BLAS_KERNELS(f64_sse, double, TS_BLAS_F64_VECTOR, TS_BLAS_F64_WIDTH, TS_BLAS_F64_LOAD,
+                TS_BLAS_F64_STORE, TS_BLAS_F64_ZERO, TS_BLAS_F64_SPLAT, TS_BLAS_F64_MULADD,
+                TS_BLAS_F64_ROWS, TS_BLAS_F64_COLUMNS)
+
+#if defined(__clang__)
+#pragma clang attribute push(__attribute__((target("avx,fma"))), apply_to = function)
+#elif defined(__GNUC__)
+#pragma GCC push_options
+#pragma GCC target("avx,fma")
+#endif
+TS_BLAS_KERNELS(f32_fma, float, TS_BLAS_AVX_F32_VECTOR, TS_BLAS_AVX_F32_WIDTH, TS_BLAS_AVX_F32_LOAD,
+                TS_BLAS_AVX_F32_STORE, TS_BLAS_AVX_F32_ZERO, TS_BLAS_AVX_F32_SPLAT,
+                TS_BLAS_AVX_F32_MULADD, TS_BLAS_AVX_F32_ROWS, TS_BLAS_AVX_F32_COLUMNS)
+TS_BLAS_KERNELS(f64_fma, double, TS_BLAS_AVX_F64_VECTOR, TS_BLAS_AVX_F64_WIDTH, TS_BLAS_AVX_F64_LOAD,
+                TS_BLAS_AVX_F64_STORE, TS_BLAS_AVX_F64_ZERO, TS_BLAS_AVX_F64_SPLAT,
+                TS_BLAS_AVX_F64_MULADD, TS_BLAS_AVX_F64_ROWS, TS_BLAS_AVX_F64_COLUMNS)
+#if defined(__clang__)
+#pragma clang attribute pop
+#elif defined(__GNUC__)
+#pragma GCC pop_options
+#endif
+
+/* The exported symbols pick AVX+FMA when the CPU and OS support it, else SSE2. */
+#define TS_BLAS_PICK(name, suffix, ...) \
+    (ts_fma_supported() ? ts_blas_##name##_##suffix##_fma : ts_blas_##name##_##suffix##_sse)(__VA_ARGS__)
+
+#define TS_BLAS_FORWARD(suffix, type) \
+int ts_blas_gemm_##suffix(int64_t m, int64_t n, int64_t k, type alpha, \
+                          const type *a, int64_t ars, int64_t acs, \
+                          const type *b, int64_t brs, int64_t bcs, type beta, \
+                          type *c, int64_t crs, int64_t ccs) { \
+    return TS_BLAS_PICK(gemm, suffix, m, n, k, alpha, a, ars, acs, b, brs, bcs, beta, c, crs, ccs); \
+} \
+\
+int ts_blas_rank_##suffix(int64_t n, int64_t k, type alpha, \
+                          const type *a, int64_t ars, int64_t acs, \
+                          const type *b, int64_t brs, int64_t bcs, type beta, \
+                          type *c, int64_t crs, int64_t ccs, int upper, int second) { \
+    return TS_BLAS_PICK(rank, suffix, n, k, alpha, a, ars, acs, b, brs, bcs, beta, c, crs, ccs, \
+                        upper, second); \
+} \
+\
+int ts_blas_triangular_##suffix(int solve, int left, int upper, int unit, type alpha, \
+                                const type *a, int64_t ars, int64_t acs, \
+                                type *b, int64_t brs, int64_t bcs, int64_t m, int64_t n) { \
+    return TS_BLAS_PICK(triangular, suffix, solve, left, upper, unit, alpha, a, ars, acs, \
+                        b, brs, bcs, m, n); \
+} \
+\
+int ts_blas_gemv_##suffix(int64_t m, int64_t n, type alpha, const type *a, int64_t ars, \
+                          int64_t acs, const type *x, int64_t incx, type beta, \
+                          type *y, int64_t incy) { \
+    return TS_BLAS_PICK(gemv, suffix, m, n, alpha, a, ars, acs, x, incx, beta, y, incy); \
+} \
+\
+int ts_blas_ger_##suffix(int64_t m, int64_t n, type alpha, const type *x, int64_t incx, \
+                         const type *y, int64_t incy, type *a, int64_t ars, int64_t acs) { \
+    return TS_BLAS_PICK(ger, suffix, m, n, alpha, x, incx, y, incy, a, ars, acs); \
+} \
+\
+int ts_blas_trsv_##suffix(int upper, int unit, const type *a, int64_t ars, int64_t acs, \
+                          int64_t n, type *x, int64_t incx) { \
+    return TS_BLAS_PICK(trsv, suffix, upper, unit, a, ars, acs, n, x, incx); \
+}
+
+TS_BLAS_FORWARD(f32, float)
+TS_BLAS_FORWARD(f64, double)
+#else
+TS_BLAS_KERNELS(f32, float, TS_BLAS_F32_VECTOR, TS_BLAS_F32_WIDTH, TS_BLAS_F32_LOAD,
+                TS_BLAS_F32_STORE, TS_BLAS_F32_ZERO, TS_BLAS_F32_SPLAT, TS_BLAS_F32_MULADD,
+                TS_BLAS_F32_ROWS, TS_BLAS_F32_COLUMNS)
+TS_BLAS_KERNELS(f64, double, TS_BLAS_F64_VECTOR, TS_BLAS_F64_WIDTH, TS_BLAS_F64_LOAD,
+                TS_BLAS_F64_STORE, TS_BLAS_F64_ZERO, TS_BLAS_F64_SPLAT, TS_BLAS_F64_MULADD,
+                TS_BLAS_F64_ROWS, TS_BLAS_F64_COLUMNS)
+#endif

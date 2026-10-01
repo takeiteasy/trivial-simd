@@ -357,7 +357,7 @@ static void check_mask_kernels(void) {
 #define CHECK_BLAS(suffix, type) \
 static type blas_value_##suffix(int seed) { return (type)((seed * 7 + 3) % 17 - 8) / 8; } \
 static void check_blas_##suffix(void) { \
-    enum { M = 37, N = 29, K = 270 }; \
+    enum { M = 137, N = 29, K = 270 }; \
     static type a[M * K + 5], b[K * N + 5], c[M * N + 5], expected[M * N + 5]; \
     for (int i = 0; i < M * K + 5; ++i) a[i] = blas_value_##suffix(i); \
     for (int i = 0; i < K * N + 5; ++i) b[i] = blas_value_##suffix(i + 11); \
@@ -388,7 +388,7 @@ static void check_blas_##suffix(void) { \
 } \
 static void check_blas_solve_##suffix(void) { \
     enum { N = 45, C = 7 }; \
-    static type a[N * N], x[N * C], b[N * C], y[N]; \
+    static type a[N * N], at[N * N], x[N * C], b[N * C], y[N], z[N]; \
     for (int i = 0; i < N; ++i) \
         for (int j = 0; j < N; ++j) a[i * N + j] = blas_value_##suffix(i * N + j) / N + (i == j ? 2 : 0); \
     for (int i = 0; i < N * C; ++i) x[i] = b[i] = blas_value_##suffix(i + 1); \
@@ -402,6 +402,14 @@ static void check_blas_solve_##suffix(void) { \
             type sum = 0; \
             for (int j = upper ? i : 0; j < (upper ? N : i + 1); ++j) sum += a[i * N + j] * y[j]; \
             assert(fabs((double)(sum - x[i * C])) < 1e-3); \
+        } \
+        for (int i = 0; i < N; ++i) \
+            for (int j = 0; j < N; ++j) at[j * N + i] = a[i * N + j]; \
+        for (int unit = 0; unit < 2; ++unit) { \
+            for (int i = 0; i < N; ++i) y[i] = z[i] = x[i * C]; \
+            assert(ts_blas_trsv_##suffix(upper, unit, a, N, 1, N, y, 1) == 0); \
+            assert(ts_blas_trsv_##suffix(upper, unit, at, 1, N, N, z, 1) == 0); \
+            for (int i = 0; i < N; ++i) assert(fabs((double)(y[i] - z[i])) < 1e-3); \
         } \
     } \
 } \
@@ -428,6 +436,12 @@ static void check_blas_level2_##suffix(void) { \
 
 CHECK_BLAS(f32, float)
 CHECK_BLAS(f64, double)
+#ifdef TS_BLAS_DISPATCH
+CHECK_BLAS(f32_sse, float)
+CHECK_BLAS(f64_sse, double)
+CHECK_BLAS(f32_fma, float)
+CHECK_BLAS(f64_fma, double)
+#endif
 
 int main(void) {
     check_integer_s8();
@@ -453,5 +467,22 @@ int main(void) {
     check_blas_solve_f64();
     check_blas_level2_f32();
     check_blas_level2_f64();
+#ifdef TS_BLAS_DISPATCH
+    check_blas_f32_sse();
+    check_blas_f64_sse();
+    check_blas_solve_f32_sse();
+    check_blas_solve_f64_sse();
+    check_blas_level2_f32_sse();
+    check_blas_level2_f64_sse();
+    printf("BLAS AVX+FMA checks: %s\n", ts_fma_supported() ? "run" : "skipped");
+    if (ts_fma_supported()) {
+        check_blas_f32_fma();
+        check_blas_f64_fma();
+        check_blas_solve_f32_fma();
+        check_blas_solve_f64_fma();
+        check_blas_level2_f32_fma();
+        check_blas_level2_f64_fma();
+    }
+#endif
     return 0;
 }

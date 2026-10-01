@@ -8,8 +8,9 @@ The library selects the first available backend in this order:
 | `:native` | Built C library on macOS, Linux, or Windows | Direct pointers on SBCL, ECL, and CCL[^pointer]; copies elsewhere |
 | `:lisp` | Any supported Common Lisp implementation | Direct Lisp array access |
 
-The C backend uses SSE2 on x86-64 and NEON on ARM64. Other architectures use
-scalar C loops. This library enables its SBCL backend only on x86-64. Integer operations
+The C backend uses SSE2 on x86-64 and NEON on ARM64; real BLAS Level 2 and 3
+kernels also use AVX+FMA on x86-64 CPUs that support it, chosen at run time.
+Other architectures use scalar C loops. This library enables its SBCL backend only on x86-64. Integer operations
 use the [per-backend paths](integers.md#backend-coverage).
 Real BLAS Level 2 and 3 routines also use [native kernels](blas-benchmarks.md)
 when the library exports them; an older library without the symbols, the
@@ -74,8 +75,9 @@ tested SIMD support.
 | WebAssembly SIMD128 | [Add wasm SIMD backend](https://todo.sr.ht/~takeiteasy/trivial-simd/11) |
 | SBCL ARM64 SIMD | [Use an in-process SBCL backend](https://todo.sr.ht/~takeiteasy/trivial-simd/31) |
 
-The current native C backend uses SSE2 on x86-64 and NEON on ARM64. The
-additional instruction sets above are not selected by it.
+The current native C backend uses SSE2 on x86-64 and NEON on ARM64, plus
+AVX+FMA for real BLAS. The additional instruction sets above are not selected
+by it.
 
 ### Planned platforms
 

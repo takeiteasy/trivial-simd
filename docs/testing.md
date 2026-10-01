@@ -23,7 +23,8 @@ Lisp kernels in turn for `gemm`, `symm`, `syrk`, `syr2k`, `trmm`, `trsm`,
 `gemv`, `ger`, and `trsv` across layouts, transposes, offsets, increments, and
 block-edge sizes, and check the fallback when the library lacks the symbols.
 `ctest` also checks the C kernels, including the scalar build and allocation
-failure.
+failure. On x86-64 it checks the SSE2 BLAS kernels directly and the AVX+FMA
+kernels where the CPU supports them; the software-FMA target forces SSE2.
 Direct copy tests check both precisions, round trips, empty ranges, and partial
 copy-back, compact slice transfers, and overlapping copy-mode input snapshots. Native program tests check partial-initialization cleanup, finalization,
 retained functions after redefinition, and collection during active native calls.
@@ -228,6 +229,27 @@ sbcl --script tests/slice-bench.lisp
 ccl --no-init --batch --eval '(load (compile-file "tests/slice-bench.lisp" :output-file "/tmp/slice-bench.fasl"))' --eval '(quit)'
 ecl --norc --eval '(load (compile-file "tests/slice-bench.lisp" :output-file "/tmp/slice-bench.fas"))' --eval '(quit)'
 ```
+
+## BLAS profiling
+
+`tests/blas-profile.c` times `gemm`, `syrk`, `trsm`, row- and column-major
+`trsv`, and `gemv` at 64, 256, and 512 in both precisions. On x86-64 it reports
+the SSE2 and AVX+FMA kernels separately.
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_BLAS_PROFILE=ON \
+      "-DBLAS_PROFILE_DEFINITIONS=TS_BLAS_DEPTH=384;TS_BLAS_AVX_F64_ROWS=3;TS_BLAS_AVX_F64_COLUMNS=4"
+cmake --build build --target native_blas_profile
+build/native_blas_profile
+```
+
+`BLAS_PROFILE_DEFINITIONS` overrides `TS_BLAS_DEPTH`, `TS_BLAS_ROW_BLOCK`,
+`TS_BLAS_COLUMN_BLOCK`, and the AVX tile shapes
+`TS_BLAS_AVX_{F32,F64}_{ROWS,COLUMNS}`.[^tiles] The `blas` job of the manual
+**FMA profile** workflow sweeps these on x86-64 Linux; see [CI](ci.md#blas-measurements).
+
+[^tiles]: A tile is `ROWS` vectors by `COLUMNS` scalars; `ROWS × COLUMNS`
+    accumulators must fit the 16 ymm registers with a few to spare.
 
 ## FMA profiling
 

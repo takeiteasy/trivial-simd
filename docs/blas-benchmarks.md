@@ -17,7 +17,8 @@ TRIVIAL_SIMD_BACKEND=lisp BLAS_BENCH_SIZES="16 64 256" sbcl --script tests/blas-
 ```
 
 The script prints one row per routine, layout, and size. The second command
-selects the typed Lisp kernels. `ccl` and `ecl` accept the same script.
+selects the typed Lisp kernels. `BLAS_BENCH_THRESHOLD=1` sends every size to the
+native kernels, to measure below the dispatch threshold. `ccl` and `ecl` accept the same script.
 Recorded runs are in [`benchmark-runs/`](benchmark-runs/): `2026-10-01-blas-native-*` and `2026-10-01-blas-lisp-*`.
 
 ## 64 × 64 results
@@ -73,7 +74,7 @@ views.
 | `dger` | 0.44 | 0.13 | 16.5 | 14.1 |
 | `dgbmv` | 0.40 | 0.13 | 2.12 | 0.57 |
 
-Row-major times; column-major follows the same pattern, except that `dtrsv` gains only 1.2× at 256 × 256. Level 2 at 16 × 16 and `dgbmv` run the Lisp kernels. All
+Row-major times; column-major follows the same pattern.[^trsv] Level 2 at 16 × 16 and `dgbmv` run the Lisp kernels. All
 layouts are in the recorded runs.
 
 ## Thresholds
@@ -90,14 +91,17 @@ on SBCL and CCL, and native wins at every size on ECL.
 
 Complex routines and band, packed, and symmetric Level 2 routines run scalar
 Lisp loops, tracked by [#80](https://todo.sr.ht/~takeiteasy/trivial-simd/80) and
-[#81](https://todo.sr.ht/~takeiteasy/trivial-simd/81). x86 FMA, non-M1 tuning,
-and shared packing buffers are tracked by
+[#81](https://todo.sr.ht/~takeiteasy/trivial-simd/81). x86 tile sizes and thresholds are
+not yet measured on x86-64 hardware, tracked by
 [#82](https://todo.sr.ht/~takeiteasy/trivial-simd/82). The Lisp kernels box
 double-floats on ECL unless each array read is bound to a typed variable.
 
 [^scope]: The benchmark covers `dgemm`, `dsyrk`, `dtrsm`, `dgemv`, `dgbmv`,
     `dtrsv`, and `dger`. Other real routines in those families and `sgemm`
     share the same native code per precision.
+[^trsv]: Column-major `dtrsv` at 256 × 256 takes 9.0 µs natively against 31.9 µs
+    in Lisp; see
+    [`benchmark-runs/2026-10-01-blas-native-sbcl-trsv.txt`](benchmark-runs/2026-10-01-blas-native-sbcl-trsv.txt).
 [^method]: Each time is the median of three batches of at least 50 ms.
     In-place routines (`dtrsm`, `dtrsv`) restore their operand before each
     call in both columns. CBLAS calls run with floating-point traps masked.

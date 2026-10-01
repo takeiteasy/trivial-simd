@@ -63,8 +63,8 @@ view. The [runnable example](../examples/blas.lisp) uses `gemm!`.
 ## Performance
 
 Real `s` and `d` routines above a size threshold run packed SIMD C kernels
-(NEON on ARM64, SSE2 on x86-64) when the native library is built; everything
-else runs typed Lisp loops.[^kernels] On the measured Apple M1 with SBCL, a
+(NEON on ARM64; AVX+FMA on x86-64 CPUs that support it, else SSE2) when the
+native library is built; everything else runs typed Lisp loops.[^kernels] On the measured Apple M1 with SBCL, a
 256×256 `dgemm` takes 827 µs natively against 17.2 ms in Lisp; see the
 [BLAS benchmarks](blas-benchmarks.md).
 
@@ -72,11 +72,13 @@ else runs typed Lisp loops.[^kernels] On the measured Apple M1 with SBCL, a
 
 Complex routines use scalar Lisp loops without cache blocking or SIMD. Native
 complex kernels are tracked by [#80](https://todo.sr.ht/~takeiteasy/trivial-simd/80);
-x86 FMA and tuning by [#82](https://todo.sr.ht/~takeiteasy/trivial-simd/82).
+x86 tile sizes and thresholds are not yet measured on x86-64 hardware;
+tracked by [#82](https://todo.sr.ht/~takeiteasy/trivial-simd/82).
 
 [^kernels]: Native `gemm` packs `A` and `B` panels so any layout or transpose
     runs the same micro-kernel; `trmm`, `trsm`, `syrk`, and `syr2k` split into
-    16-wide diagonal blocks plus native `gemm` panels. The native path needs
+    16-wide diagonal blocks plus native `gemm` panels that share one packing
+    workspace allocated per call. The native path needs
     the built library, pointer array access, and `m·n·k` at or above
     `trivial-simd/blas::*native-blas-threshold*` (1,000; 1 on ECL). Binding it
     to `most-positive-fixnum` forces the Lisp kernels. `symm` and `hemm` expand the stored triangle to a dense matrix and

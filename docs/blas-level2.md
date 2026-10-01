@@ -94,6 +94,7 @@ storage follows the [overlap limitation](api.md#limitations).
     0.38 µs at 64 elements and 0.56 µs at 1,024.
 [^threshold]: Dispatch needs the built library, pointer array access, and at
     least `trivial-simd/blas::*native-blas-level2-threshold*` matrix elements
-    (1,000; 1 on ECL, where the Lisp kernels box floats). `trsv` solves 16-row
-    diagonal blocks and updates the rest with native `gemv`. Binding the
+    (1,000; 1 on ECL, where the Lisp kernels box floats). Row-major `trsv`
+    solves 16-row diagonal blocks and updates the rest with native `gemv`;
+    column-major `trsv` sweeps one column at a time with native `axpy`. Binding the
     variable to `most-positive-fixnum` forces the Lisp kernels.
