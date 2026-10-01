@@ -61,8 +61,9 @@ See [full results and measurement details](docs/benchmarks.md).
 ## Limitations
 
 `X` is supported: the combination passes the test suite in
-[CI](docs/backends.md#tested-combinations). `P` is planned and not supported
-yet. Blank is not planned.
+[CI](docs/backends.md#tested-combinations). `L` passes the suite in
+[local runs](docs/backends.md#local-runs) but not in CI. `P` is planned and not
+supported yet. Blank is not planned.
 
 ### Platforms and Lisp implementations
 
@@ -71,7 +72,7 @@ yet. Blank is not planned.
 | Linux x86-64 | X | X | X |
 | Linux ARM64 | X | X | X |
 | macOS ARM64 | X | X | X |
-| macOS x86-64 | | X | |
+| macOS x86-64 | L | X | |
 | Windows x86-64 | X | [P](https://todo.sr.ht/~takeiteasy/trivial-simd/28) | [P](https://todo.sr.ht/~takeiteasy/trivial-simd/29) |
 | Windows ARM64 | X | | |
 | [FreeBSD](https://todo.sr.ht/~takeiteasy/trivial-simd/14) | P | P | P |

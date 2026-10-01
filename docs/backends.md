@@ -34,6 +34,17 @@ SBCL on ARM64 selects the C backend when built, or the Lisp fallback otherwise.
 The [CI matrix](../.github/workflows/ci.yml) defines the runner versions and
 exercises the full test suite for each row.
 
+## Local runs
+
+These combinations pass the full suite on a developer machine and are not in CI.
+See [local platform runs](testing.md#local-platform-runs) for setup.
+
+| Platform | Lisp implementation | Backends exercised |
+|---|---|---|
+| macOS x86-64 (Rosetta) | SBCL 2.6.8 | `:sbcl`, `:native`, `:lisp`[^rosetta] |
+| macOS ARM64 | CCL `v1.13-459-g690ff7ea` preview build | `:native` |
+
+
 ## Build
 
 ```sh
@@ -125,4 +136,7 @@ Each input has separate storage, including repeated and aliased inputs.
     implementation. Copy mode dispatches once by element type and uses literal CFFI types
     in specialized loops. Foreign index zero corresponds to each vector’s requested
     start; output copy-back touches only the destination slice (`*native-array-access*` is `:copy`).
-[^ccl-arm]: ARM64 CI uses Clozure CL `v1.13-arm64-pre2` on Linux and macOS.
+[^ccl-arm]: ARM64 CI uses Clozure CL `v1.13-arm64-pre2` on Linux and macOS. Newer
+    preview builds work locally; see [local runs](#local-runs).
+[^rosetta]: Rosetta emulates the x86-64 CPU, so SSE2 and `sb-simd` paths run but
+    timings and AVX detection do not match Intel hardware.

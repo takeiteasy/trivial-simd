@@ -59,6 +59,28 @@ For a local ARM64 native check, build the library first, then run:
 TRIVIAL_SIMD_BACKEND=native sbcl --script tests/run.lisp
 ```
 
+## Local platform runs
+
+`tests/x86-sbcl.sh` runs the C tests and the Lisp suite on x86-64 SBCL under
+Rosetta from an ARM64 Mac. It needs `curl`, `rsync`, `cmake`, and Rosetta.
+
+```sh
+tests/x86-sbcl.sh
+SBCL_X86_VERSION=2.6.8 TRIVIAL_SIMD_X86_CACHE=~/.cache/trivial-simd/x86-sbcl tests/x86-sbcl.sh
+```
+
+| Step | Location |
+|---|---|
+| Downloads the x86-64 SBCL binary tarball once | `$TRIVIAL_SIMD_X86_CACHE` (default `~/.cache/trivial-simd/x86-sbcl`) |
+| Copies the tree and builds the library with `CMAKE_OSX_ARCHITECTURES=x86_64` | `work/` in the cache[^x86-copy] |
+| Runs `ctest`, then `tests/run.lisp` with `sb-simd` available | the copy |
+
+Delete the cache directory to reset it.
+
+Clozure CL preview builds for ARM64 run the suite with the `ccl` command shown
+above once the preview binary is on `PATH`. Tested locally: CCL `Version 1.13 (v1.13-459-g690ff7ea) DarwinARM64`. CI pins
+`v1.13-arm64-pre2`.
+
 ## Kernel example
 
 With Quicklisp loaded and this project registered with ASDF:
@@ -288,3 +310,7 @@ Set `TRIVIAL_SIMD_FMA_BASELINE` to a baseline `kernel-math.lisp` source file to
 compile and load its scalar helper before profiling. Baseline `:auto` disables
 the new adapter; `:in-process` uses the candidate loop. Run five fresh processes
 for each Lisp. See [ARM64 FMA measurements](arm64-fma.md#performance-gate).
+
+[^x86-copy]: The Lisp loader reads `build/libtrivial_simd.dylib`, so the x86-64
+    library cannot share the ARM64 `build/`. The SBCL tarball keeps its contrib
+    fasls under `obj/sbcl-home`, which the script sets as `SBCL_HOME`.
