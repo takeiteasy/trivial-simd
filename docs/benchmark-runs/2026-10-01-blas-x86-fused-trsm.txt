@@ -1,0 +1,164 @@
+# BLAS fused trsm default config, GitHub ubuntu-latest, AMD EPYC 9V74, GCC 13.3, 2026-10-01
+# fma-profile.yml run 36845169220 (commit 547433c); two trials
+Hardware FMA: 1
+Blocking: depth 256 rows 128 columns 1024
+AVX tiles: f32 16x6 f64 8x6
+f64
+sse      gemm     64      42.94 us    12.21 GFLOP/s
+sse      syrk     64      24.51 us
+sse      trsm     64      30.90 us
+sse      trsv     64       1.27 us
+sse      trsvc    64       1.00 us
+sse      gemv     64       0.88 us
+avx-fma  gemm     64      20.51 us    25.56 GFLOP/s
+avx-fma  syrk     64      13.53 us
+avx-fma  trsm     64      24.49 us
+avx-fma  trsv     64       1.22 us
+avx-fma  trsvc    64       0.76 us
+avx-fma  gemv     64       0.63 us
+f32
+sse      gemm     64      24.79 us    21.15 GFLOP/s
+sse      syrk     64      15.90 us
+sse      trsm     64      26.08 us
+sse      trsv     64       1.11 us
+sse      trsvc    64       0.67 us
+sse      gemv     64       0.77 us
+avx-fma  gemm     64      12.76 us    41.08 GFLOP/s
+avx-fma  syrk     64       9.99 us
+avx-fma  trsm     64      22.66 us
+avx-fma  trsv     64       1.44 us
+avx-fma  trsvc    64       0.67 us
+avx-fma  gemv     64       0.90 us
+f64
+sse      gemm    256    2295.34 us    14.62 GFLOP/s
+sse      syrk    256    1216.11 us
+sse      trsm    256    1318.73 us
+sse      trsv    256      10.33 us
+sse      trsvc   256      12.51 us
+sse      gemv    256      12.72 us
+avx-fma  gemm    256     904.11 us    37.11 GFLOP/s
+avx-fma  syrk    256     501.23 us
+avx-fma  trsm    256     700.22 us
+avx-fma  trsv    256       7.74 us
+avx-fma  trsvc   256       5.78 us
+avx-fma  gemv    256       8.22 us
+f32
+sse      gemm    256    1203.00 us    27.89 GFLOP/s
+sse      syrk    256     647.10 us
+sse      trsm    256     832.19 us
+sse      trsv    256       7.68 us
+sse      trsvc   256       5.15 us
+sse      gemv    256       8.77 us
+avx-fma  gemm    256     483.95 us    69.33 GFLOP/s
+avx-fma  syrk    256     287.82 us
+avx-fma  trsm    256     506.11 us
+avx-fma  trsv    256       7.46 us
+avx-fma  trsvc   256       4.28 us
+avx-fma  gemv    256       6.08 us
+f64
+sse      gemm    512   18449.75 us    14.55 GFLOP/s
+sse      syrk    512    9475.38 us
+sse      trsm    512   10117.88 us
+sse      trsv    512      40.38 us
+sse      trsvc   512      52.16 us
+sse      gemv    512      50.26 us
+avx-fma  gemm    512    7252.12 us    37.01 GFLOP/s
+avx-fma  syrk    512    3805.00 us
+avx-fma  trsm    512    4754.00 us
+avx-fma  trsv    512      27.27 us
+avx-fma  trsvc   512      26.14 us
+avx-fma  gemv    512      34.54 us
+f32
+sse      gemm    512    9542.12 us    28.13 GFLOP/s
+sse      syrk    512    4992.00 us
+sse      trsm    512    5809.88 us
+sse      trsv    512      24.78 us
+sse      trsvc   512      19.50 us
+sse      gemv    512      30.69 us
+avx-fma  gemm    512    3758.12 us    71.43 GFLOP/s
+avx-fma  syrk    512    2075.94 us
+avx-fma  trsm    512    3098.06 us
+avx-fma  trsv    512      20.61 us
+avx-fma  trsvc   512      15.02 us
+avx-fma  gemv    512      22.13 us
+Hardware FMA: 1
+Blocking: depth 256 rows 128 columns 1024
+AVX tiles: f32 16x6 f64 8x6
+f64
+sse      gemm     64      42.85 us    12.24 GFLOP/s
+sse      syrk     64      24.67 us
+sse      trsm     64      30.64 us
+sse      trsv     64       1.27 us
+sse      trsvc    64       1.00 us
+sse      gemv     64       0.89 us
+avx-fma  gemm     64      20.44 us    25.65 GFLOP/s
+avx-fma  syrk     64      13.56 us
+avx-fma  trsm     64      24.56 us
+avx-fma  trsv     64       1.22 us
+avx-fma  trsvc    64       0.76 us
+avx-fma  gemv     64       0.63 us
+f32
+sse      gemm     64      24.72 us    21.21 GFLOP/s
+sse      syrk     64      15.77 us
+sse      trsm     64      26.05 us
+sse      trsv     64       1.11 us
+sse      trsvc    64       0.67 us
+sse      gemv     64       0.77 us
+avx-fma  gemm     64      12.81 us    40.94 GFLOP/s
+avx-fma  syrk     64       9.99 us
+avx-fma  trsm     64      22.37 us
+avx-fma  trsv     64       1.44 us
+avx-fma  trsvc    64       0.68 us
+avx-fma  gemv     64       0.90 us
+f64
+sse      gemm    256    2301.94 us    14.58 GFLOP/s
+sse      syrk    256    1229.22 us
+sse      trsm    256    1321.12 us
+sse      trsv    256      10.34 us
+sse      trsvc   256      12.46 us
+sse      gemv    256      12.72 us
+avx-fma  gemm    256     906.86 us    37.00 GFLOP/s
+avx-fma  syrk    256     503.77 us
+avx-fma  trsm    256     704.74 us
+avx-fma  trsv    256       7.75 us
+avx-fma  trsvc   256       5.76 us
+avx-fma  gemv    256       8.03 us
+f32
+sse      gemm    256    1210.31 us    27.72 GFLOP/s
+sse      syrk    256     650.93 us
+sse      trsm    256     834.42 us
+sse      trsv    256       7.70 us
+sse      trsvc   256       5.16 us
+sse      gemv    256       8.76 us
+avx-fma  gemm    256     482.28 us    69.57 GFLOP/s
+avx-fma  syrk    256     287.94 us
+avx-fma  trsm    256     504.56 us
+avx-fma  trsv    256       7.49 us
+avx-fma  trsvc   256       4.27 us
+avx-fma  gemv    256       6.05 us
+f64
+sse      gemm    512   18454.50 us    14.55 GFLOP/s
+sse      syrk    512    9612.38 us
+sse      trsm    512   10110.62 us
+sse      trsv    512      40.65 us
+sse      trsvc   512      52.20 us
+sse      gemv    512      50.21 us
+avx-fma  gemm    512    7221.12 us    37.17 GFLOP/s
+avx-fma  syrk    512    3770.94 us
+avx-fma  trsm    512    4732.44 us
+avx-fma  trsv    512      27.93 us
+avx-fma  trsvc   512      26.37 us
+avx-fma  gemv    512      34.37 us
+f32
+sse      gemm    512    9557.38 us    28.09 GFLOP/s
+sse      syrk    512    4976.88 us
+sse      trsm    512    5775.94 us
+sse      trsv    512      24.75 us
+sse      trsvc   512      19.17 us
+sse      gemv    512      30.32 us
+avx-fma  gemm    512    3753.69 us    71.51 GFLOP/s
+avx-fma  syrk    512    2078.91 us
+avx-fma  trsm    512    3077.12 us
+avx-fma  trsv    512      20.51 us
+avx-fma  trsvc   512      14.89 us
+avx-fma  gemv    512      21.63 us

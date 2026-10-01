@@ -61,7 +61,7 @@ The [runnable example](../examples/blas.lisp) shows `gemv!`.
 
 Real dense `gemv`, `ger`, and `trsv` above a size threshold run SIMD C kernels
 when the native library is built.[^threshold] On the measured Apple M1 with
-SBCL, a 256×256 `dgemv` takes 11 µs against 36 µs in Lisp; see the
+SBCL, a 256×256 `dgemv` takes 10.6 µs against 38 µs in Lisp; see the
 [BLAS benchmarks](blas-benchmarks.md).
 
 All other routines walk the stored matrix one contiguous line at a time, so

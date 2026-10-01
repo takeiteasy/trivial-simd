@@ -65,7 +65,7 @@ view. The [runnable example](../examples/blas.lisp) uses `gemm!`.
 Real `s` and `d` routines above a size threshold run packed SIMD C kernels
 (NEON on ARM64; AVX+FMA on x86-64 CPUs that support it, else SSE2) when the
 native library is built; everything else runs typed Lisp loops.[^kernels] On the measured Apple M1 with SBCL, a
-256×256 `dgemm` takes 827 µs natively against 17.2 ms in Lisp; see the
+256×256 `dgemm` takes 840 µs natively against 17.6 ms in Lisp; see the
 [BLAS benchmarks](blas-benchmarks.md).
 
 ## Limitations

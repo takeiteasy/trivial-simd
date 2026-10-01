@@ -1,9 +1,9 @@
 # BLAS benchmarks
 
 Real Level 2 and 3 routines run native SIMD kernels above a size threshold. On
-SBCL at 256 × 256 they are 3× to 20× faster than the typed Lisp kernels and 1.2×
-to 9× slower than system CBLAS, which uses the M1 matrix coprocessor for
-Level 3.[^scope] On ECL, native `dgemm` at 64 × 64 takes 17.8 µs against 12.3 ms.
+SBCL at 256 × 256 they are 3× to 21× faster than the typed Lisp kernels and 1.2×
+to 8× slower than system CBLAS, which uses the M1 matrix coprocessor for
+Level 3.[^scope] On ECL, native `dgemm` at 64 × 64 takes 34.6 µs against 14.4 ms.
 
 Times are microseconds per warmed call on an Apple M1 (macOS ARM64) against
 Accelerate CBLAS, measured on 2026-10-01. They are machine-specific
@@ -30,51 +30,51 @@ views.
 
 | Routine | Lisp | Native | CBLAS | Speedup |
 |---|---:|---:|---:|---:|
-| `dgemm` | 271 | 16.3 | 2.48 | 17× |
-| `dsyrk` | 129 | 15.1 | 3.16 | 8.6× |
-| `dtrsm` | 129 | 15.5 | 4.80 | 8.3× |
-| `dgemv` | 2.53 | 0.91 | 0.44 | 2.8× |
-| `dtrsv` | 2.69 | 1.49 | 0.86 | 1.8× |
-| `dger` | 3.50 | 1.06 | 0.61 | 3.3× |
-| `dgbmv` | 0.72 | 0.75 | 0.21 | Lisp |
+| `dgemm` | 285 | 18.8 | 2.43 | 15× |
+| `dsyrk` | 142 | 12.2 | 3.04 | 12× |
+| `dtrsm` | 127 | 26.8 | 4.51 | 4.7× |
+| `dgemv` | 2.86 | 0.87 | 0.43 | 3.3× |
+| `dtrsv` | 3.04 | 1.48 | 0.82 | 2.1× |
+| `dger` | 3.91 | 1.03 | 0.59 | 3.8× |
+| `dgbmv` | 0.76 | 0.70 | 0.20 | Lisp |
 
 ### CCL 1.13
 
 | Routine | Lisp | Native | CBLAS | Speedup |
 |---|---:|---:|---:|---:|
-| `dgemm` | 384 | 16.6 | 2.55 | 23× |
-| `dsyrk` | 624 | 15.9 | 3.29 | 39× |
-| `dtrsm` | 579 | 25.9 | 4.70 | 22× |
-| `dgemv` | 9.84 | 1.94 | 0.66 | 5.1× |
-| `dtrsv` | 11.9 | 2.44 | 1.03 | 4.9× |
-| `dger` | 6.77 | 2.22 | 0.83 | 3.0× |
-| `dgbmv` | 3.88 | 3.90 | 0.43 | Lisp |
+| `dgemm` | 408 | 19.9 | 2.68 | 20× |
+| `dsyrk` | 701 | 13.1 | 3.28 | 54× |
+| `dtrsm` | 644 | 29.8 | 4.74 | 22× |
+| `dgemv` | 11.4 | 1.91 | 0.64 | 6.0× |
+| `dtrsv` | 12.9 | 2.25 | 1.09 | 5.7× |
+| `dger` | 8.59 | 2.21 | 0.82 | 3.9× |
+| `dgbmv` | 4.97 | 3.85 | 0.41 | Lisp |
 
 ### ECL 26.5.5
 
 | Routine | Lisp | Native | CBLAS | Speedup |
 |---|---:|---:|---:|---:|
-| `dgemm` | 12,303 | 17.8 | 12.9 | 690× |
-| `dsyrk` | 5,268 | 16.8 | 13.1 | 310× |
-| `dtrsm` | 9,642 | 18.1 | 17.0 | 530× |
-| `dgemv` | 208 | 2.09 | 9.82 | 99× |
-| `dtrsv` | 147 | 2.33 | 12.0 | 63× |
-| `dger` | 187 | 2.22 | 9.62 | 84× |
-| `dgbmv` | 27.7 | 30.2 | 9.91 | Lisp |
+| `dgemm` | 14,368 | 34.6 | 18.6 | 416× |
+| `dsyrk` | 5,820 | 20.8 | 20.8 | 279× |
+| `dtrsm` | 10,840 | 28.2 | 23.8 | 384× |
+| `dgemv` | 219 | 3.43 | 13.1 | 64× |
+| `dtrsv` | 166 | 3.40 | 20.7 | 49× |
+| `dger` | 218 | 3.47 | 12.2 | 63× |
+| `dgbmv` | 31.3 | 47.0 | 15.2 | Lisp |
 
 ## Other sizes (SBCL)
 
 | Routine | 16 × 16 | 16 × 16 CBLAS | 256 × 256 | 256 × 256 CBLAS |
 |---|---:|---:|---:|---:|
-| `dgemm` | 0.79 | 0.43 | 827 | 107 |
-| `dsyrk` | 0.87 | 0.70 | 460 | 70.6 |
-| `dtrsm` | 0.99 | 0.45 | 631 | 128 |
-| `dgemv` | 0.49 | 0.14 | 11.0 | 4.05 |
-| `dtrsv` | 0.45 | 0.23 | 10.1 | 7.12 |
-| `dger` | 0.44 | 0.13 | 16.5 | 14.1 |
-| `dgbmv` | 0.40 | 0.13 | 2.12 | 0.57 |
+| `dgemm` | 0.92 | 0.41 | 840 | 100 |
+| `dsyrk` | 0.79 | 0.67 | 468 | 65.8 |
+| `dtrsm` | 1.09 | 0.43 | 630 | 116 |
+| `dgemv` | 0.47 | 0.13 | 10.6 | 4.04 |
+| `dtrsv` | 0.44 | 0.22 | 10.1 | 7.15 |
+| `dger` | 0.43 | 0.12 | 16.8 | 14.4 |
+| `dgbmv` | 0.38 | 0.12 | 2.07 | 0.57 |
 
-Row-major times; column-major follows the same pattern.[^trsv] `dtrsm` takes 0.76× the time of `dgemm` at 256 × 256 on M1.[^trsm] Level 2 at 16 × 16 and `dgbmv` run the Lisp kernels. All
+Row-major times; column-major follows the same pattern.[^trsv] `dtrsm` takes 0.75× the time of `dgemm` at 256 × 256 on M1.[^trsm] Level 2 at 16 × 16 and `dgbmv` run the Lisp kernels. All
 layouts are in the recorded runs.
 
 ## x86-64 results
@@ -95,6 +95,9 @@ The default 8 × 6 (`f64`) and 16 × 6 (`f32`) tiles beat 12 × 4, 8 × 4 and 4 
 by 5% to 30%. Depth, row and column blocks stay within 5% of each other, so
 the M1 values (256, 128, 1024) apply.[^sweep]
 
+`dtrsm` takes 0.77× the time of `dgemm` at 256 × 256 for `f64` on AVX+FMA and
+1.05× for `f32`; at 64 × 64 the ratios are 1.19× and 1.78×.[^x86trsm]
+
 ## Thresholds
 
 Native is used when the work is at least the threshold; Lisp is faster below it
@@ -114,6 +117,8 @@ Complex routines and band, packed, and symmetric Level 2 routines run scalar
 Lisp loops, tracked by [#80](https://todo.sr.ht/~takeiteasy/trivial-simd/80) and
 [#81](https://todo.sr.ht/~takeiteasy/trivial-simd/81). The Lisp kernels box
 double-floats on ECL unless each array read is bound to a typed variable.
+On x86-64, native `trsm` is slow relative to `gemm` for `f32` and at 64 × 64,
+tracked by [#89](https://todo.sr.ht/~takeiteasy/trivial-simd/89).
 
 [^scope]: The benchmark covers `dgemm`, `dsyrk`, `dtrsm`, `dgemv`, `dgbmv`,
     `dtrsv`, and `dger`. Other real routines in those families and `sgemm`
@@ -121,10 +126,12 @@ double-floats on ECL unless each array read is bound to a typed variable.
 [^trsv]: Column-major `dtrsv` at 256 × 256 takes 9.0 µs natively against 31.9 µs
     in Lisp; see
     [`benchmark-runs/2026-10-01-blas-native-sbcl-trsv.txt`](benchmark-runs/2026-10-01-blas-native-sbcl-trsv.txt).
-[^trsm]: Fused solve kernel, 631 µs against 855 µs for `dgemm`; column-major takes 852 µs. See
+[^trsm]: Fused solve kernel, 630 µs against 840 µs for `dgemm`; column-major takes 906 µs. See
     [`benchmark-runs/2026-10-01-blas-native-sbcl-fused-trsm.txt`](benchmark-runs/2026-10-01-blas-native-sbcl-fused-trsm.txt).
 [^x86]: Logs:
     [`benchmark-runs/2026-10-01-blas-x86-sbcl.txt`](benchmark-runs/2026-10-01-blas-x86-sbcl.txt).
+[^x86trsm]: AMD EPYC 9V74, default tiles, in
+    [`benchmark-runs/2026-10-01-blas-x86-fused-trsm.txt`](benchmark-runs/2026-10-01-blas-x86-fused-trsm.txt).
 [^sweep]: Twelve tile and blocking configurations, two runs each, in
     [`benchmark-runs/2026-10-01-blas-x86-sweep.txt`](benchmark-runs/2026-10-01-blas-x86-sweep.txt).
     On the same CPU the AVX+FMA kernels run `dgemm` at 64 × 64 in 10.8 µs
