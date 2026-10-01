@@ -26,3 +26,10 @@
   (trivial-simd:axpy! y 3.0 x)
   (trivial-simd:fma! y x 2.0 y)
   (format t "scale/axpy/fma: ~S ~S~%" x y))
+
+(let ((x (make-array 5 :element-type 'single-float
+                     :initial-contents '(3.0 -4.0 1.0 -4.0 2.0))))
+  (format t "reductions: min ~A at ~A, max ~A at ~A, asum ~A, nrm2 ~A~%"
+          (trivial-simd:minimum x) (trivial-simd:argmin x)
+          (trivial-simd:maximum x) (trivial-simd:argmax x)
+          (trivial-simd:asum x) (trivial-simd:nrm2 x)))

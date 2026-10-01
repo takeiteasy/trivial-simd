@@ -20,9 +20,8 @@ Integer arithmetic [wraps at the vector width](integers.md).
 | [Unary and bounded operations](elementwise.md) | Negate, absolute value, square root, reciprocal, min, max, clamp |
 | [`convert!`](conversion.md) | Convert among numeric vector types |
 | [Masks and selection](masks.md) | Compare, select, count, any, all |
-| `(sum input &key ...)` | Scalar sum |
-| `(dot left right &key ...)` | Scalar dot product |
-| `(dotc left right &key ...)` | Conjugated complex dot product |
+| [`sum`, `dot`, `dotc`, `asum`, `nrm2`](reductions.md) | Scalar sum, dot product, absolute sum, Euclidean norm |
+| [`minimum`, `maximum`, `argmin`, `argmax`](reductions.md) | Extreme element or its index |
 | `(backend)` | `:sbcl`, `:native`, or `:lisp` |
 
 The four binary `!` functions accept a scalar on either side, with a vector
@@ -52,7 +51,7 @@ vector while the element count stays `end - start`.
 | `:y-start`, `:x-start` | `axpy!` |
 | `:destination-start`, `:x-start`, `:y-start`, `:z-start` | `fma!` |
 | `:left-start`, `:right-start` | `dot`, `dotc` |
-| `:input-start` | `sum` |
+| `:input-start` | `sum`, `asum`, `nrm2`, `minimum`, `maximum`, `argmin`, `argmax` |
 | `:destination-start`, `:input-start` | Unary operations and `convert!` |
 | `:destination-start`, `:left-start`, `:right-start` | `min!`, `max!` |
 | `:destination-start`, `:input-start`, `:lower-start`, `:upper-start` | `clamp!` |
@@ -87,7 +86,8 @@ The [kernel API](kernels.md#sum-kernels) composes arithmetic inside a scalar
 sum without a full-length intermediate vector.
 
 Floating-point reductions may differ slightly by backend because SIMD changes
-the addition order.[^order]
+the addition order.[^order] See [reductions](reductions.md) for empty slices,
+ties and optional double accumulation.
 
 `axpy!` uses separate multiplication and addition for floats. `fma!` uses
 the same single-rounding result as scalar [`fma`](kernels.md#numerical-behavior).
@@ -101,7 +101,6 @@ instead. The available integer operations and backend paths are described in
 
 | Area | Ticket |
 |---|---|
-| More reductions | [#42](https://todo.sr.ht/~takeiteasy/trivial-simd/42) |
 | Strided access | [#43](https://todo.sr.ht/~takeiteasy/trivial-simd/43) |
 | Copy, fill, swap | [#44](https://todo.sr.ht/~takeiteasy/trivial-simd/44) |
 | Shifted overlap between destination and input slices | [#67](https://todo.sr.ht/~takeiteasy/trivial-simd/67) |

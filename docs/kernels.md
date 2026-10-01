@@ -145,7 +145,7 @@ for measurements and [FMA fallback limitations](#limitations).
   [call setup ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/59).
 - Reductions are top-level sums only. Nested reductions and additional reducers
   are unsupported. See the
-  [additional reductions ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/42).
+  [kernel reducers ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/90).
 - ECL's first native call for each setup signature includes helper compilation,
   costing hundreds of milliseconds. Cold compilation for different signatures
   is serialized. See the

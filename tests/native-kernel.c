@@ -467,7 +467,51 @@ CHECK_BLAS(f32_fma, float)
 CHECK_BLAS(f64_fma, double)
 #endif
 
+#define CHECK_REDUCTIONS(suffix, type, wide_check) \
+static void check_reductions_##suffix(void) { \
+    type input[300]; \
+    for (size_t n = 0; n <= 300; n += n < 70 ? 1 : 37) { \
+        for (size_t i = 0; i < n; ++i) input[i] = (type)((int)((i * 7 + 3) % 9) - 4); \
+        size_t least = 0, greatest = 0, largest = 0; \
+        double sum = 0, magnitude = 0; \
+        for (size_t i = 1; i < n; ++i) { \
+            if (input[i] < input[least]) least = i; \
+            if (input[i] > input[greatest]) greatest = i; \
+            if (fabs((double)input[i]) > fabs((double)input[largest])) largest = i; \
+        } \
+        for (size_t i = 0; i < n; ++i) { sum += input[i]; magnitude += fabs((double)input[i]); } \
+        assert(ts_argmin_##suffix(input, n) == least); \
+        assert(ts_argmax_##suffix(input, n) == greatest); \
+        assert(ts_iamax_##suffix(input, n) == largest); \
+        assert(ts_asum_##suffix(input, n) == (type)magnitude); \
+        wide_check \
+    } \
+}
+
+CHECK_REDUCTIONS(f32, float, \
+    assert(ts_sum_acc_f32(input, n) == sum); \
+    assert(ts_asum_acc_f32(input, n) == magnitude); \
+    assert(ts_dot_acc_f32(input, input, n) == (double)ts_dot_f32(input, input, n));)
+CHECK_REDUCTIONS(f64, double, )
+
+static void check_first_extreme_wins(void) {
+    float input[100];
+    for (size_t i = 0; i < 100; ++i) input[i] = 1.0f;
+    input[40] = -0.0f; input[41] = 0.0f;
+    assert(ts_argmin_f32(input, 100) == 40 && ts_argmax_f32(input, 100) == 0);
+    input[40] = 0.0f; input[41] = -0.0f;
+    for (size_t i = 0; i < 100; ++i) input[i] = -input[i];
+    assert(ts_argmax_f32(input, 100) == 40 && ts_argmin_f32(input, 100) == 0);
+    {
+        float widened[3] = {16777216.0f, 1.0f, 1.0f};
+        assert(ts_sum_acc_f32(widened, 3) == 16777218.0);
+    }
+}
+
 int main(void) {
+    check_reductions_f32();
+    check_reductions_f64();
+    check_first_extreme_wins();
     check_integer_s8();
     check_integer_u8();
     check_integer_s16();

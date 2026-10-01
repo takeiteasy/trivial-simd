@@ -63,17 +63,35 @@
   (dotimes (i count y)
     (incf (aref y (+ y-offset i)) (* a (aref x (+ x-offset i))))))
 
-(defun complex-sum (input count offset)
-  (let ((result (complex-zero (vector-type input))))
+(defun complex-sum (input count offset &optional wide)
+  (let ((result (if wide #C(0d0 0d0) (complex-zero (vector-type input)))))
     (dotimes (i count result)
       (incf result (aref input (+ offset i))))))
 
-(defun complex-dot (left right count left-offset right-offset conjugate-left)
-  (let ((result (complex-zero (vector-type left))))
+(defun widen-complex (value)
+  (complex (coerce (realpart value) 'double-float)
+           (coerce (imagpart value) 'double-float)))
+
+(defun complex-dot (left right count left-offset right-offset conjugate-left &optional wide)
+  (let ((result (if wide #C(0d0 0d0) (complex-zero (vector-type left)))))
     (dotimes (i count result)
-      (let ((a (aref left (+ left-offset i))))
-        (incf result (* (if conjugate-left (conjugate a) a)
-                        (aref right (+ right-offset i))))))))
+      (let ((a (aref left (+ left-offset i)))
+            (b (aref right (+ right-offset i))))
+        (when wide (setf a (widen-complex a) b (widen-complex b)))
+        (incf result (* (if conjugate-left (conjugate a) a) b))))))
+
+(defun complex-asum (input count offset wide)
+  (let ((result (if (and (eq (vector-type input) :c32) (not wide)) 0.0f0 0.0d0)))
+    (dotimes (i count result)
+      (let ((value (aref input (+ offset i))))
+        (incf result (abs (if wide (widen-complex value) value)))))))
+
+(defun complex-nrm2 (input count offset)
+  "Euclidean norm of complex single-float elements, accumulated in double precision."
+  (let ((sum 0d0))
+    (dotimes (i count (sqrt sum))
+      (let ((value (widen-complex (aref input (+ offset i)))))
+        (incf sum (+ (expt (realpart value) 2) (expt (imagpart value) 2)))))))
 
 (defun complex-unary (operation destination input count d-offset i-offset)
   (dotimes (i count destination)

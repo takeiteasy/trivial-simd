@@ -208,6 +208,77 @@ TS_REDUCTIONS(f32, float, TS_F32_WIDTH, TS_F32_VECTOR, TS_F32_LOAD, TS_F32_STORE
 TS_REDUCTIONS(f64, double, TS_F64_WIDTH, TS_F64_VECTOR, TS_F64_LOAD, TS_F64_STORE,
               TS_F64_ZERO, TS_F64_ADD, TS_F64_MUL)
 
+#define TS_ABS_SCALAR(value) ((value) < 0 ? -(value) : (value))
+#define TS_ASUM(suffix, type, width, vector_type, load, store, zero, add, abs) \
+type ts_asum_##suffix(const type *input, size_t n) { \
+    size_t i = 0; \
+    vector_type lanes = zero(); \
+    for (; i + width <= n; i += width) lanes = add(lanes, abs(load(input + i))); \
+    type values[width]; \
+    store(values, lanes); \
+    type result = 0; \
+    for (size_t lane = 0; lane < width; ++lane) result += values[lane]; \
+    for (; i < n; ++i) result += TS_ABS_SCALAR(input[i]); \
+    return result; \
+}
+
+TS_ASUM(f32, float, TS_F32_WIDTH, TS_F32_VECTOR, TS_F32_LOAD, TS_F32_STORE,
+        TS_F32_ZERO, TS_F32_ADD, TS_F32_ABS)
+TS_ASUM(f64, double, TS_F64_WIDTH, TS_F64_VECTOR, TS_F64_LOAD, TS_F64_STORE,
+        TS_F64_ZERO, TS_F64_ADD, TS_F64_ABS)
+
+/* Widened f32 reductions use four double lanes on every target so results match across ISAs. */
+#define TS_WIDE_LANES 4
+#define TS_WIDE_REDUCTION(name, args, term) \
+double ts_##name##_acc_f32 args { \
+    double lanes[TS_WIDE_LANES] = {0}, result = 0; \
+    size_t i = 0; \
+    for (; i + TS_WIDE_LANES <= n; i += TS_WIDE_LANES) \
+        for (size_t lane = 0; lane < TS_WIDE_LANES; ++lane) { \
+            size_t k = i + lane; \
+            lanes[lane] += term; \
+        } \
+    for (size_t lane = 0; lane < TS_WIDE_LANES; ++lane) result += lanes[lane]; \
+    for (; i < n; ++i) { size_t k = i; result += term; } \
+    return result; \
+}
+
+TS_WIDE_REDUCTION(sum, (const float *a, size_t n), (double)a[k])
+TS_WIDE_REDUCTION(dot, (const float *a, const float *b, size_t n), (double)a[k] * (double)b[k])
+TS_WIDE_REDUCTION(asum, (const float *a, size_t n), fabs((double)a[k]))
+
+/* First extreme element wins; blocks with no improvement skip the scalar scan. */
+#define TS_ARG_BLOCK 32
+#define TS_ARG_REDUCTION(name, suffix, type, better) \
+size_t ts_##name##_##suffix(const type *input, size_t n) { \
+    if (!n) return 0; \
+    type best = input[0]; \
+    size_t index = 0, i = 1; \
+    for (; i + TS_ARG_BLOCK <= n; i += TS_ARG_BLOCK) { \
+        type block = input[i]; \
+        for (size_t j = 1; j < TS_ARG_BLOCK; ++j) \
+            if (better(input[i + j], block)) block = input[i + j]; \
+        if (!better(block, best)) continue; \
+        for (size_t j = 0; j < TS_ARG_BLOCK; ++j) \
+            if (better(input[i + j], best)) { best = input[i + j]; index = i + j; } \
+    } \
+    for (; i < n; ++i) \
+        if (better(input[i], best)) { best = input[i]; index = i; } \
+    return index; \
+}
+
+#define TS_LESS(a, b) ((a) < (b))
+#define TS_GREATER(a, b) ((a) > (b))
+TS_ARG_REDUCTION(argmin, f32, float, TS_LESS)
+TS_ARG_REDUCTION(argmin, f64, double, TS_LESS)
+TS_ARG_REDUCTION(argmax, f32, float, TS_GREATER)
+TS_ARG_REDUCTION(argmax, f64, double, TS_GREATER)
+
+/* Internal BLAS i?amax: first index of the largest magnitude. */
+#define TS_ABS_GREATER(a, b) (TS_ABS_SCALAR(a) > TS_ABS_SCALAR(b))
+TS_ARG_REDUCTION(iamax, f32, float, TS_ABS_GREATER)
+TS_ARG_REDUCTION(iamax, f64, double, TS_ABS_GREATER)
+
 enum {
     TS_OP_COPY, TS_OP_CONSTANT, TS_OP_ADD, TS_OP_SUBTRACT,
     TS_OP_MULTIPLY, TS_OP_DIVIDE, TS_OP_NEGATE, TS_OP_SPILL, TS_OP_RELOAD,

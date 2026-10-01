@@ -147,6 +147,7 @@
   #-(and sbcl x86-64)
   (error "SBCL SIMD is unavailable on this platform"))
 
+;; TODO: untyped loops box every float, ~25x slower than typed loops (#93)
 (defun lisp-sum (input count offset)
   (let ((type (vector-type input)))
     (when (integer-type-p type)

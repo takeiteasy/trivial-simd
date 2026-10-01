@@ -17,7 +17,8 @@ Invalid types or spans signal an error before the routine starts.
 | Maximum absolute index | `isamax`, `idamax`, `icamax`, `izamax` | Zero-based logical index |
 | Rotation | `srotg`, `drotg`, `crotg`, `zrotg`, `srotmg`, `drotmg`, `srot`, `drot`, `csrot`, `zdrot`, `crot`, `zrot`, `srotm`, `drotm` | Parameters or modified vectors |
 
-Complex absolute sums and index searches use `abs(realpart) + abs(imagpart)`;
+Unit-stride real `asum`, `nrm2` and `i?amax` call the core [reductions](reductions.md)
+and their native paths. Complex absolute sums and index searches use `abs(realpart) + abs(imagpart)`;
 norms use Euclidean magnitude. Index ties select the first visited element.
 The empty index result is zero. `dotu` does not conjugate; `dotc` conjugates
 its first vector. `sdsdot` accumulates in double precision, adds a
@@ -44,8 +45,9 @@ vectors. Without `:end`, paired vectors have equal lengths.
 
 ## Limitations
 
-Nonunit increments use scalar loops while core strided operations are tracked
-by [#43](https://todo.sr.ht/~takeiteasy/trivial-simd/43). Shifted overlap
+Nonunit increments and complex reductions use scalar loops. Core strided
+operations are tracked by [#43](https://todo.sr.ht/~takeiteasy/trivial-simd/43)
+and native complex reductions by [#91](https://todo.sr.ht/~takeiteasy/trivial-simd/91). Shifted overlap
 between input and output spans follows the [overlap limitation](api.md#limitations).
 
 [^rotm]: The flag in the first parameter element selects which matrix entries

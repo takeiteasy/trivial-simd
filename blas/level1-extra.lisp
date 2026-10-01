@@ -77,6 +77,15 @@
 
 (defun blas-reduce (operation n x incx x-offset type)
   (validate-span n x incx x-offset type)
+  (if (and (= incx 1) (plusp n) (member type '(single-float double-float)))
+      (let ((end (+ x-offset n)))
+        (ecase operation
+          (:asum (trivial-simd:asum x :start x-offset :end end))
+          (:nrm2 (trivial-simd:nrm2 x :start x-offset :end end))
+          (:iamax (- (trivial-simd::absolute-argmax x n x-offset) x-offset))))
+      (blas-reduce-strided operation n x incx x-offset type)))
+
+(defun blas-reduce-strided (operation n x incx x-offset type)
   (let* ((real-type (if (consp type) (second type) type))
          (sum (coerce 0 real-type))
          (scale (coerce 0 real-type))

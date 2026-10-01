@@ -15,6 +15,7 @@
                (:file "operations")
                (:file "extended-operations")
                (:file "complex-operations")
+               (:file "reductions")
                (:file "kernel"))
   :in-order-to ((asdf:test-op (asdf:test-op "trivial-simd/tests"))))
 
@@ -29,6 +30,7 @@
                (:file "tests/integers")
                (:file "tests/blas")
                (:file "tests/complex")
+               (:file "tests/reductions")
                (:file "tests/blas-level1")
                (:file "tests/blas-level2")
                (:file "tests/blas-level3")

@@ -470,6 +470,55 @@
 
 (define-native-reductions)
 
+(macrolet ((define-float-reductions ()
+             `(progn
+                ,@(loop for (key foreign) in '((:f32 :float) (:f64 :double))
+                        append
+                        `((define-native (,(format nil "ts_asum_~(~A~)" key)
+                                          ,(intern (format nil "%NATIVE-ASUM-~A" key)))
+                              ,foreign (input :pointer) (length :size))
+                          ,@(loop for name in '("ARGMIN" "ARGMAX" "IAMAX")
+                                  collect
+                                  `(define-native (,(format nil "ts_~(~A~)_~(~A~)" name key)
+                                                   ,(intern (format nil "%NATIVE-~A-~A" name key)))
+                                       :size (input :pointer) (length :size)))))
+                (define-native ("ts_sum_acc_f32" %native-sum-acc-f32) :double
+                  (input :pointer) (length :size))
+                (define-native ("ts_asum_acc_f32" %native-asum-acc-f32) :double
+                  (input :pointer) (length :size))
+                (define-native ("ts_dot_acc_f32" %native-dot-acc-f32) :double
+                  (left :pointer) (right :pointer) (length :size)))))
+  (define-float-reductions))
+
+(defun native-float-reduction (prefix input count offset)
+  "Call the float reduction named by PREFIX on INPUT's slice."
+  (let ((function (native-bulk-function prefix (vector-type input)))
+        (type (foreign-type input)))
+    (with-native-vectors (type ((a input offset)) :count count)
+      (funcall function a count))))
+
+(defun native-sum-acc (input count offset)
+  (native-float-reduction "%NATIVE-SUM-ACC-" input count offset))
+
+(defun native-asum (input count offset)
+  (native-float-reduction "%NATIVE-ASUM-" input count offset))
+
+(defun native-asum-acc (input count offset)
+  (native-float-reduction "%NATIVE-ASUM-ACC-" input count offset))
+
+(defun native-argmin (input count offset)
+  (+ offset (native-float-reduction "%NATIVE-ARGMIN-" input count offset)))
+
+(defun native-argmax (input count offset)
+  (+ offset (native-float-reduction "%NATIVE-ARGMAX-" input count offset)))
+
+(defun native-iamax (input count offset)
+  (+ offset (native-float-reduction "%NATIVE-IAMAX-" input count offset)))
+
+(defun native-dot-acc (left right count left-offset right-offset)
+  (with-native-vectors (:float ((a left left-offset) (b right right-offset)) :count count)
+    (%native-dot-acc-f32 a b count)))
+
 (defstruct (native-program (:constructor %make-native-program))
   code code-length f32-constants f64-constants constants constant-type scratch-count
   #+ecl runner)

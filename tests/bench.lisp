@@ -169,6 +169,66 @@
                           operation type length implementation time
                           (/ scalar-time time)))))))))))
 
+;; Scalar baselines for the reductions beyond sum and dot.
+(macrolet ((define-reduction-loops (type asum argmax zero)
+             `(progn
+                (defun ,asum (a)
+                  (declare (type (simple-array ,type (*)) a) (optimize (speed 3)))
+                  (let ((result ,zero))
+                    (declare (type ,type result))
+                    (dotimes (i (length a) result)
+                      (incf result (abs (aref a i))))))
+                (defun ,argmax (a)
+                  (declare (type (simple-array ,type (*)) a) (optimize (speed 3)))
+                  (let ((index 0))
+                    (declare (type fixnum index))
+                    (dotimes (i (length a) index)
+                      (when (> (aref a i) (aref a index)) (setf index i))))))))
+  (define-reduction-loops single-float scalar-asum-f32 scalar-argmax-f32 0.0f0)
+  (define-reduction-loops double-float scalar-asum-f64 scalar-argmax-f64 0.0d0))
+
+(dolist (name '(scalar-asum-f32 scalar-argmax-f32 scalar-asum-f64 scalar-argmax-f64))
+  (unless (compiled-function-p (symbol-function name))
+    (compile name)))
+
+(defun reduction-benchmark-function (operation implementation type a)
+  (if (eq implementation :scalar)
+      (let ((function (ecase operation
+                        (:asum (if (eq type 'single-float) #'scalar-asum-f32 #'scalar-asum-f64))
+                        (:argmax (if (eq type 'single-float) #'scalar-argmax-f32 #'scalar-argmax-f64))
+                        (:nrm2 (if (eq type 'single-float) #'scalar-dot-f32 #'scalar-dot-f64)))))
+        (if (eq operation :nrm2)
+            (lambda () (sqrt (funcall function a a)))
+            (lambda () (funcall function a))))
+      (let ((function (ecase operation
+                        (:asum #'trivial-simd:asum)
+                        (:argmax #'trivial-simd:argmax)
+                        (:nrm2 #'trivial-simd:nrm2))))
+        (lambda () (funcall function a)))))
+
+(format t "~%Reduction comparison (speedup = scalar / implementation)~%")
+(format t "~12A ~12A ~8A ~14A ~10A ~10A~%"
+        "Operation" "Type" "Elements" "Implementation" "us/call" "Speedup")
+(dolist (type '(single-float double-float))
+  (dolist (length '(32 1024 65536))
+    (let ((a (benchmark-input :a length type)))
+      (dolist (operation '(:asum :argmax :nrm2))
+        (let ((scalar-time nil)
+              (expected (funcall (reduction-benchmark-function operation :scalar type a))))
+          (dolist (implementation (cons :scalar (benchmark-backends)))
+            (with-benchmark-backend (implementation)
+              (let* ((function (reduction-benchmark-function operation implementation type a))
+                     (result (funcall function)))
+                (unless (<= (abs (- result expected)) (* 1d-4 (max 1 (abs expected))))
+                  (error "~A ~A benchmark mismatch: got ~S, expected ~S"
+                         operation type result expected))
+                (let ((time (benchmark-time function)))
+                  (when (eq implementation :scalar)
+                    (setf scalar-time time))
+                  (format t "~12A ~12A ~8D ~14A ~10,3F ~9,2Fx~%"
+                          operation type length implementation time
+                          (/ scalar-time time)))))))))))
+
 (format t "~%Kernel a*b+c~%")
 (dolist (length '(32 1024 65536))
   (let ((a (make-array length :element-type 'single-float :initial-element 1.0))

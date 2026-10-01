@@ -153,34 +153,57 @@ override the start for one vector." verb)
         (:lisp (lisp-bulk-fma destination x y z count d-offset x-offset y-offset z-offset)))))
   destination)
 
-(defun sum (input &key start end input-start)
-  "Return the sum of the :START to :END slice of INPUT, or a zero if empty."
+(declaim (ftype function lisp-sum-wide lisp-dot-wide))
+
+(defun wide-accumulation-p (type accumulate)
+  "True when :ACCUMULATE widens TYPE's partial sums to double precision."
+  (cond ((null accumulate) nil)
+        ((not (eq accumulate :f64))
+         (error "Unknown :ACCUMULATE ~S; only :F64 is supported" accumulate))
+        ((integer-type-p type)
+         (error ":ACCUMULATE does not apply to integer vectors"))
+        (t (and (member type '(:f32 :c32)) t))))
+
+(defun sum (input &key start end input-start accumulate)
+  "Return the sum of the :START to :END slice of INPUT, or a zero if empty.
+With :ACCUMULATE :F64, single-float and complex single-float sums accumulate and
+return double precision."
   (multiple-value-bind (type count offsets)
       (resolve-slice (list input) (list input-start) start end)
-    (let ((offset (first offsets)))
-      (if (complex-type-p type)
-          (complex-sum input count offset)
-          (ecase *backend*
-            (:sbcl (sbcl-sum input count offset))
-            (:native (native-sum input count offset))
-            (:lisp (lisp-sum input count offset)))))))
+    (let ((offset (first offsets))
+          (wide (wide-accumulation-p type accumulate)))
+      (cond ((complex-type-p type) (complex-sum input count offset wide))
+            (wide (if (eq *backend* :native)
+                      (native-sum-acc input count offset)
+                      (lisp-sum-wide input count offset)))
+            (t (ecase *backend*
+                 (:sbcl (sbcl-sum input count offset))
+                 (:native (native-sum input count offset))
+                 (:lisp (lisp-sum input count offset))))))))
 
-(defun dot (left right &key start end left-start right-start)
-  "Return the dot product of the :START to :END slices of LEFT and RIGHT."
+(defun dot (left right &key start end left-start right-start accumulate)
+  "Return the dot product of the :START to :END slices of LEFT and RIGHT.
+With :ACCUMULATE :F64, single-float and complex single-float products accumulate
+and return double precision."
   (multiple-value-bind (type count offsets)
       (resolve-slice (list left right) (list left-start right-start) start end)
     (destructuring-bind (left-offset right-offset) offsets
-      (if (complex-type-p type)
-          (complex-dot left right count left-offset right-offset nil)
-          (ecase *backend*
-            (:sbcl (sbcl-dot left right count left-offset right-offset))
-            (:native (native-dot left right count left-offset right-offset))
-            (:lisp (lisp-dot left right count left-offset right-offset)))))))
+      (let ((wide (wide-accumulation-p type accumulate)))
+        (cond ((complex-type-p type)
+               (complex-dot left right count left-offset right-offset nil wide))
+              (wide (if (eq *backend* :native)
+                        (native-dot-acc left right count left-offset right-offset)
+                        (lisp-dot-wide left right count left-offset right-offset)))
+              (t (ecase *backend*
+                   (:sbcl (sbcl-dot left right count left-offset right-offset))
+                   (:native (native-dot left right count left-offset right-offset))
+                   (:lisp (lisp-dot left right count left-offset right-offset)))))))))
 
-(defun dotc (left right &key start end left-start right-start)
+(defun dotc (left right &key start end left-start right-start accumulate)
   "Return the dot product with LEFT conjugated."
   (multiple-value-bind (type count offsets)
       (resolve-slice (list left right) (list left-start right-start) start end)
     (unless (complex-type-p type)
       (error "DOTC requires complex vectors"))
-    (complex-dot left right count (first offsets) (second offsets) t)))
+    (complex-dot left right count (first offsets) (second offsets) t
+                 (wide-accumulation-p type accumulate))))

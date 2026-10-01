@@ -6,6 +6,9 @@ backend for both float types and eight integer types, empty vectors, SIMD
 tails, aliasing, wrapping arithmetic, division errors, and type boundaries.
 Extended operation tests cover unary and bounded arithmetic, all conversion
 type pairs and rounding modes, byte masks, selection, and mask kernels.
+Reduction tests cover `minimum`, `maximum`, `argmin`, `argmax`, `asum`, `nrm2`
+and `:accumulate` on every backend, including ties, signed zeros, absolute
+indexes, overflow, wrapping and error cases.
 BLAS Level 1 tests cover real and complex precisions, offsets, increments,
 errors, rotations, and convenience wrappers. They compare against an available
 system CBLAS (Accelerate on macOS, or OpenBLAS/BLAS on other platforms); only
