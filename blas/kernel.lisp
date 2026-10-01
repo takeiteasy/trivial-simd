@@ -21,6 +21,40 @@
        (push (cons ',type #',name) (get ',base 'kernels))
        ',name)))
 
+(defvar *native-blas-threshold* #+ecl 1 #-ecl 1000
+  "Smallest operation count (multiply-adds) sent to the native BLAS kernels.")
+
+(defvar *native-blas-level2-threshold* #+ecl 1 #-ecl 1000
+  "Smallest matrix element count sent to the native Level 2 kernels.")
+
+(defun native-blas-p (type work &optional (threshold *native-blas-threshold*))
+  "True when real TYPE and WORK multiply-adds should use the native kernels."
+  (and (member type '(single-float double-float))
+       trivial-simd::*native-blas-available-p*
+       (not (eq (trivial-simd:backend) :lisp))
+       (eq trivial-simd::*native-array-access* :pointer)
+       (plusp work)
+       (>= work threshold)))
+
+(defun check-native-blas-status (status)
+  (unless (zerop status)
+    (error "Unable to allocate native BLAS scratch storage")))
+
+(defmacro call-native-blas (type (single-function double-function) (&rest arrays)
+                            &rest arguments)
+  "Call the native function for real TYPE. Each (POINTER ARRAY OFFSET) in
+ARRAYS binds POINTER to the pinned element at OFFSET for use in ARGUMENTS."
+  (flet ((call (function foreign)
+           `(trivial-simd::with-pinned-pointers
+                ,(loop for (pointer array) in arrays collect (list pointer array))
+              (let ,(loop for (pointer nil offset) in arrays
+                          collect `(,pointer (trivial-simd::element-pointer
+                                              ,pointer ,foreign ,offset)))
+                (check-native-blas-status (,function ,@arguments))))))
+    `(if (eq ,type 'single-float)
+         ,(call single-function :float)
+         ,(call double-function :double))))
+
 (defmacro conj-if (type flag value)
   (if (consp type)
       `(if ,flag (conjugate ,value) ,value)

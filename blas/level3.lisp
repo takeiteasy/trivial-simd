@@ -36,7 +36,7 @@
       (values (matrix-view-cols view) (matrix-view-rows view))))
 
 (defmacro define-level3-kernels (type)
-  ;; TODO: Scalar loops without cache blocking or SIMD; native kernels (#79).
+  ;; TODO: Complex types use scalar loops without cache blocking or SIMD; native kernels (#80).
   (let ((array `(simple-array ,type (*))) (zero `(coerce 0 ',type)))
     `(progn
        (define-kernel gemm-kernel ,type
@@ -214,6 +214,43 @@
 (define-level3-kernels (complex single-float))
 (define-level3-kernels (complex double-float))
 
+(defun call-gemm (type alpha a abase ars acs conj-a b bbase brs bcs conj-b beta
+                 c cbase crs ccs m n k)
+  (if (native-blas-p type (* m n k))
+      (call-native-blas type (trivial-simd::%native-blas-gemm-f32
+                              trivial-simd::%native-blas-gemm-f64)
+          ((ap a abase) (bp b bbase) (cp c cbase))
+        m n k alpha ap ars acs bp brs bcs beta cp crs ccs)
+      (funcall (find-kernel 'gemm-kernel type)
+               alpha a abase ars acs conj-a b bbase brs bcs conj-b beta
+               c cbase crs ccs m n k))
+  nil)
+
+(defun call-rank (type hermitian alpha a abase ars acs conj-a b bbase brs bcs conj-b
+                  beta c cbase crs ccs n k upper second)
+  (if (native-blas-p type (* n n k))
+      (call-native-blas type (trivial-simd::%native-blas-rank-f32
+                              trivial-simd::%native-blas-rank-f64)
+          ((ap a abase) (bp b bbase) (cp c cbase))
+        n k alpha ap ars acs bp brs bcs beta cp crs ccs (if upper 1 0) (if second 1 0))
+      (funcall (find-kernel 'rank-kernel type)
+               alpha (if hermitian (conjugate alpha) alpha)
+               a abase ars acs conj-a b bbase brs bcs conj-b beta
+               c cbase crs ccs n k upper hermitian second))
+  nil)
+
+(defun call-triangular (type solve left upper unit alpha a abase ars acs conj
+                        b bbase brs bcs m n)
+  (if (native-blas-p type (* m n (if left m n)))
+      (call-native-blas type (trivial-simd::%native-blas-triangular-f32
+                              trivial-simd::%native-blas-triangular-f64)
+          ((ap a abase) (bp b bbase))
+        (if solve 1 0) (if left 1 0) (if upper 1 0) (if unit 1 0) alpha
+        ap ars acs bp brs bcs m n)
+      (funcall (find-kernel 'triangular-kernel type)
+               solve left upper unit alpha a abase ars acs conj b bbase brs bcs m n))
+  nil)
+
 (defun level3-gemm (transa transb alpha a b beta c type)
   (validate-transpose transa)
   (validate-transpose transb)
@@ -229,10 +266,9 @@
       (multiple-value-bind (adata abase ars acs) (dense-strides a transa)
         (multiple-value-bind (bdata bbase brs bcs) (dense-strides b transb)
           (multiple-value-bind (cdata cbase crs ccs) (dense-strides c :no-transpose)
-            (funcall (find-kernel 'gemm-kernel type)
-                     alpha adata abase ars acs (eq transa :conjugate-transpose)
-                     bdata bbase brs bcs (eq transb :conjugate-transpose)
-                     beta cdata cbase crs ccs m n k))))
+            (call-gemm type alpha adata abase ars acs (eq transa :conjugate-transpose)
+                       bdata bbase brs bcs (eq transb :conjugate-transpose)
+                       beta cdata cbase crs ccs m n k))))
       c)))
 
 (defun validate-side (side)
@@ -260,12 +296,10 @@
       (multiple-value-bind (bdata bbase brs bcs) (dense-strides b :no-transpose)
         (multiple-value-bind (cdata cbase crs ccs) (dense-strides c :no-transpose)
           (if (eq side :left)
-              (funcall (find-kernel 'gemm-kernel type)
-                       alpha full 0 order 1 nil bdata bbase brs bcs nil
-                       beta cdata cbase crs ccs m n order)
-              (funcall (find-kernel 'gemm-kernel type)
-                       alpha bdata bbase brs bcs nil full 0 order 1 nil
-                       beta cdata cbase crs ccs m n order)))))
+              (call-gemm type alpha full 0 order 1 nil bdata bbase brs bcs nil
+                         beta cdata cbase crs ccs m n order)
+              (call-gemm type alpha bdata bbase brs bcs nil full 0 order 1 nil
+                         beta cdata cbase crs ccs m n order)))))
     c))
 
 (defun validate-rank-transpose (transpose hermitian type)
@@ -300,11 +334,9 @@
         (multiple-value-bind (bdata bbase brs bcs)
             (dense-strides (if second-input b a) transpose)
           (multiple-value-bind (cdata cbase crs ccs) (dense-strides c :no-transpose)
-            (funcall (find-kernel 'rank-kernel type)
-                     alpha (if hermitian (conjugate alpha) alpha)
-                     adata abase ars acs conjugate bdata bbase brs bcs conjugate
-                     beta cdata cbase crs ccs n k (eq uplo :upper) hermitian
-                     second-input)))))
+            (call-rank type hermitian alpha adata abase ars acs conjugate
+                       bdata bbase brs bcs conjugate beta cdata cbase crs ccs
+                       n k (eq uplo :upper) second-input)))))
     c))
 
 (defun level3-triangular (solve side uplo transpose diag alpha a b type)
@@ -322,11 +354,10 @@
     (validate-level3-overlap b a)
     (multiple-value-bind (adata abase ars acs) (dense-strides a transpose)
       (multiple-value-bind (bdata bbase brs bcs) (dense-strides b :no-transpose)
-        (funcall (find-kernel 'triangular-kernel type)
-                 solve (eq side :left)
-                 (if (eq transpose :no-transpose) (eq uplo :upper) (eq uplo :lower))
-                 (eq diag :unit) alpha adata abase ars acs
-                 (eq transpose :conjugate-transpose) bdata bbase brs bcs m n)))
+        (call-triangular type solve (eq side :left)
+                         (if (eq transpose :no-transpose) (eq uplo :upper) (eq uplo :lower))
+                         (eq diag :unit) alpha adata abase ars acs
+                         (eq transpose :conjugate-transpose) bdata bbase brs bcs m n)))
     b))
 
 (defmacro define-level3-gemm (name type)

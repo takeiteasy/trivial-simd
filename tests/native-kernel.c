@@ -22,6 +22,7 @@ static void test_free(void *pointer) {
 #define malloc test_malloc
 #define free test_free
 #include "../native/trivial_simd.c"
+#include "../native/blas.c"
 #undef malloc
 #undef free
 
@@ -353,6 +354,81 @@ static void check_mask_kernels(void) {
     assert(mask[0] == 1 && mask[1] == 0);
 }
 
+#define CHECK_BLAS(suffix, type) \
+static type blas_value_##suffix(int seed) { return (type)((seed * 7 + 3) % 17 - 8) / 8; } \
+static void check_blas_##suffix(void) { \
+    enum { M = 37, N = 29, K = 270 }; \
+    static type a[M * K + 5], b[K * N + 5], c[M * N + 5], expected[M * N + 5]; \
+    for (int i = 0; i < M * K + 5; ++i) a[i] = blas_value_##suffix(i); \
+    for (int i = 0; i < K * N + 5; ++i) b[i] = blas_value_##suffix(i + 11); \
+    type scalars[][2] = {{1, 0}, {(type)0.75, (type)0.5}, {0, 1}, {0, (type)0.5}, {(type)-1, 1}}; \
+    for (int s = 0; s < 5; ++s) { \
+        type alpha = scalars[s][0], beta = scalars[s][1]; \
+        for (int i = 0; i < M * N + 5; ++i) c[i] = expected[i] = blas_value_##suffix(i + 5); \
+        for (int i = 0; i < M; ++i) \
+            for (int j = 0; j < N; ++j) { \
+                type sum = 0; \
+                for (int p = 0; p < K; ++p) sum += a[i * K + p] * b[p + j * K]; \
+                expected[i * N + j] = (beta == 0 ? 0 : beta * expected[i * N + j]) + alpha * sum; \
+            } \
+        assert(ts_blas_gemm_##suffix(M, N, K, alpha, a, K, 1, b, 1, K, beta, c, N, 1) == 0); \
+        for (int i = 0; i < M * N; ++i) assert(fabs((double)(c[i] - expected[i])) < 1e-2); \
+    } \
+    type nan = (type)NAN; \
+    for (int i = 0; i < M * N; ++i) c[i] = nan; \
+    assert(ts_blas_gemm_##suffix(M, N, K, 1, a, K, 1, b, 1, K, 0, c, N, 1) == 0); \
+    for (int i = 0; i < M * N; ++i) assert(c[i] == c[i]); \
+    for (int i = 0; i < M * N; ++i) c[i] = 1; \
+    for (int i = 0; i < M * K; ++i) a[i] = nan; \
+    assert(ts_blas_gemm_##suffix(M, N, K, 0, a, K, 1, b, 1, K, 1, c, N, 1) == 0); \
+    for (int i = 0; i < M * N; ++i) assert(c[i] == 1); \
+    fail_allocation = 1; \
+    assert(ts_blas_gemm_##suffix(M, N, K, 1, a, K, 1, b, 1, K, 1, c, N, 1) == 1); \
+    fail_allocation = 0; \
+} \
+static void check_blas_solve_##suffix(void) { \
+    enum { N = 45, C = 7 }; \
+    static type a[N * N], x[N * C], b[N * C], y[N]; \
+    for (int i = 0; i < N; ++i) \
+        for (int j = 0; j < N; ++j) a[i * N + j] = blas_value_##suffix(i * N + j) / N + (i == j ? 2 : 0); \
+    for (int i = 0; i < N * C; ++i) x[i] = b[i] = blas_value_##suffix(i + 1); \
+    for (int upper = 0; upper < 2; ++upper) { \
+        assert(ts_blas_triangular_##suffix(0, 1, upper, 0, 1, a, N, 1, b, C, 1, N, C) == 0); \
+        assert(ts_blas_triangular_##suffix(1, 1, upper, 0, 1, a, N, 1, b, C, 1, N, C) == 0); \
+        for (int i = 0; i < N * C; ++i) assert(fabs((double)(b[i] - x[i])) < 1e-3); \
+        for (int i = 0; i < N; ++i) y[i] = x[i * C]; \
+        assert(ts_blas_trsv_##suffix(upper, 0, a, N, 1, N, y, 1) == 0); \
+        for (int i = 0; i < N; ++i) { \
+            type sum = 0; \
+            for (int j = upper ? i : 0; j < (upper ? N : i + 1); ++j) sum += a[i * N + j] * y[j]; \
+            assert(fabs((double)(sum - x[i * C])) < 1e-3); \
+        } \
+    } \
+} \
+static void check_blas_level2_##suffix(void) { \
+    enum { M = 23, N = 41 }; \
+    static type a[M * N], x[N], y[M], expected[M], row[N]; \
+    for (int i = 0; i < M * N; ++i) a[i] = blas_value_##suffix(i); \
+    for (int i = 0; i < N; ++i) x[i] = blas_value_##suffix(i + 3); \
+    for (int i = 0; i < M; ++i) y[i] = expected[i] = blas_value_##suffix(i + 9); \
+    for (int i = 0; i < M; ++i) { \
+        type sum = 0; \
+        for (int j = 0; j < N; ++j) sum += a[i * N + j] * x[j]; \
+        expected[i] = (type)0.5 * expected[i] + (type)0.75 * sum; \
+    } \
+    assert(ts_blas_gemv_##suffix(M, N, (type)0.75, a, N, 1, x, 1, (type)0.5, y, 1) == 0); \
+    for (int i = 0; i < M; ++i) assert(fabs((double)(y[i] - expected[i])) < 1e-3); \
+    for (int i = 0; i < M; ++i) y[i] = blas_value_##suffix(i + 9); \
+    assert(ts_blas_gemv_##suffix(M, N, (type)0.75, a, N, 1, x, 1, (type)0.5, y, 1) == 0); \
+    for (int i = 0; i < M; ++i) assert(y[i] == y[i]); \
+    for (int j = 0; j < N; ++j) row[j] = a[j]; \
+    assert(ts_blas_ger_##suffix(M, N, 2, y, 1, x, 1, a, N, 1) == 0); \
+    for (int j = 0; j < N; ++j) assert(fabs((double)(a[j] - (row[j] + 2 * y[0] * x[j]))) < 1e-3); \
+}
+
+CHECK_BLAS(f32, float)
+CHECK_BLAS(f64, double)
+
 int main(void) {
     check_integer_s8();
     check_integer_u8();
@@ -371,5 +447,11 @@ int main(void) {
     check_math_f64();
     check_final_output_f32();
     check_final_output_f64();
+    check_blas_f32();
+    check_blas_f64();
+    check_blas_solve_f32();
+    check_blas_solve_f64();
+    check_blas_level2_f32();
+    check_blas_level2_f64();
     return 0;
 }

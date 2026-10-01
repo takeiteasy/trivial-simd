@@ -23,7 +23,7 @@
   (unless (member diag '(:unit :non-unit)) (error "Invalid diagonal flag: ~S" diag)))
 
 (defmacro define-level2-kernels (type)
-  ;; TODO: Scalar loops; native SIMD kernels (#79).
+  ;; TODO: Complex types (#80) and band/packed/symmetric routines (#81) are scalar loops.
   (let ((array `(simple-array ,type (*))) (zero `(coerce 0 ',type))
         (declarations '(optimize (speed 3) (safety 0) (debug 0))))
     (progn
@@ -271,6 +271,51 @@
 (define-level2-kernels (complex single-float))
 (define-level2-kernels (complex double-float))
 
+(defun native-level2-p (type work)
+  (native-blas-p type work *native-blas-level2-threshold*))
+
+(defun operated-strides (row-major ld trans)
+  "Return the row and column strides of op(A) for a dense matrix."
+  (let ((row-stride (if row-major ld 1)) (column-stride (if row-major 1 ld)))
+    (if trans
+        (values column-stride row-stride)
+        (values row-stride column-stride))))
+
+(defun call-mv-general (type code trans conj alpha a base row-major ld kl ku rows cols
+                        x xstart incx beta y ystart incy ylen)
+  (if (and (= code 0) (native-level2-p type (* rows cols)))
+      (multiple-value-bind (ars acs) (operated-strides row-major ld trans)
+        (call-native-blas type (trivial-simd::%native-blas-gemv-f32
+                                trivial-simd::%native-blas-gemv-f64)
+            ((ap a base) (xp x xstart) (yp y ystart))
+          ylen (if trans rows cols) alpha ap ars acs xp incx beta yp incy))
+      (funcall (find-kernel 'mv-general-kernel type)
+               code trans conj alpha a base row-major ld kl ku rows cols
+               x xstart incx beta y ystart incy ylen))
+  nil)
+
+(defun call-triangular-solve (type code upper unit trans conj a base row-major ld k n
+                              x xstart incx)
+  (if (and (= code 1) (native-level2-p type (* n n)))
+      (multiple-value-bind (ars acs) (operated-strides row-major ld trans)
+        (call-native-blas type (trivial-simd::%native-blas-trsv-f32
+                                trivial-simd::%native-blas-trsv-f64)
+            ((ap a base) (xp x xstart))
+          (if (eq (and upper t) (not trans)) 1 0) (if unit 1 0) ap ars acs n xp incx))
+      (funcall (find-kernel 'triangular-solve-kernel type)
+               code upper unit trans conj a base row-major ld k n x xstart incx))
+  nil)
+
+(defun call-ger (type alpha x xstart incx y ystart incy conj-y a base row-major ld rows cols)
+  (if (native-level2-p type (* rows cols))
+      (call-native-blas type (trivial-simd::%native-blas-ger-f32
+                              trivial-simd::%native-blas-ger-f64)
+          ((xp x xstart) (yp y ystart) (ap a base))
+        rows cols alpha xp incx yp incy ap (if row-major ld 1) (if row-major 1 ld))
+      (funcall (find-kernel 'ger-kernel type)
+               alpha x xstart incx y ystart incy conj-y a base row-major ld rows cols))
+  nil)
+
 (defun level2-run-code (kind uplo)
   (ecase kind
     (:dense (if uplo 1 0))
@@ -311,10 +356,9 @@
             (funcall (find-kernel 'mv-symmetric-kernel type)
                      code (eq uplo :upper) hermitian alpha data base row-major ld
                      (max kl ku) rows x xstart incx beta y ystart incy)
-            (funcall (find-kernel 'mv-general-kernel type)
-                     code (and trans t) (eq transpose :conjugate-transpose) alpha
-                     data base row-major ld kl ku rows cols x xstart incx beta y
-                     ystart incy m))))
+            (call-mv-general type code (and trans t) (eq transpose :conjugate-transpose)
+                             alpha data base row-major ld kl ku rows cols x xstart incx
+                             beta y ystart incy m))))
     y))
 
 (defmacro define-level2-mv (name type kind &key transpose uplo hermitian)
@@ -352,13 +396,16 @@
   (let ((n (matrix-view-rows view)))
     (validate-span n x incx x-offset type)
     (multiple-value-bind (data base row-major ld kl ku) (level2-matrix-arguments view)
-      (funcall (find-kernel (if (eq operation :multiply)
-                                'triangular-mv-kernel 'triangular-solve-kernel)
-                            type)
-               (level2-run-code kind uplo) (eq uplo :upper) (eq diag :unit)
-               (not (eq transpose :no-transpose))
-               (eq transpose :conjugate-transpose) data base row-major ld
-               (max kl ku) n x (level2-vector-start n x incx x-offset) incx))
+      (let ((code (level2-run-code kind uplo)) (upper (eq uplo :upper))
+            (unit (eq diag :unit)) (trans (not (eq transpose :no-transpose)))
+            (conj (eq transpose :conjugate-transpose))
+            (xstart (level2-vector-start n x incx x-offset)))
+        (if (eq operation :multiply)
+            (funcall (find-kernel 'triangular-mv-kernel type)
+                     code upper unit trans conj data base row-major ld (max kl ku) n
+                     x xstart incx)
+            (call-triangular-solve type code upper unit trans conj data base row-major
+                                   ld (max kl ku) n x xstart incx))))
     x))
 
 (defmacro define-level2-triangular (name operation kind type)
@@ -399,10 +446,9 @@
     (validate-span n y incy y-offset type)
     (unless (zerop alpha)
       (multiple-value-bind (data base row-major ld) (level2-matrix-arguments view)
-        (funcall (find-kernel 'ger-kernel type)
-                 alpha x (level2-vector-start m x incx x-offset) incx
-                 y (level2-vector-start n y incy y-offset) incy conjugate-y
-                 data base row-major ld m n)))
+        (call-ger type alpha x (level2-vector-start m x incx x-offset) incx
+                  y (level2-vector-start n y incy y-offset) incy conjugate-y
+                  data base row-major ld m n)))
     view))
 
 (defmacro define-level2-ger (name conjugate-y type)

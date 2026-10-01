@@ -62,19 +62,24 @@ view. The [runnable example](../examples/blas.lisp) uses `gemm!`.
 
 ## Performance
 
-Each routine resolves its views to a base offset and row and column strides
-once, then runs a typed loop per precision with the unit-stride dimension
-innermost.[^kernels] On the measured Apple M1 with SBCL, a 64×64 `dgemm` takes
-244 to 285 µs depending on layout, against 22.3 ms for the earlier checked-access loops; see the
+Real `s` and `d` routines above a size threshold run packed SIMD C kernels
+(NEON on ARM64, SSE2 on x86-64) when the native library is built; everything
+else runs typed Lisp loops.[^kernels] On the measured Apple M1 with SBCL, a
+256×256 `dgemm` takes 827 µs natively against 17.2 ms in Lisp; see the
 [BLAS benchmarks](blas-benchmarks.md).
 
 ## Limitations
 
-Level 3 kernels are scalar Lisp loops without cache blocking or SIMD. They
-remain well behind system CBLAS on large matrices. Native kernels are tracked
-by [#79](https://todo.sr.ht/~takeiteasy/trivial-simd/79).
+Complex routines use scalar Lisp loops without cache blocking or SIMD. Native
+complex kernels are tracked by [#80](https://todo.sr.ht/~takeiteasy/trivial-simd/80);
+x86 FMA and tuning by [#82](https://todo.sr.ht/~takeiteasy/trivial-simd/82).
 
-[^kernels]: `symm` and `hemm` expand the stored triangle to a dense matrix and
+[^kernels]: Native `gemm` packs `A` and `B` panels so any layout or transpose
+    runs the same micro-kernel; `trmm`, `trsm`, `syrk`, and `syr2k` split into
+    16-wide diagonal blocks plus native `gemm` panels. The native path needs
+    the built library, pointer array access, and `m·n·k` at or above
+    `trivial-simd/blas::*native-blas-threshold*` (1,000; 1 on ECL). Binding it
+    to `most-positive-fixnum` forces the Lisp kernels. `symm` and `hemm` expand the stored triangle to a dense matrix and
     call the `gemm` kernel. `trmm` and `trsm` operate on a dense row-major
     copy of `B`; right-side calls solve the transposed left-side problem.
     Kernels skip bounds checks after validation, so views must fit

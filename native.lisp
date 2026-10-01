@@ -157,6 +157,77 @@
 
 (define-native-extended-calls)
 
+(define-native ("ts_blas_gemm_f32" %native-blas-gemm-f32) :int
+  (m :int64) (n :int64) (k :int64) (alpha :float)
+  (a :pointer) (a-row-stride :int64) (a-column-stride :int64)
+  (b :pointer) (b-row-stride :int64) (b-column-stride :int64) (beta :float)
+  (c :pointer) (c-row-stride :int64) (c-column-stride :int64))
+(define-native ("ts_blas_gemm_f64" %native-blas-gemm-f64) :int
+  (m :int64) (n :int64) (k :int64) (alpha :double)
+  (a :pointer) (a-row-stride :int64) (a-column-stride :int64)
+  (b :pointer) (b-row-stride :int64) (b-column-stride :int64) (beta :double)
+  (c :pointer) (c-row-stride :int64) (c-column-stride :int64))
+
+(define-native ("ts_blas_rank_f32" %native-blas-rank-f32) :int
+  (n :int64) (k :int64) (alpha :float)
+  (a :pointer) (a-row-stride :int64) (a-column-stride :int64)
+  (b :pointer) (b-row-stride :int64) (b-column-stride :int64) (beta :float)
+  (c :pointer) (c-row-stride :int64) (c-column-stride :int64)
+  (upper :int) (second :int))
+(define-native ("ts_blas_rank_f64" %native-blas-rank-f64) :int
+  (n :int64) (k :int64) (alpha :double)
+  (a :pointer) (a-row-stride :int64) (a-column-stride :int64)
+  (b :pointer) (b-row-stride :int64) (b-column-stride :int64) (beta :double)
+  (c :pointer) (c-row-stride :int64) (c-column-stride :int64)
+  (upper :int) (second :int))
+(define-native ("ts_blas_triangular_f32" %native-blas-triangular-f32) :int
+  (solve :int) (left :int) (upper :int) (unit :int) (alpha :float)
+  (a :pointer) (a-row-stride :int64) (a-column-stride :int64)
+  (b :pointer) (b-row-stride :int64) (b-column-stride :int64)
+  (m :int64) (n :int64))
+(define-native ("ts_blas_triangular_f64" %native-blas-triangular-f64) :int
+  (solve :int) (left :int) (upper :int) (unit :int) (alpha :double)
+  (a :pointer) (a-row-stride :int64) (a-column-stride :int64)
+  (b :pointer) (b-row-stride :int64) (b-column-stride :int64)
+  (m :int64) (n :int64))
+
+(define-native ("ts_blas_gemv_f32" %native-blas-gemv-f32) :int
+  (m :int64) (n :int64) (alpha :float)
+  (a :pointer) (a-row-stride :int64) (a-column-stride :int64)
+  (x :pointer) (x-increment :int64) (beta :float)
+  (y :pointer) (y-increment :int64))
+(define-native ("ts_blas_gemv_f64" %native-blas-gemv-f64) :int
+  (m :int64) (n :int64) (alpha :double)
+  (a :pointer) (a-row-stride :int64) (a-column-stride :int64)
+  (x :pointer) (x-increment :int64) (beta :double)
+  (y :pointer) (y-increment :int64))
+(define-native ("ts_blas_ger_f32" %native-blas-ger-f32) :int
+  (m :int64) (n :int64) (alpha :float)
+  (x :pointer) (x-increment :int64) (y :pointer) (y-increment :int64)
+  (a :pointer) (a-row-stride :int64) (a-column-stride :int64))
+(define-native ("ts_blas_ger_f64" %native-blas-ger-f64) :int
+  (m :int64) (n :int64) (alpha :double)
+  (x :pointer) (x-increment :int64) (y :pointer) (y-increment :int64)
+  (a :pointer) (a-row-stride :int64) (a-column-stride :int64))
+(define-native ("ts_blas_trsv_f32" %native-blas-trsv-f32) :int
+  (upper :int) (unit :int)
+  (a :pointer) (a-row-stride :int64) (a-column-stride :int64)
+  (n :int64) (x :pointer) (x-increment :int64))
+(define-native ("ts_blas_trsv_f64" %native-blas-trsv-f64) :int
+  (upper :int) (unit :int)
+  (a :pointer) (a-row-stride :int64) (a-column-stride :int64)
+  (n :int64) (x :pointer) (x-increment :int64))
+
+(defvar *native-blas-available-p*
+  (and *native-available-p*
+       (every (lambda (name) (ignore-errors (cffi:foreign-symbol-pointer name)))
+              '("ts_blas_gemm_f32" "ts_blas_gemm_f64"
+                "ts_blas_rank_f32" "ts_blas_rank_f64"
+                "ts_blas_triangular_f32" "ts_blas_triangular_f64"
+                "ts_blas_gemv_f32" "ts_blas_gemv_f64"
+                "ts_blas_ger_f32" "ts_blas_ger_f64"
+                "ts_blas_trsv_f32" "ts_blas_trsv_f64"))))
+
 (defun check-native-integer-status (status)
   (case status
     (0 nil)

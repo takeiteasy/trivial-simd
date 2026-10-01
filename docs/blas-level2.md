@@ -59,19 +59,24 @@ The [runnable example](../examples/blas.lisp) shows `gemv!`.
 
 ## Performance
 
-Each routine walks the stored matrix one contiguous line at a time, so dense,
-band, and packed views share one typed kernel per precision.[^runs] Band
-routines visit only the band and triangular routines only their triangle. On
-the measured Apple M1 with SBCL, a 64×64 `dgemv` takes 2.5 µs against 271 µs
-for the earlier loops; see the [BLAS benchmarks](blas-benchmarks.md). Kernels
-do not call the native `dot` and `axpy!`, which only beat a Lisp loop from
-about 1,000 elements.[^native]
+Real dense `gemv`, `ger`, and `trsv` above a size threshold run SIMD C kernels
+when the native library is built.[^threshold] On the measured Apple M1 with
+SBCL, a 256×256 `dgemv` takes 11 µs against 36 µs in Lisp; see the
+[BLAS benchmarks](blas-benchmarks.md).
+
+All other routines walk the stored matrix one contiguous line at a time, so
+dense, band, and packed views share one typed Lisp kernel per precision.[^runs]
+Band routines visit only the band and triangular routines only their triangle.
+Kernels do not call the native `dot` and `axpy!`, which only beat a Lisp loop
+from about 1,000 elements.[^native]
 
 ## Limitations
 
-Level 2 kernels are scalar Lisp loops. Native and SIMD kernels are tracked by
-[#79](https://todo.sr.ht/~takeiteasy/trivial-simd/79). Core strided SIMD access
-is tracked by [#43](https://todo.sr.ht/~takeiteasy/trivial-simd/43).
+Complex routines and band, packed, and symmetric routines are scalar Lisp
+loops. Native kernels are tracked by
+[#80](https://todo.sr.ht/~takeiteasy/trivial-simd/80) (complex) and
+[#81](https://todo.sr.ht/~takeiteasy/trivial-simd/81) (band and packed). Core
+strided SIMD access is tracked by [#43](https://todo.sr.ht/~takeiteasy/trivial-simd/43).
 Shared input/output
 storage follows the [overlap limitation](api.md#limitations).
 
@@ -87,3 +92,8 @@ storage follows the [overlap limitation](api.md#limitations).
     backend: `dot` takes 0.11 µs at 64 elements, 0.21 µs at 256, and 0.57 µs at
     1,024, against 0.04, 0.20, and 0.93 µs for a typed Lisp loop. `axpy!` takes
     0.38 µs at 64 elements and 0.56 µs at 1,024.
+[^threshold]: Dispatch needs the built library, pointer array access, and at
+    least `trivial-simd/blas::*native-blas-level2-threshold*` matrix elements
+    (1,000; 1 on ECL, where the Lisp kernels box floats). `trsv` solves 16-row
+    diagonal blocks and updates the rest with native `gemv`. Binding the
+    variable to `most-positive-fixnum` forces the Lisp kernels.

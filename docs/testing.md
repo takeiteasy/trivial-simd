@@ -18,7 +18,12 @@ operation flags, and CBLAS comparisons across its nine routine families.
 Randomized CBLAS tests compare every Level 2 and 3 family on padded, offset
 subviews in both layouts with all transpose, triangle, side, and diagonal flags
 and negative increments. Zero-scalar tests check that `alpha` and `beta` of
-zero never read the operands they scale.
+zero never read the operands they scale. Native BLAS tests force the native and
+Lisp kernels in turn for `gemm`, `symm`, `syrk`, `syr2k`, `trmm`, `trsm`,
+`gemv`, `ger`, and `trsv` across layouts, transposes, offsets, increments, and
+block-edge sizes, and check the fallback when the library lacks the symbols.
+`ctest` also checks the C kernels, including the scalar build and allocation
+failure.
 Direct copy tests check both precisions, round trips, empty ranges, and partial
 copy-back, compact slice transfers, and overlapping copy-mode input snapshots. Native program tests check partial-initialization cleanup, finalization,
 retained functions after redefinition, and collection during active native calls.
