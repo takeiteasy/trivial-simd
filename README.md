@@ -71,8 +71,8 @@ supported yet. Blank is not planned.
 |---|:---:|:---:|:---:|
 | Linux x86-64 | X | X | X |
 | Linux ARM64 | X | X | X |
-| macOS ARM64 | X | X | X |
-| macOS x86-64 | L | X | L |
+| macOS ARM64[^macos-local] | L | L | L |
+| macOS x86-64[^macos-local] | L | L | L |
 | Windows x86-64 | X | [P](https://todo.sr.ht/~takeiteasy/trivial-simd/28) | [P](https://todo.sr.ht/~takeiteasy/trivial-simd/29) |
 | Windows ARM64 | X | | |
 | [FreeBSD](https://todo.sr.ht/~takeiteasy/trivial-simd/14) | P | P | P |
@@ -83,6 +83,12 @@ supported yet. Blank is not planned.
 
 Planned implementations:
 [ABCL](https://todo.sr.ht/~takeiteasy/trivial-simd/20), [CLISP](https://todo.sr.ht/~takeiteasy/trivial-simd/21), [Clasp](https://todo.sr.ht/~takeiteasy/trivial-simd/22), [CMUCL](https://todo.sr.ht/~takeiteasy/trivial-simd/23), [MKCL](https://todo.sr.ht/~takeiteasy/trivial-simd/24), [LispWorks](https://todo.sr.ht/~takeiteasy/trivial-simd/25), [Allegro CL](https://todo.sr.ht/~takeiteasy/trivial-simd/26), [JSCL](https://todo.sr.ht/~takeiteasy/trivial-simd/27) (Node and browsers), [GCL](https://todo.sr.ht/~takeiteasy/trivial-simd/30).
+
+[^macos-local]: macOS testing is local only. ARM64 scripts use installed SBCL 2.6.8,
+    ECL 26.5.5, and CCL `v1.13-459-g690ff7ea`; x86-64 scripts use cached
+    SBCL 2.6.8, ECL 26.5.5, and CCL 1.13 under Rosetta. See
+    [local platform runs](docs/testing.md#local-platform-runs).
+
 
 ### Instruction sets and backends
 
@@ -129,3 +135,4 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+

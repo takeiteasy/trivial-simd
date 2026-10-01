@@ -49,9 +49,9 @@ ecl --load tests/run.lisp --eval '(quit)'
 
 Set `TRIVIAL_SIMD_BACKEND=lisp` or `native` to require that backend. GitHub
 Actions runs the suite on the combinations in [backend coverage](backends.md#tested-combinations),
-including ARM64 Linux, macOS, and Windows. ARM64 jobs require the native backend
-and verify that the Lisp process runs on ARM64. Most jobs run on request; see
-[CI](ci.md).
+including ARM64 Linux and Windows. macOS testing is local only. ARM64 jobs
+require the native backend and verify that the Lisp process runs on ARM64.
+Most jobs run on request; see [CI](ci.md).
 
 For a local ARM64 native check, build the library first, then run:
 
@@ -61,37 +61,50 @@ TRIVIAL_SIMD_BACKEND=native sbcl --script tests/run.lisp
 
 ## Local platform runs
 
-`tests/x86-sbcl.sh` runs the C tests and the Lisp suite on x86-64 SBCL under
-Rosetta from an ARM64 Mac. It needs `curl`, `rsync`, `cmake`, and Rosetta.
+All macOS combinations run locally. ARM64 scripts use the installed Lisp on
+`PATH`, build the ARM64 native library, run `ctest`, and run the Lisp suite.
+They require an ARM64 Mac, CMake, Xcode command line tools, and test dependencies
+available through Quicklisp or ASDF. The default required backend is `native`;
+set `TRIVIAL_SIMD_BACKEND=lisp` to check the Lisp fallback. The runner verifies
+that the Lisp process is ARM64.
+
+```sh
+tests/arm64-sbcl.sh
+tests/arm64-ecl.sh
+tests/arm64-ccl.sh
+TRIVIAL_SIMD_BACKEND=lisp tests/arm64-sbcl.sh
+```
+
+| Installed ARM64 Lisp | Version used locally |
+|---|---|
+| SBCL | 2.6.8[^sbcl-heap] |
+| ECL | 26.5.5 |
+| CCL | `1.13 (v1.13-459-g690ff7ea)` preview |
+
+The x86-64 scripts run under Rosetta and cache their Lisp installations.
+They need `curl`, `rsync`, CMake, and Rosetta. ECL also needs `make` and Xcode
+command line tools; its first run builds ECL from source and takes several minutes.
+Each script copies the tree to its cache, builds an x86-64 library, runs `ctest`,
+and runs the Lisp suite.[^x86-copy]
 
 ```sh
 tests/x86-sbcl.sh
-SBCL_X86_VERSION=2.6.8 TRIVIAL_SIMD_X86_CACHE=~/.cache/trivial-simd/x86-sbcl tests/x86-sbcl.sh
-```
-
-| Step | Location |
-|---|---|
-| Downloads the x86-64 SBCL binary tarball once | `$TRIVIAL_SIMD_X86_CACHE` (default `~/.cache/trivial-simd/x86-sbcl`) |
-| Copies the tree and builds the library with `CMAKE_OSX_ARCHITECTURES=x86_64` | `work/` in the cache[^x86-copy] |
-| Runs `ctest`, then `tests/run.lisp` with `sb-simd` available | the copy |
-
-Delete the cache directory to reset it.
-
-`tests/x86-ecl.sh` does the same with x86-64 ECL, built from source under
-Rosetta on the first run (several minutes). It also needs `make` and Xcode
-command line tools.
-
-```sh
 tests/x86-ecl.sh
-ECL_X86_VERSION=26.5.5 TRIVIAL_SIMD_X86_ECL_CACHE=~/.cache/trivial-simd/x86-ecl tests/x86-ecl.sh
+tests/x86-ccl.sh
 ```
 
-It caches the ECL install and the work copy under `$TRIVIAL_SIMD_X86_ECL_CACHE`
-(default `~/.cache/trivial-simd/x86-ecl`) and writes build logs there.
+| Script | Version override (default) | Cache override (default under `~/.cache/trivial-simd/`) |
+|---|---|---|
+| `tests/x86-sbcl.sh` | `SBCL_X86_VERSION` (`2.6.8`) | `TRIVIAL_SIMD_X86_CACHE` (`x86-sbcl`) |
+| `tests/x86-ecl.sh` | `ECL_X86_VERSION` (`26.5.5`) | `TRIVIAL_SIMD_X86_ECL_CACHE` (`x86-ecl`) |
+| `tests/x86-ccl.sh` | `CCL_X86_VERSION` (`1.13`) | `TRIVIAL_SIMD_X86_CCL_CACHE` (`x86-ccl`) |
 
-Clozure CL preview builds for ARM64 run the suite with the `ccl` command shown
-above once the preview binary is on `PATH`. Tested locally: CCL `Version 1.13 (v1.13-459-g690ff7ea) DarwinARM64`. CI pins
-`v1.13-arm64-pre2`.
+CCL uses the complete macOS x86 release archive from
+[Clozure CL releases](https://github.com/Clozure/ccl/releases/tag/v1.13).
+Both CCL scripts also run 500 lifetime trials and three additional full suites
+in fresh processes. Extra script arguments are passed to the Lisp after the
+first suite loads. ECL writes installation build logs in its cache.
+Use `trash` on a cache directory to reset it.
 
 ## Kernel example
 
@@ -133,7 +146,8 @@ trials. It requires the native library and exits with failure on any error.
 ccl --no-init --batch --load tests/run-lifetime-stress.lisp --eval '(quit)'
 ```
 
-CCL CI jobs run 500 trials and five full suites in fresh processes.
+CCL CI jobs and both local CCL scripts run 500 trials and five full suites
+in fresh processes.
 
 ## Benchmark
 
@@ -326,3 +340,6 @@ for each Lisp. See [ARM64 FMA measurements](arm64-fma.md#performance-gate).
 [^x86-copy]: The Lisp loader reads `build/libtrivial_simd.dylib`, so the x86-64
     library cannot share the ARM64 `build/`. The SBCL tarball keeps its contrib
     fasls under `obj/sbcl-home`, which the script sets as `SBCL_HOME`.
+
+[^sbcl-heap]: The ARM64 SBCL script reserves a 4 GiB dynamic heap for compiling
+    the suite; the default 1 GiB heap can be exhausted during compilation.

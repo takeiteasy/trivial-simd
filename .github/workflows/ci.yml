@@ -11,7 +11,7 @@ on:
       os:
         description: Run only this OS family
         type: choice
-        options: [all, linux, macos, windows]
+        options: [all, linux, windows]
         default: all
       lisp:
         description: Run only Lisps whose name contains this text (for example ccl); empty for all
@@ -105,7 +105,6 @@ jobs:
       matrix:
         include:
           - { name: Linux, os: ubuntu-24.04-arm, archive: linuxarm64.tar.gz, checksum: 966a7182607e729e41e42159efea4618c2b305dc000e2b902ffe8aa7199ab449, executable: arm64cl }
-          - { name: macOS, os: macos-15, archive: darwinarm64.tar.gz, checksum: 382426a718af3fa9ae15d682fb47d5921dda3565b1a087c3d34d9ff45f3b3bfe, executable: darm64cl }
     env:
       TRIVIAL_SIMD_BACKEND: native
     steps:

@@ -1,7 +1,9 @@
 # CI
 
-CI runs a small set of jobs automatically and the full platform matrix on
-request. Lisp errors return a failing process status in Roswell test steps.
+CI runs a small set of jobs automatically and the full Linux and Windows matrix on
+request. macOS runs locally; see
+[local platform runs](testing.md#local-platform-runs). Lisp errors return a
+failing process status in Roswell test steps.
 
 ## When jobs run
 
@@ -22,7 +24,7 @@ New pushes cancel the previous run for the same branch or pull request.
 |---|---|---|
 | 1 | SBCL / Linux, Lisp fallback / Linux | Any code change |
 | 1 | ECL / Linux | Native code changes[^focus] |
-| 2 | Every other platform and Lisp | Full matrix only |
+| 2 | Other Linux and Windows combinations | Full matrix only |
 
 The job list lives in [`.github/ci-matrix.json`](../.github/ci-matrix.json).
 [`.github/scripts/plan.sh`](../.github/scripts/plan.sh) selects from it.
@@ -30,12 +32,12 @@ The job list lives in [`.github/ci-matrix.json`](../.github/ci-matrix.json).
 ## Running a slice
 
 ```sh
-gh workflow run ci.yml -f os=macos              # every macOS job
+gh workflow run ci.yml -f os=windows            # every Windows job
 gh workflow run ci.yml -f os=linux -f lisp=ccl  # CCL on Linux only
 gh workflow run ci.yml -f lisp=ecl              # ECL on every OS
 ```
 
-`os` is `all`, `linux`, `macos`, or `windows`. `lisp` is matched against the
+`os` is `all`, `linux`, or `windows`. `lisp` is matched against the
 Lisp name in the matrix (`sbcl`, `ccl`, `ecl`).
 
 ## Before dispatching

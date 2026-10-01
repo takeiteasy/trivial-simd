@@ -26,8 +26,6 @@ SBCL on ARM64 selects the C backend when built, or the Lisp fallback otherwise.
 | Linux x86-64 | SBCL | `:sbcl`, `:lisp` |
 | Linux x86-64 | CCL, ECL | `:native` |
 | Linux ARM64 | SBCL, ECL, CCL[^ccl-arm] | `:native` |
-| macOS ARM64 | SBCL, ECL, CCL[^ccl-arm] | `:native`; SBCL also uses `:lisp` |
-| macOS Intel | CCL | `:native` |
 | Windows x86-64 | SBCL | `:native`, `:lisp` |
 | Windows ARM64 | SBCL | `:native` |
 
@@ -43,7 +41,8 @@ See [local platform runs](testing.md#local-platform-runs) for setup.
 |---|---|---|
 | macOS x86-64 (Rosetta) | SBCL 2.6.8 | `:sbcl`, `:native`, `:lisp`[^rosetta] |
 | macOS x86-64 (Rosetta) | ECL 26.5.5 | `:native`, `:lisp`[^rosetta] |
-| macOS ARM64 | CCL `v1.13-459-g690ff7ea` preview build | `:native` |
+| macOS x86-64 (Rosetta) | CCL 1.13 | `:native`, `:lisp`[^rosetta] |
+| macOS ARM64 | Installed SBCL 2.6.8, ECL 26.5.5, CCL `v1.13-459-g690ff7ea` | `:native`, `:lisp` |
 
 
 ## Build
@@ -137,7 +136,7 @@ Each input has separate storage, including repeated and aliased inputs.
     implementation. Copy mode dispatches once by element type and uses literal CFFI types
     in specialized loops. Foreign index zero corresponds to each vector’s requested
     start; output copy-back touches only the destination slice (`*native-array-access*` is `:copy`).
-[^ccl-arm]: ARM64 CI uses Clozure CL `v1.13-arm64-pre2` on Linux and macOS. Newer
+[^ccl-arm]: ARM64 CI uses Clozure CL `v1.13-arm64-pre2` on Linux. Newer
     preview builds work locally; see [local runs](#local-runs).
 [^rosetta]: Rosetta emulates the x86-64 CPU, so SSE2 and `sb-simd` paths run but
     timings and AVX detection do not match Intel hardware.
