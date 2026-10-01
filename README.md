@@ -1,7 +1,8 @@
 # trivial-simd
 
-Bulk SIMD arithmetic for Common Lisp float and fixed-width integer vectors.
-It uses SBCL SIMD where available, a small C library, or a pure Lisp fallback.
+Bulk SIMD arithmetic and BLAS for Common Lisp float and fixed-width integer
+vectors. It uses SBCL SIMD where available, a small C library, or a pure Lisp
+fallback.
 
 ```lisp
 (ql:quickload :trivial-simd)
@@ -17,8 +18,9 @@ It uses SBCL SIMD where available, a small C library, or a pure Lisp fallback.
 ## Backends
 
 - `:sbcl` — SBCL on x86-64 when `sb-simd` is available.
-- `:native` — the C library on macOS, Linux, or Windows: SSE2 on x86-64,
-  NEON on ARM64, and scalar C elsewhere.
+- `:native` — the C library on macOS, Linux, or Windows: SSE2 on x86-64 (plus
+  AVX+FMA for real BLAS on CPUs that have it), NEON on ARM64, and scalar C
+  elsewhere.
 - `:lisp` — portable Lisp arithmetic with optional scalar FMA acceleration.
 
 Build the native library with `cmake -S . -B build -DCMAKE_BUILD_TYPE=Release`
@@ -57,15 +59,48 @@ See [full results and measurement details](docs/benchmarks.md).
 
 ## Limitations
 
-The planned backends below are **not supported yet**. A backend is supported
-when its implementation and platform combination passes the test suite in CI.
-See [backend coverage](docs/backends.md#limitations) for details.
+`X` is supported: the combination passes the test suite in
+[CI](docs/backends.md#tested-combinations). `P` is planned and not supported
+yet. Blank is not planned.
 
-| Area | Planned targets |
-|---|---|
-| Architecture | [AVX2](https://todo.sr.ht/~takeiteasy/trivial-simd/4), [AVX-512](https://todo.sr.ht/~takeiteasy/trivial-simd/5), [SVE/SVE2](https://todo.sr.ht/~takeiteasy/trivial-simd/6), [x86-32 SSE2](https://todo.sr.ht/~takeiteasy/trivial-simd/7), [ARMv7 NEON](https://todo.sr.ht/~takeiteasy/trivial-simd/8), [RISC-V Vector](https://todo.sr.ht/~takeiteasy/trivial-simd/9), [PowerPC VSX](https://todo.sr.ht/~takeiteasy/trivial-simd/10), [WebAssembly SIMD128](https://todo.sr.ht/~takeiteasy/trivial-simd/11), [SBCL ARM64 SIMD](https://todo.sr.ht/~takeiteasy/trivial-simd/31) |
-| Platform | [FreeBSD](https://todo.sr.ht/~takeiteasy/trivial-simd/14), [OpenBSD](https://todo.sr.ht/~takeiteasy/trivial-simd/15), [NetBSD](https://todo.sr.ht/~takeiteasy/trivial-simd/16), [Android](https://todo.sr.ht/~takeiteasy/trivial-simd/17), [iOS](https://todo.sr.ht/~takeiteasy/trivial-simd/18) |
-| Lisp implementation | [ABCL](https://todo.sr.ht/~takeiteasy/trivial-simd/20), [CLISP](https://todo.sr.ht/~takeiteasy/trivial-simd/21), [Clasp](https://todo.sr.ht/~takeiteasy/trivial-simd/22), [CMUCL](https://todo.sr.ht/~takeiteasy/trivial-simd/23), [MKCL](https://todo.sr.ht/~takeiteasy/trivial-simd/24), [LispWorks](https://todo.sr.ht/~takeiteasy/trivial-simd/25), [Allegro CL](https://todo.sr.ht/~takeiteasy/trivial-simd/26), [JSCL](https://todo.sr.ht/~takeiteasy/trivial-simd/27), [CCL Windows](https://todo.sr.ht/~takeiteasy/trivial-simd/28), [ECL Windows](https://todo.sr.ht/~takeiteasy/trivial-simd/29), [GCL](https://todo.sr.ht/~takeiteasy/trivial-simd/30) |
+### Platforms and Lisp implementations
+
+| Platform / architecture | SBCL | CCL | ECL |
+|---|:---:|:---:|:---:|
+| Linux x86-64 | X | X | X |
+| Linux ARM64 | X | X | X |
+| macOS ARM64 | X | X | X |
+| macOS x86-64 | | X | |
+| Windows x86-64 | X | [P](https://todo.sr.ht/~takeiteasy/trivial-simd/28) | [P](https://todo.sr.ht/~takeiteasy/trivial-simd/29) |
+| Windows ARM64 | X | | |
+| [FreeBSD](https://todo.sr.ht/~takeiteasy/trivial-simd/14) | P | P | P |
+| [OpenBSD](https://todo.sr.ht/~takeiteasy/trivial-simd/15) | P | P | P |
+| [NetBSD](https://todo.sr.ht/~takeiteasy/trivial-simd/16) | P | P | P |
+| [Android](https://todo.sr.ht/~takeiteasy/trivial-simd/17) | P | P | P |
+| [iOS](https://todo.sr.ht/~takeiteasy/trivial-simd/18) | P | P | P |
+
+Planned implementations:
+[ABCL](https://todo.sr.ht/~takeiteasy/trivial-simd/20), [CLISP](https://todo.sr.ht/~takeiteasy/trivial-simd/21), [Clasp](https://todo.sr.ht/~takeiteasy/trivial-simd/22), [CMUCL](https://todo.sr.ht/~takeiteasy/trivial-simd/23), [MKCL](https://todo.sr.ht/~takeiteasy/trivial-simd/24), [LispWorks](https://todo.sr.ht/~takeiteasy/trivial-simd/25), [Allegro CL](https://todo.sr.ht/~takeiteasy/trivial-simd/26), [JSCL](https://todo.sr.ht/~takeiteasy/trivial-simd/27) (Node and browsers), [GCL](https://todo.sr.ht/~takeiteasy/trivial-simd/30).
+
+### Instruction sets and backends
+
+| Instruction set | `:sbcl` | `:native` | `:lisp` |
+|---|:---:|:---:|:---:|
+| x86-64 SSE2 | X | X | X |
+| x86-64 AVX+FMA (real BLAS) | | X | |
+| ARM64 NEON | | X | X |
+| [x86-64 AVX2](https://todo.sr.ht/~takeiteasy/trivial-simd/4) | | P | |
+| [x86-64 AVX-512](https://todo.sr.ht/~takeiteasy/trivial-simd/5) | | P | |
+| [ARM64 SVE/SVE2](https://todo.sr.ht/~takeiteasy/trivial-simd/6) | | P | |
+| [ARM64 SBCL SIMD](https://todo.sr.ht/~takeiteasy/trivial-simd/31) | P | | |
+| [x86-32 SSE2](https://todo.sr.ht/~takeiteasy/trivial-simd/7) | | P | |
+| [ARMv7 NEON](https://todo.sr.ht/~takeiteasy/trivial-simd/8) | | P | |
+| [RISC-V Vector](https://todo.sr.ht/~takeiteasy/trivial-simd/9) | | P | |
+| [PowerPC VSX](https://todo.sr.ht/~takeiteasy/trivial-simd/10) | | P | |
+| [WebAssembly SIMD128](https://todo.sr.ht/~takeiteasy/trivial-simd/11) | | P | |
+
+A scalar fallback compiling on an unlisted target does not establish tested
+SIMD support. See [backend coverage](docs/backends.md#limitations).
 
 ## License
 
