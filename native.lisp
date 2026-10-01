@@ -586,6 +586,13 @@
 (defun keep-native-program-alive (program)
   (native-program-code program))
 
+(defun check-native-kernel-status (status)
+  (case status
+    (0 nil)
+    (-2 (error "Negative kernel square root operand"))
+    (-3 (error 'division-by-zero :operation 'truncate :operands nil))
+    (otherwise (error "Unable to allocate native kernel scratch storage"))))
+
 (defmacro define-native-kernel-dispatch ()
   `(defun call-native-kernel (program type inputs output count &key sum-p)
      (unwind-protect
@@ -602,11 +609,7 @@
                        (if (eq type :float) (native-program-f32-constants program)
                            (native-program-f64-constants program)))
                    inputs output count (native-program-scratch-count program))))
-            (case status
-              (0 nil)
-              (-2 (error "Negative kernel square root operand"))
-              (-3 (error 'division-by-zero :operation 'truncate :operands nil))
-              (otherwise (error "Unable to allocate native kernel scratch storage"))))
+            (check-native-kernel-status status))
        (keep-native-program-alive program))))
 
 (define-native-kernel-dispatch)
@@ -635,9 +638,35 @@
                         (native-program-f64-constants program)))
                 inputs input-count mask count (native-program-scratch-count program)
                 reduction result)))
-         (case status
-           (0 nil)
-           (-2 (error "Negative kernel square root operand"))
-           (-3 (error 'division-by-zero :operation 'truncate :operands nil))
-           (otherwise (error "Unable to allocate native kernel scratch storage"))))
+         (check-native-kernel-status status))
+    (keep-native-program-alive program)))
+
+(defmacro define-native-kernel-reduction-calls ()
+  `(progn
+     ,@(loop for (key) in *numeric-types*
+             collect
+             `(define-native (,(format nil "ts_kernel_reduction_~A" (string-downcase key))
+                              ,(intern (format nil "%NATIVE-KERNEL-REDUCTION-~A" key))) :int
+                (code :pointer) (code-length :size) (constants :pointer)
+                (inputs :pointer) (input-count :size) (count :size) (scratch-count :size)
+                (reducer :uint) (scale :double)
+                (value :pointer) (wide :pointer) (index :pointer)))))
+
+(define-native-kernel-reduction-calls)
+
+(defun call-native-kernel-reduction (program type inputs input-count count reducer scale
+                                     value wide index)
+  "Run REDUCER (1 argmin, 2 argmax, 3 asum, 4 sum of squares, 5 largest magnitude,
+6 sum of squares divided by SCALE) over the program's values."
+  (unwind-protect
+       (check-native-kernel-status
+        (funcall
+         (native-bulk-function "%NATIVE-KERNEL-REDUCTION-"
+                               (first (find type *numeric-types* :key #'third)))
+         (native-program-code program) (native-program-code-length program)
+         (or (native-program-constants program)
+             (if (eq type :float) (native-program-f32-constants program)
+                 (native-program-f64-constants program)))
+         inputs input-count count (native-program-scratch-count program)
+         reducer scale value wide index))
     (keep-native-program-alive program)))

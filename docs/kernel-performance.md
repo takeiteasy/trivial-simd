@@ -70,17 +70,37 @@ performs the same calculation with a specialised implementation.
 
 | Type | Elements | Lisp sum kernel | Lisp multiply+sum | Native sum kernel | Native multiply+sum | Native dot |
 |---|---:|---:|---:|---:|---:|---:|
-| single-float | 32 | 0.065 | 1.048 | 0.100 | 0.146 | 0.069 |
-| single-float | 1,024 | 1.358 | 30.275 | 0.262 | 0.483 | 0.298 |
-| single-float | 65,536 | 84.656 | 1962.844 | 10.719 | 23.753 | 15.436 |
-| double-float | 32 | 0.070 | 1.273 | 0.103 | 0.147 | 0.069 |
-| double-float | 1,024 | 1.365 | 39.294 | 0.445 | 0.815 | 0.531 |
-| double-float | 65,536 | 84.796 | 2780.250 | 21.598 | 50.220 | 30.774 |
+| single-float | 32 | 0.065 | 0.776 | 0.100 | 0.146 | 0.069 |
+| single-float | 1,024 | 1.358 | 21.190 | 0.262 | 0.483 | 0.298 |
+| single-float | 65,536 | 84.656 | 1419.922 | 10.719 | 23.753 | 15.436 |
+| double-float | 32 | 0.070 | 0.952 | 0.103 | 0.147 | 0.069 |
+| double-float | 1,024 | 1.365 | 28.540 | 0.445 | 0.815 | 0.531 |
+| double-float | 65,536 | 84.796 | 1926.000 | 21.598 | 50.220 | 30.774 |
 
 Native sums evaluate final instructions directly into lane accumulators. Each
 256-element block retains its lane, tail, and block addition order, without an
 output-block store/read. Short calls still include pointer and scalar-output
 setup; see [kernel limitations](kernels.md#limitations).
+
+## Reducers
+
+`(argmax (* a b))`, `(asum (* a b))` and `(nrm2 (* a b))` return a scalar without
+an intermediate vector. Each is compared with `multiply!` into a reusable
+vector followed by the bulk reducer. Microseconds per call at 65,536 elements:[^reducers]
+
+| Type | Reducer | Lisp kernel | Lisp multiply+bulk | Native kernel | Native multiply+bulk |
+|---|---|---:|---:|---:|---:|
+| single-float | argmax | 89.0 | 1505.2 | 29.0 | 40.4 |
+| single-float | asum | 91.3 | 1531.2 | 15.9 | 24.9 |
+| single-float | nrm2 | 92.0 | 1587.3 | 38.6 | 30.1 |
+| double-float | argmax | 86.4 | 2068.2 | 37.4 | 48.6 |
+| double-float | asum | 93.4 | 2171.8 | 32.3 | 52.5 |
+| double-float | nrm2 | 97.4 | 2163.6 | 44.3 | 51.4 |
+
+Native reducers evaluate each 256-element block, then reduce it with eight
+independent lanes. The single-float `nrm2` kernel converts to double before
+squaring, so it trails the staged form; see
+[kernel limitations](kernels.md#limitations).
 
 ## Native copy mode
 
@@ -156,3 +176,7 @@ medians of three calibrated batches. The first-call clock resolution is 1 µs.[^
     commit `8dd1cdb`; runs are sequential. See [raw SBCL output](benchmark-runs/2026-09-29-sbcl.txt)
     and [raw ECL output](benchmark-runs/2026-09-29-ecl.txt). The separate x86 FMA,
     native copy, and performance-gate evaluations retain their own measurements.
+
+[^reducers]: From `tests/bench.lisp` on SBCL ARM64 with the `:native` and `:lisp`
+    backends, 2026-10-01: [raw output](benchmark-runs/2026-10-01-kernel-reducers-sbcl.txt).
+    The Lisp multiply+sum column of the sum table comes from the same run.

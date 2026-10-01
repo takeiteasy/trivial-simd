@@ -49,6 +49,18 @@
   (assert (= 514.0 (root-sum a)))
   (assert (= -72.0 (kernel-dot a b :end 9 :a-start 11))))
 
+(trivial-simd:define-kernel loudest-difference (a b)
+  (trivial-simd:argmax (abs (- a b))))
+(trivial-simd:define-kernel difference-norm (a b)
+  (trivial-simd:nrm2 (- a b)))
+
+(let ((a (make-array 5 :element-type 'single-float :initial-contents '(1.0 2.0 9.0 4.0 5.0)))
+      (b (make-array 5 :element-type 'single-float :initial-element 1.0)))
+  (assert (= 2 (loudest-difference a b)))
+  (assert (= 4 (loudest-difference a b :start 3 :end 5)))
+  (assert (= 9.0 (trivial-simd:maximum a)))
+  (assert (< (abs (- (difference-norm a b) (sqrt 90.0))) 1e-5)))
+
 #+ecl
 (progn
   (eval '(trivial-simd:define-kernel eval-multiply-add (a b c) (+ (* a b) c)))

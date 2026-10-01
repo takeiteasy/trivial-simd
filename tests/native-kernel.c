@@ -228,6 +228,121 @@ static void check_final_output_##suffix(void) { \
 CHECK_FINAL_OUTPUT(f32, float, TS_F32_WIDTH, 0x1p-23f)
 CHECK_FINAL_OUTPUT(f64, double, TS_F64_WIDTH, 0x1p-52)
 
+#define CHECK_KERNEL_REDUCTION(suffix, type) \
+static void check_kernel_reduction_##suffix(void) { \
+    type a[600], value = 0; \
+    const type *inputs[] = {a}; \
+    double wide = 0; \
+    size_t index = 99; \
+    uint8_t copy[] = {TS_OP_COPY, TS_KERNEL_OUTPUT, 8, 0}; \
+    uint8_t spill[] = {TS_OP_COPY, 0, 8, 0, TS_OP_SPILL, 0, 0, 0, \
+                       TS_OP_RELOAD, 1, 0, 0, TS_OP_COPY, TS_KERNEL_OUTPUT, 1, 0}; \
+    size_t lengths[] = {1, 2, 255, 256, 257, 600}; \
+    for (size_t l = 0; l < sizeof(lengths) / sizeof(lengths[0]); ++l) { \
+        size_t n = lengths[l], least = 0, greatest = 0; \
+        double squares = 0, magnitude = 0, largest = 0; \
+        for (size_t i = 0; i < 600; ++i) a[i] = (type)((int)((i * 7 + 3) % 9) - 4); \
+        for (size_t i = 0; i < n; ++i) { \
+            if (a[i] < a[least]) least = i; \
+            if (a[i] > a[greatest]) greatest = i; \
+            squares += (double)a[i] * a[i]; \
+            magnitude += fabs((double)a[i]); \
+            if (fabs((double)a[i]) > largest) largest = fabs((double)a[i]); \
+        } \
+        for (size_t program = 0; program < 2; ++program) { \
+            const uint8_t *code = program ? spill : copy; \
+            size_t size = program ? sizeof(spill) : sizeof(copy), before = allocations; \
+            assert(ts_kernel_reduction_##suffix(code, size, NULL, inputs, 1, n, program, \
+                                                TS_REDUCE_ARGMIN, 0, &value, &wide, &index) == 0); \
+            assert(index == least && value == a[least]); \
+            assert(ts_kernel_reduction_##suffix(code, size, NULL, inputs, 1, n, program, \
+                                                TS_REDUCE_ARGMAX, 0, &value, &wide, &index) == 0); \
+            assert(index == greatest && value == a[greatest]); \
+            assert(ts_kernel_reduction_##suffix(code, size, NULL, inputs, 1, n, program, \
+                                                TS_REDUCE_ASUM, 0, &value, &wide, &index) == 0); \
+            assert(value == (type)magnitude); \
+            assert(ts_kernel_reduction_##suffix(code, size, NULL, inputs, 1, n, program, \
+                                                TS_REDUCE_SUMSQ, 0, &value, &wide, &index) == 0); \
+            assert(wide == squares); \
+            assert(ts_kernel_reduction_##suffix(code, size, NULL, inputs, 1, n, program, \
+                                                TS_REDUCE_MAXABS, 0, &value, &wide, &index) == 0); \
+            assert(wide == largest); \
+            assert(ts_kernel_reduction_##suffix(code, size, NULL, inputs, 1, n, program, \
+                                                TS_REDUCE_SCALED_SUMSQ, 2, &value, &wide, &index) == 0); \
+            assert(wide == squares / 4); \
+            assert(allocations == before + 6 * program && allocations == releases); \
+        } \
+    } \
+    assert(ts_kernel_reduction_##suffix(copy, sizeof(copy), NULL, inputs, 1, 4, 0, 0, 0, \
+                                        &value, &wide, &index) == -1); \
+    assert(ts_kernel_reduction_##suffix(copy, sizeof(copy), NULL, inputs, 1, 4, 0, \
+                                        TS_REDUCE_SCALED_SUMSQ + 1, 0, &value, &wide, &index) == -1); \
+    assert(ts_kernel_reduction_##suffix(copy, sizeof(copy), NULL, inputs, 257, 4, 0, \
+                                        TS_REDUCE_ARGMIN, 0, &value, &wide, &index) == -1); \
+    size_t before = allocations; \
+    fail_allocation = 1; \
+    assert(ts_kernel_reduction_##suffix(spill, sizeof(spill), NULL, inputs, 1, 4, 1, \
+                                        TS_REDUCE_ARGMIN, 0, &value, &wide, &index) == -1); \
+    assert(allocations == before + 1 && releases == before); \
+    --allocations; \
+    fail_allocation = 0; \
+    uint8_t root[] = {TS_OP_SQRT, TS_KERNEL_OUTPUT, 8, 0}; \
+    for (size_t i = 0; i < 600; ++i) a[i] = 1; \
+    a[599] = -1; \
+    assert(ts_kernel_reduction_##suffix(root, sizeof(root), NULL, inputs, 1, 600, 1, \
+                                        TS_REDUCE_ASUM, 0, &value, &wide, &index) == -2); \
+    assert(allocations == releases); \
+}
+
+CHECK_KERNEL_REDUCTION(f32, float)
+CHECK_KERNEL_REDUCTION(f64, double)
+
+static void check_kernel_reduction_range(void) {
+    double a[300], value = 0, wide = 0;
+    const double *inputs[] = {a};
+    size_t index = 0;
+    uint8_t copy[] = {TS_OP_COPY, TS_KERNEL_OUTPUT, 8, 0};
+    for (size_t i = 0; i < 300; ++i) a[i] = 1e200;
+    assert(ts_kernel_reduction_f64(copy, sizeof(copy), NULL, inputs, 1, 300, 0,
+                                   TS_REDUCE_SUMSQ, 0, &value, &wide, &index) == 0);
+    assert(isinf(wide));
+    assert(ts_kernel_reduction_f64(copy, sizeof(copy), NULL, inputs, 1, 300, 0,
+                                   TS_REDUCE_SCALED_SUMSQ, 1e200, &value, &wide, &index) == 0);
+    assert(wide == 300);
+}
+
+#define CHECK_INTEGER_REDUCTION(suffix, type, bits, signedp) \
+static void check_integer_reduction_##suffix(void) { \
+    type a[300], value = 0; \
+    const type *inputs[] = {a}; \
+    double wide = 0; \
+    size_t index = 99; \
+    type low = (type)(UINT64_C(1) << (bits - 1)), high = (type)(low - 1); \
+    type pattern[] = {high, low, 1, low}; \
+    uint8_t copy[] = {TS_OP_COPY, TS_KERNEL_OUTPUT, 8, 0}; \
+    for (size_t i = 0; i < 300; ++i) a[i] = pattern[i % 4]; \
+    assert(ts_kernel_reduction_##suffix(copy, sizeof(copy), NULL, inputs, 1, 300, 0, \
+                                        TS_REDUCE_ARGMIN, 0, &value, &wide, &index) == 0); \
+    assert(index == (signedp ? 1 : 2) && value == pattern[index]); \
+    assert(ts_kernel_reduction_##suffix(copy, sizeof(copy), NULL, inputs, 1, 300, 0, \
+                                        TS_REDUCE_ARGMAX, 0, &value, &wide, &index) == 0); \
+    assert(index == (signedp ? 0 : 1) && value == pattern[index]); \
+    assert(ts_kernel_reduction_##suffix(copy, sizeof(copy), NULL, inputs, 1, 300, 0, \
+                                        TS_REDUCE_ASUM, 0, &value, &wide, &index) == 0); \
+    assert(value == (type)(UINT64_C(75) * ((uint64_t)high + low + 1 + low))); \
+    assert(ts_kernel_reduction_##suffix(copy, sizeof(copy), NULL, inputs, 1, 300, 0, \
+                                        TS_REDUCE_SUMSQ, 0, &value, &wide, &index) == -1); \
+}
+
+CHECK_INTEGER_REDUCTION(s8, uint8_t, 8, 1)
+CHECK_INTEGER_REDUCTION(u8, uint8_t, 8, 0)
+CHECK_INTEGER_REDUCTION(s16, uint16_t, 16, 1)
+CHECK_INTEGER_REDUCTION(u16, uint16_t, 16, 0)
+CHECK_INTEGER_REDUCTION(s32, uint32_t, 32, 1)
+CHECK_INTEGER_REDUCTION(u32, uint32_t, 32, 0)
+CHECK_INTEGER_REDUCTION(s64, uint64_t, 64, 1)
+CHECK_INTEGER_REDUCTION(u64, uint64_t, 64, 0)
+
 static void check_scalar_fma(void) {
     assert(ts_fma_scalar_f32(0x1.000002p0f, 0x1.fffffcp-1f, -1.0f) == -0x1p-46f);
     assert(ts_fma_scalar_f64(0x1.0000000000001p0, 0x1.ffffffffffffep-1, -1.0) == -0x1p-104);
@@ -522,6 +637,17 @@ int main(void) {
     check_integer_u64();
     check_integer_mul_add_64();
     check_mask_kernels();
+    check_kernel_reduction_f32();
+    check_kernel_reduction_f64();
+    check_kernel_reduction_range();
+    check_integer_reduction_s8();
+    check_integer_reduction_u8();
+    check_integer_reduction_s16();
+    check_integer_reduction_u16();
+    check_integer_reduction_s32();
+    check_integer_reduction_u32();
+    check_integer_reduction_s64();
+    check_integer_reduction_u64();
     check_scalar_fma();
     check_f32();
     check_f64();

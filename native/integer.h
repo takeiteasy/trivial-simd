@@ -150,7 +150,7 @@ int ts_dot_##suffix(const type *a, const type *b, type *out, size_t n) { \
 } \
 static int ts_integer_kernel_##suffix(const uint8_t *code, size_t code_length, \
                   const type *constants, const type *const *inputs, type *out, size_t n, \
-                  size_t scratch_count, int sum) { \
+                  size_t scratch_count, int sum, type *external_scratch) { \
     if (!n) { if (sum) *out = 0; return 0; } \
     if (bits == 64 && !sum && !scratch_count && n <= SIZE_MAX / sizeof(type) && \
         ts_mul_add_constant_pattern(code, code_length)) { \
@@ -165,7 +165,8 @@ static int ts_integer_kernel_##suffix(const uint8_t *code, size_t code_length, \
         } \
     } \
     if (scratch_count > SIZE_MAX / TS_KERNEL_BLOCK / sizeof(type)) return -1; \
-    type *scratch = scratch_count ? malloc(scratch_count * TS_KERNEL_BLOCK * sizeof(type)) : NULL; \
+    type *scratch = external_scratch ? external_scratch \
+        : scratch_count ? malloc(scratch_count * TS_KERNEL_BLOCK * sizeof(type)) : NULL; \
     if (scratch_count && !scratch) return -1; \
     type registers[TS_KERNEL_REGISTERS][TS_KERNEL_BLOCK], reduction[TS_KERNEL_BLOCK]; \
     type result = 0; \
@@ -215,15 +216,21 @@ static int ts_integer_kernel_##suffix(const uint8_t *code, size_t code_length, \
         } \
     } \
     if (sum) *out = result; \
-    done: free(scratch); return status; \
+    done: if (!external_scratch) free(scratch); return status; \
 } \
 int ts_kernel_##suffix(const uint8_t *code, size_t code_length, const type *constants, \
                       const type *const *inputs, type *out, size_t n, size_t scratch_count) { \
-    return ts_integer_kernel_##suffix(code, code_length, constants, inputs, out, n, scratch_count, 0); \
+    return ts_integer_kernel_##suffix(code, code_length, constants, inputs, out, n, scratch_count, 0, NULL); \
+} \
+int ts_kernel_with_scratch_##suffix(const uint8_t *code, size_t code_length, const type *constants, \
+                                   const type *const *inputs, type *out, size_t n, \
+                                   size_t scratch_count, type *scratch, size_t capacity) { \
+    if (n && scratch_count && (!scratch || capacity < scratch_count)) return -1; \
+    return ts_integer_kernel_##suffix(code, code_length, constants, inputs, out, n, scratch_count, 0, scratch); \
 } \
 int ts_kernel_sum_##suffix(const uint8_t *code, size_t code_length, const type *constants, \
                           const type *const *inputs, type *out, size_t n, size_t scratch_count) { \
-    return ts_integer_kernel_##suffix(code, code_length, constants, inputs, out, n, scratch_count, 1); \
+    return ts_integer_kernel_##suffix(code, code_length, constants, inputs, out, n, scratch_count, 1, NULL); \
 }
 
 TS_INTEGER(s8, uint8_t, 8, 1, ts_vector_u8)

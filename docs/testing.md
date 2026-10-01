@@ -9,6 +9,9 @@ type pairs and rounding modes, byte masks, selection, and mask kernels.
 Reduction tests cover `minimum`, `maximum`, `argmin`, `argmax`, `asum`, `nrm2`
 and `:accumulate` on every backend, including ties, signed zeros, absolute
 indexes, overflow, wrapping and error cases.
+Kernel reducer tests compare `minimum`, `maximum`, `argmin`, `argmax`, `asum`
+and `nrm2` kernels with the bulk reducers on every backend, covering slices,
+block boundaries, ties, selections, spilling, complex vectors and overflow.
 BLAS Level 1 tests cover real and complex precisions, offsets, increments,
 errors, rotations, and convenience wrappers. They compare against an available
 system CBLAS (Accelerate on macOS, or OpenBLAS/BLAS on other platforms); only

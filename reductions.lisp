@@ -137,23 +137,28 @@
                  (native-asum input count offset)))
             (t (lisp-asum type input count offset wide))))))
 
-(defun scaled-norm (input count offset)
-  "Euclidean norm of double-float or complex double-float elements without overflow."
+(defun scaled-norm-function (count element)
+  "Euclidean norm of the real or complex values (funcall ELEMENT i) for i below COUNT,
+scaled to avoid overflow and underflow."
   (flet ((components (value)
            (if (complexp value)
                (list (realpart value) (imagpart value))
                (list value))))
     (let ((largest 0d0))
       (dotimes (i count)
-        (dolist (part (components (aref input (+ offset i))))
+        (dolist (part (components (funcall element i)))
           (setf largest (max largest (abs part)))))
       (if (zerop largest)
           0d0
           (let ((sum 0d0))
             (dotimes (i count)
-              (dolist (part (components (aref input (+ offset i))))
+              (dolist (part (components (funcall element i)))
                 (incf sum (expt (/ part largest) 2))))
             (* largest (sqrt sum)))))))
+
+(defun scaled-norm (input count offset)
+  "Euclidean norm of double-float or complex double-float elements without overflow."
+  (scaled-norm-function count (lambda (i) (aref input (+ offset i)))))
 
 (defconstant +nrm2-fast-lower+ 1d-280
   "Squared sums below this may have lost terms to underflow.")

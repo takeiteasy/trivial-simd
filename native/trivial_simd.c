@@ -559,3 +559,138 @@ TS_KERNEL_MASK(s32, uint32_t)
 TS_KERNEL_MASK(u32, uint32_t)
 TS_KERNEL_MASK(s64, uint64_t)
 TS_KERNEL_MASK(u64, uint64_t)
+
+/* Reducer codes for ts_kernel_reduction_*; SUMSQ and later reducers are float-only. */
+enum { TS_REDUCE_ARGMIN = 1, TS_REDUCE_ARGMAX, TS_REDUCE_ASUM,
+       TS_REDUCE_SUMSQ, TS_REDUCE_MAXABS, TS_REDUCE_SCALED_SUMSQ };
+
+#define TS_REDUCE_FLOAT_OPERATIONS(suffix, type, absolute) \
+static int ts_reduce_less_##suffix(type x, type y) { return x < y; } \
+static int ts_reduce_greater_##suffix(type x, type y) { return x > y; } \
+static type ts_reduce_abs_##suffix(type x) { return absolute(x); } \
+static type ts_reduce_add_##suffix(type x, type y) { return x + y; }
+
+#define TS_REDUCE_INTEGER_OPERATIONS(suffix, type) \
+static int ts_reduce_less_##suffix(type x, type y) { \
+    return x != y && ts_value_##suffix(TS_OP_MIN, x, y) == x; \
+} \
+static int ts_reduce_greater_##suffix(type x, type y) { \
+    return x != y && ts_value_##suffix(TS_OP_MAX, x, y) == x; \
+} \
+static type ts_reduce_abs_##suffix(type x) { return ts_value_##suffix(TS_OP_ABS, x, 0); } \
+static type ts_reduce_add_##suffix(type x, type y) { return ts_value_##suffix(TS_OP_ADD, x, y); }
+
+/* Larger magnitudes report an out-of-range sum so callers can rescale. Clamping
+ * keeps the multiply from overflowing, which traps under some hosts. */
+#define TS_SQUARE_LIMIT 1e140
+
+#define TS_REDUCE_LANES 8
+
+/* Independent lanes find the block's extreme value without a serial compare chain; a second
+ * scan then locates its first occurrence, so ties keep the earlier element. */
+#define TS_REDUCE_EXTREME(suffix, type, better) \
+    { \
+        type lane[TS_REDUCE_LANES]; \
+        for (size_t k = 0; k < TS_REDUCE_LANES; ++k) lane[k] = values[0]; \
+        size_t j = 0; \
+        for (; j + TS_REDUCE_LANES <= m; j += TS_REDUCE_LANES) \
+            for (size_t k = 0; k < TS_REDUCE_LANES; ++k) \
+                if (better(values[j + k], lane[k])) lane[k] = values[j + k]; \
+        for (; j < m; ++j) if (better(values[j], lane[0])) lane[0] = values[j]; \
+        type extreme = lane[0]; \
+        for (size_t k = 1; k < TS_REDUCE_LANES; ++k) if (better(lane[k], extreme)) extreme = lane[k]; \
+        size_t first = 0; \
+        while (first + 1 < m && (better(extreme, values[first]) || better(values[first], extreme))) ++first; \
+        if (base == 0 || better(values[first], best)) { best = values[first]; best_index = base + first; } \
+    }
+
+/* TODO: scalar reduction of an evaluated block; fuse into the VM with packed lanes (#96). */
+/* The first extreme wins, so ties keep the earlier element. */
+#define TS_KERNEL_REDUCTION(suffix, type, integral) \
+int ts_kernel_reduction_##suffix(const uint8_t *code, size_t code_length, const type *constants, \
+                                const type *const *inputs, size_t input_count, size_t n, \
+                              size_t scratch_count, unsigned reducer, double scale, \
+                              type *value, double *wide, size_t *index) { \
+    if (reducer < TS_REDUCE_ARGMIN || reducer > TS_REDUCE_SCALED_SUMSQ || \
+        (integral && reducer > TS_REDUCE_ASUM) || input_count > 256) return -1; \
+    if (scratch_count > SIZE_MAX / TS_KERNEL_BLOCK / sizeof(type)) return -1; \
+    type *scratch = scratch_count ? malloc(scratch_count * TS_KERNEL_BLOCK * sizeof(type)) : NULL; \
+    if (scratch_count && !scratch) return -1; \
+    type best = 0, total = 0; \
+    double accumulator = 0; \
+    int out_of_range = 0; \
+    size_t best_index = 0; \
+    for (size_t base = 0; base < n; base += TS_KERNEL_BLOCK) { \
+        size_t m = n - base < TS_KERNEL_BLOCK ? n - base : TS_KERNEL_BLOCK; \
+        const type *shifted[256]; \
+        type values[TS_KERNEL_BLOCK]; \
+        for (size_t j = 0; j < input_count; ++j) shifted[j] = inputs[j] + base; \
+        int status = ts_kernel_with_scratch_##suffix(code, code_length, constants, shifted, \
+                                                     values, m, scratch_count, scratch, \
+                                                     scratch_count); \
+        if (status) { free(scratch); return status; } \
+        switch (reducer) { \
+        case TS_REDUCE_ARGMIN: TS_REDUCE_EXTREME(suffix, type, ts_reduce_less_##suffix) break; \
+        case TS_REDUCE_ARGMAX: TS_REDUCE_EXTREME(suffix, type, ts_reduce_greater_##suffix) break; \
+        case TS_REDUCE_ASUM: { \
+            type lane[TS_REDUCE_LANES] = {0}; \
+            size_t j = 0; \
+            for (; j + TS_REDUCE_LANES <= m; j += TS_REDUCE_LANES) \
+                for (size_t k = 0; k < TS_REDUCE_LANES; ++k) \
+                    lane[k] = ts_reduce_add_##suffix(lane[k], ts_reduce_abs_##suffix(values[j + k])); \
+            for (; j < m; ++j) lane[0] = ts_reduce_add_##suffix(lane[0], ts_reduce_abs_##suffix(values[j])); \
+            for (size_t k = 0; k < TS_REDUCE_LANES; ++k) total = ts_reduce_add_##suffix(total, lane[k]); \
+            break; \
+        } \
+        case TS_REDUCE_SUMSQ: \
+        case TS_REDUCE_SCALED_SUMSQ: { \
+            double lane[TS_REDUCE_LANES] = {0}; \
+            double divisor = reducer == TS_REDUCE_SUMSQ ? 1 : scale; \
+            size_t j = 0; \
+            for (; j + TS_REDUCE_LANES <= m; j += TS_REDUCE_LANES) \
+                for (size_t k = 0; k < TS_REDUCE_LANES; ++k) { \
+                    double d = integral ? 0 : (double)values[j + k] / divisor; \
+                    double clamped = fmin(fabs(d), TS_SQUARE_LIMIT); \
+                    if (!(fabs(d) <= TS_SQUARE_LIMIT)) out_of_range = 1; \
+                    lane[k] += clamped * clamped; \
+                } \
+            for (; j < m; ++j) { \
+                double d = integral ? 0 : (double)values[j] / divisor; \
+                double clamped = fmin(fabs(d), TS_SQUARE_LIMIT); \
+                if (!(fabs(d) <= TS_SQUARE_LIMIT)) out_of_range = 1; \
+                lane[0] += clamped * clamped; \
+            } \
+            for (size_t k = 0; k < TS_REDUCE_LANES; ++k) accumulator += lane[k]; \
+            break; \
+        } \
+        default: \
+            for (size_t j = 0; j < m; ++j) { \
+                double d = integral ? 0 : fabs((double)values[j]); \
+                if (d > accumulator) accumulator = d; \
+            } \
+            break; \
+        } \
+    } \
+    free(scratch); \
+    *value = reducer == TS_REDUCE_ASUM ? total : best; \
+    *wide = out_of_range ? HUGE_VAL : accumulator; \
+    *index = best_index; \
+    return 0; \
+}
+
+TS_REDUCE_FLOAT_OPERATIONS(f32, float, fabsf)
+TS_REDUCE_FLOAT_OPERATIONS(f64, double, fabs)
+TS_KERNEL_REDUCTION(f32, float, 0)
+TS_KERNEL_REDUCTION(f64, double, 0)
+#define TS_REDUCE_INTEGER(suffix, type) \
+    TS_REDUCE_INTEGER_OPERATIONS(suffix, type) \
+    TS_KERNEL_REDUCTION(suffix, type, 1)
+TS_REDUCE_INTEGER(s8, uint8_t)
+TS_REDUCE_INTEGER(u8, uint8_t)
+TS_REDUCE_INTEGER(s16, uint16_t)
+TS_REDUCE_INTEGER(u16, uint16_t)
+TS_REDUCE_INTEGER(s32, uint32_t)
+TS_REDUCE_INTEGER(u32, uint32_t)
+TS_REDUCE_INTEGER(s64, uint64_t)
+TS_REDUCE_INTEGER(u64, uint64_t)
+#undef TS_REDUCE_INTEGER

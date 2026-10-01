@@ -82,8 +82,8 @@ operand signals an error.
   a) ; => #(2.0d0 6.0d0 12.0d0)
 ```
 
-The [kernel API](kernels.md#sum-kernels) composes arithmetic inside a scalar
-sum without a full-length intermediate vector.
+The [kernel API](kernels.md#reduction-kernels) composes arithmetic inside a scalar
+reduction without a full-length intermediate vector.
 
 Floating-point reductions may differ slightly by backend because SIMD changes
 the addition order.[^order] See [reductions](reductions.md) for empty slices,

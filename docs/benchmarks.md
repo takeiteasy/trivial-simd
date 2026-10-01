@@ -25,13 +25,13 @@ use identical typed arrays; output buffers are reused.[^scalar]
 |---:|---|---:|---:|---:|---:|---:|
 | 32 | add | 0.029 | 0.699 | 0.082 | 0.520 | 0.36x |
 | 32 | multiply-add | 0.035 | 0.135 | 0.132 | 0.338 | 0.27x |
-| 32 | dot | 0.024 | 0.809 | 0.067 | 0.346 | 0.36x |
+| 32 | dot | 0.024 | 0.093 | 0.067 | 0.346 | 0.36x |
 | 1,024 | add | 0.966 | 19.462 | 0.192 | 2.856 | 5.04x |
 | 1,024 | multiply-add | 1.111 | 3.052 | 0.354 | 3.532 | 3.14x |
-| 1,024 | dot | 0.938 | 21.822 | 0.297 | 2.038 | 3.16x |
+| 1,024 | dot | 0.938 | 1.573 | 0.297 | 2.038 | 3.16x |
 | 65,536 | add | 61.196 | 1242.797 | 8.286 | 152.486 | 7.39x |
 | 65,536 | multiply-add | 67.269 | 192.742 | 16.069 | 207.656 | 4.19x |
-| 65,536 | dot | 61.423 | 1145.063 | 15.440 | 110.412 | 3.98x |
+| 65,536 | dot | 61.423 | 100.529 | 15.440 | 110.412 | 3.98x |
 
 ### double-float
 
@@ -39,13 +39,13 @@ use identical typed arrays; output buffers are reused.[^scalar]
 |---:|---|---:|---:|---:|---:|---:|
 | 32 | add | 0.028 | 0.823 | 0.084 | 0.522 | 0.34x |
 | 32 | multiply-add | 0.035 | 0.136 | 0.137 | 0.343 | 0.26x |
-| 32 | dot | 0.025 | 0.806 | 0.068 | 0.347 | 0.37x |
+| 32 | dot | 0.025 | 0.093 | 0.068 | 0.347 | 0.37x |
 | 1,024 | add | 0.967 | 28.096 | 0.297 | 2.918 | 3.25x |
 | 1,024 | multiply-add | 1.163 | 3.061 | 0.607 | 3.749 | 1.92x |
-| 1,024 | dot | 0.938 | 26.026 | 0.531 | 2.248 | 1.77x |
+| 1,024 | dot | 0.938 | 1.546 | 0.531 | 2.248 | 1.77x |
 | 65,536 | add | 61.071 | 1826.875 | 16.417 | 159.283 | 3.72x |
 | 65,536 | multiply-add | 65.713 | 192.531 | 31.726 | 314.398 | 2.07x |
-| 65,536 | dot | 61.415 | 1610.563 | 30.808 | 139.016 | 1.99x |
+| 65,536 | dot | 61.415 | 97.091 | 30.808 | 139.016 | 1.99x |
 
 ## Lisp implementation comparison
 
@@ -127,7 +127,9 @@ compiler, CPU, memory access mode, and system load.
     timing. Values are rounded for display. Raw output:
     [SBCL](benchmark-runs/2026-09-29-sbcl.txt),
     [CCL](benchmark-runs/2026-09-29-ccl.txt),
-    [ECL](benchmark-runs/2026-09-29-ecl.txt).
+    [ECL](benchmark-runs/2026-09-29-ecl.txt). The Lisp fallback `dot` cells come from
+    the 2026-10-01 [run](benchmark-runs/2026-10-01-kernel-reducers-sbcl.txt), after the
+    typed Lisp loops.
 
 [^scalar]: Scalar functions are compiled typed Lisp loops without explicit
     SIMD. The compiler may still emit vector instructions. `Native copy`

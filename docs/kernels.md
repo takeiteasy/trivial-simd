@@ -1,6 +1,6 @@
 # Kernels
 
-`define-kernel` compiles an elementwise expression or scalar sum into one
+`define-kernel` compiles an elementwise expression or scalar reduction into one
 backend execution. It is experimental.
 
 ```lisp
@@ -30,7 +30,9 @@ It returns `destination`.
 | `(> a b)` and other two-operand comparisons | Byte mask expression |
 | `(trivial-simd:select mask a b)` | Choose a numeric value per element |
 | `(trivial-simd:count mask)`, `(trivial-simd:any mask)`, `(trivial-simd:all mask)` | Top-level mask reductions |
-| `(trivial-simd:sum x)` | Top-level scalar sum |
+| `(trivial-simd:sum x)`, `(trivial-simd:asum x)`, `(trivial-simd:nrm2 x)` | Top-level sum, sum of absolute values, Euclidean norm |
+| `(trivial-simd:minimum x)`, `(trivial-simd:maximum x)` | Top-level smallest or largest value |
+| `(trivial-simd:argmin x)`, `(trivial-simd:argmax x)` | Top-level index of that value |
 
 `+`, `*`, `min`, and `max` with one operand return it unchanged. Empty operand
 lists and unsupported forms signal an error when the kernel is defined. Vectors
@@ -38,13 +40,13 @@ share one numeric element type, chosen per call. Integer expressions use
 [wrapping arithmetic](integers.md); `sqrt` and `fma` remain float-only.
 Comparisons use `=`, `/=`, `<`, `<=`, `>`, and `>=` with two operands. A
 comparison-only kernel writes a [byte mask](masks.md). Mask reductions return
-an integer count or a boolean; they are top-level forms like `sum`.
+an integer count or a boolean; they are top-level forms like the other reductions.
 
-## Sum kernels
+## Reduction kernels
 
-A top-level `(trivial-simd:sum expression)` returns a scalar instead of writing
-into a destination vector. It takes input vectors, `:start` and `:end`, and
-one `<argument>-start` keyword per input. The first input sets the default length.
+A top-level reducer returns a scalar instead of writing into a destination
+vector. It takes input vectors, `:start` and `:end`, and one
+`<argument>-start` keyword per input. The first input sets the default length.
 The same vector-type and [slice checks](api.md#slices) apply.
 
 ```lisp
@@ -53,13 +55,28 @@ The same vector-type and [slice checks](api.md#slices) apply.
 
 (kernel-dot x y)                         ; scalar dot product
 (kernel-dot x y :end 64 :a-start 8)     ; x[8..72) * y[0..64)
+
+(trivial-simd:define-kernel loudest (a b)
+  (trivial-simd:argmax (abs (- a b))))
+
+(loudest x y :start 2 :end 10)          ; => index in 2..9
 ```
 
-Sum kernels require at least one input vector, even for a constant expression.
-They return a scalar of the input element type and typed zero for an empty slice.
-They leave inputs unchanged, use input precision for accumulation, and need no
-full-length intermediate result vector. Results may differ slightly by backend
-because the addition order differs.[^sum]
+| Reducer | Result | Empty slice | Types |
+|---|---|---|---|
+| `sum` | Sum of the expression | Typed zero | Float, integer, complex |
+| `asum` | Sum of `abs`; complex uses the modulus | Typed zero | Float, integer, complex |
+| `nrm2` | Euclidean norm, scaled against overflow and underflow[^nrm2] | Typed zero | Float, complex |
+| `minimum`, `maximum` | First smallest or largest value | `NIL` | Float, integer |
+| `argmin`, `argmax` | `:start` plus the index of that value[^index] | `NIL` | Float, integer |
+
+Reduction kernels require at least one input vector, even for a constant
+expression. They return a scalar of the input element type (the real type for
+complex `asum` and `nrm2`). They leave inputs unchanged, use input precision
+for accumulation, and need no full-length intermediate result vector. Results
+may differ slightly by backend because the addition order differs.[^sum]
+`nrm2` of single-float inputs accumulates in double precision and rounds once.
+Ties keep the first element, matching the [bulk reductions](reductions.md#ties-and-signed-zeros).
 
 ## Numerical behavior
 
@@ -93,6 +110,9 @@ Elementwise mask kernels and mask reductions use the native register VM on
 `:native`. Its comparison and selection opcodes process scalar lanes;
 arithmetic opcodes retain their SIMD paths. A `sum` over a selection uses a
 typed scalar loop, as do mask expressions on `:sbcl` and `:lisp`.
+On `:native`, `asum`, `nrm2`, `minimum`, `maximum`, `argmin` and `argmax` evaluate
+each 256-element block, then reduce it. `:sbcl` accumulates float `asum` and
+double-float `nrm2` with SIMD packs; its other reducers, and integer `asum`, use typed scalar loops.
 
 The native backend makes one foreign call per kernel call and needs no
 full-length intermediate arrays. Expressions that exceed eight registers spill
@@ -105,7 +125,7 @@ kernel function becomes unreachable. Retained references to an older function
 remain callable after redefinition. Reclamation follows garbage collection.[^ownership]
 
 On ECL, native calls share a compiled setup helper by input count and
-whether the kernel returns a sum. Different expressions, numeric types, and pointer/copy access reuse
+reducer. Different expressions, numeric types, and pointer/copy access reuse
 the same helper. This includes `eval` definitions.
 The first native call for a signature compiles its helper; later definitions
 reuse it. Failed compilation selects each kernel's own interpreted fallback
@@ -143,9 +163,13 @@ for measurements and [FMA fallback limitations](#limitations).
 - Native call setup dominates short reductions; specialised bulk `dot` may
   be faster for `sum(a*b)`. See the
   [call setup ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/59).
-- Reductions are top-level sums only. Nested reductions and additional reducers
-  are unsupported. See the
-  [kernel reducers ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/90).
+- Reductions must be top-level. Nested reductions are unsupported. See the
+  [nested reductions ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/94).
+- Native reducers other than `sum` evaluate a block before reducing it; see the
+  [fused reducers ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/96).
+  SBCL `minimum`, `maximum`, `argmin` and `argmax` use scalar loops
+  ([#92](https://todo.sr.ht/~takeiteasy/trivial-simd/92)), as does single-float
+  `nrm2` ([#95](https://todo.sr.ht/~takeiteasy/trivial-simd/95)).
 - ECL's first native call for each setup signature includes helper compilation,
   costing hundreds of milliseconds. Cold compilation for different signatures
   is serialized. See the
@@ -191,12 +215,19 @@ for measurements and [FMA fallback limitations](#limitations).
     Native builds disable implicit multiply/add contraction; explicit FMA keeps
     its single-rounding behavior.
 
+[^nrm2]: Single-float inputs square in double precision. Double-float inputs take
+    one pass of squares and fall back to a scaled pass when the sum of squares
+    overflows or may have underflowed, as the [bulk `nrm2`](reductions.md#precision) does.
+[^index]: `:start` defaults to zero, and `<argument>-start` keywords do not
+    shift the result. `(k a b :start 7)` returns 7 plus the position of the
+    extreme within the slice.
+
 [^ownership]: CCL's native finalization queue and `trivial-garbage` on other Lisps
     release foreign buffers without retaining
     their owning program. Partial initialization frees completed allocations,
     and active native calls keep the owner reachable until they finish.
 
-[^ecl-runners]: The process retains at most 495 helpers or failure markers under
+[^ecl-runners]: The process retains at most 1,983 helpers or failure markers under
     the current input-count limit. Cache entries do not retain kernel programs
     or per-call data. Each program stores its selected runner, so warmed calls
     avoid shared-cache lookup and locking. Threaded ECL protects initialization

@@ -240,9 +240,65 @@ SPILL/RELOAD use a register and slot; other operands name registers or inputs."
              ,@(nreverse assignments)
              ,result))))))
 
+(defun reduction-loop-form (reducer type count index value)
+  "Scalar loop reducing COUNT values; VALUE computes the one at INDEX.
+Evaluates to the reduction, or for ARGMIN and ARGMAX the index within the slice.
+Empty slices give NIL for the extrema and a zero otherwise."
+  (let* ((element (kernel-element-type type))
+         (real (case type (:c32 'single-float) (:c64 'double-float) (t element)))
+         (integerp (integer-type-p type))
+         (sum (gensym "SUM")) (best (gensym "BEST"))
+         (best-index (gensym "BEST-INDEX")) (current (gensym "VALUE")))
+    (ecase reducer
+      ((sum asum)
+       (let ((accumulator (if (eq reducer 'asum) real element))
+             (term (cond ((eq reducer 'sum) value)
+                         (integerp `(,(integer-operation-symbol :abs type) ,value))
+                         (t `(abs ,value)))))
+         `(let ((,sum ,(coerce 0 accumulator)))
+            (declare (type ,accumulator ,sum))
+            (dotimes (,index ,count ,sum)
+              ,(if integerp
+                   `(setf ,sum (,(integer-operation-symbol :add type) ,sum ,term))
+                   `(incf ,sum ,term))))))
+      (nrm2
+       (when integerp (error "NRM2 requires float or complex vectors"))
+       (let* ((real-part (gensym "REAL")) (imaginary-part (gensym "IMAGINARY"))
+              (square (if (complex-type-p type)
+                          `(let* ((,current ,value)
+                                  (,real-part (coerce (realpart ,current) 'double-float))
+                                  (,imaginary-part (coerce (imagpart ,current) 'double-float)))
+                             (+ (* ,real-part ,real-part) (* ,imaginary-part ,imaginary-part)))
+                          `(let ((,current (coerce ,value 'double-float)))
+                             (* ,current ,current)))))
+         `(let ((,sum 0d0))
+            (declare (type double-float ,sum))
+            ,(if (member type '(:f64 :c64))
+                 `(if (and (handler-case (progn (dotimes (,index ,count) (incf ,sum ,square)) t)
+                             (arithmetic-error () nil))
+                           (<= +nrm2-fast-lower+ ,sum most-positive-double-float))
+                      (sqrt ,sum)
+                      (scaled-norm-function ,count (lambda (,index) ,value)))
+                 `(progn (dotimes (,index ,count) (incf ,sum ,square))
+                         (coerce (sqrt ,sum) 'single-float))))))
+      ((minimum maximum argmin argmax)
+       `(if (zerop ,count)
+            nil
+            (let ((,best (let ((,index 0))
+                           (declare (type fixnum ,index))
+                           ,value))
+                  (,best-index 0))
+              (declare (type ,element ,best) (type fixnum ,best-index))
+              (loop for ,index of-type fixnum from 1 below ,count
+                    do (let ((,current ,value))
+                         (declare (type ,element ,current))
+                         (when (,(if (member reducer '(minimum argmin)) '< '>) ,current ,best)
+                           (setf ,best ,current ,best-index ,index))))
+              ,(if (member reducer '(minimum maximum)) best best-index)))))))
+
 (defun lisp-kernel-form (tree type destination arguments d-offset offsets count
-                       &optional (fma-operator 'fma))
-  (let ((index (gensym "I")) (sum (gensym "SUM"))
+                       &optional (fma-operator 'fma) reducer)
+  (let ((index (gensym "I"))
         (element (kernel-element-type type))
         (variables (if destination (cons destination arguments) arguments)))
     `(let ,(mapcar (lambda (variable) (list variable variable)) variables)
@@ -252,27 +308,31 @@ SPILL/RELOAD use a register and slot; other operands name registers or inputs."
             `(dotimes (,index ,count)
                (setf (aref ,destination (+ ,d-offset ,index))
                      ,(scalar-kernel-form tree type arguments offsets index fma-operator)))
-            `(let ((,sum ,(coerce 0 element)))
-               (declare (type ,element ,sum))
-               (dotimes (,index ,count ,sum)
-                 ,(if (integer-type-p type)
-                        `(setf ,sum (,(integer-operation-symbol :add type)
-                                     ,sum ,(scalar-kernel-form tree type arguments offsets index fma-operator)))
-                        `(incf ,sum ,(scalar-kernel-form tree type arguments offsets index fma-operator)))))))))
+            (reduction-loop-form
+             (or reducer 'sum) type count index
+             (scalar-kernel-form tree type arguments offsets index fma-operator))))))
 
-(defun selected-lisp-kernel-form (tree type destination arguments d-offset offsets count)
-  (let ((fallback (lisp-kernel-form tree type destination arguments d-offset offsets count)))
+(defun selected-lisp-kernel-form (tree type destination arguments d-offset offsets count
+                                  &optional reducer)
+  (let ((fallback (lisp-kernel-form tree type destination arguments d-offset offsets count
+                                    'fma reducer)))
     (labels ((fma-p (node)
                (and (consp node) (or (eq (first node) :fma) (some #'fma-p node)))))
       (if (and *arm64-fma-compiler-p* (fma-p tree))
           `(if (arm64-fma-enabled-p ',(kernel-element-type type))
                ,(lisp-kernel-form tree type destination arguments d-offset offsets count
-                                  (ecase type (:f32 'arm64-fma-f32) (:f64 'arm64-fma-f64)))
+                                  (ecase type (:f32 'arm64-fma-f32) (:f64 'arm64-fma-f64))
+                                  reducer)
                ,fallback)
           fallback))))
 
 #+(and sbcl x86-64)
-(defun sbcl-kernel-form (tree type destination arguments d-offset offsets count)
+;; TODO: min/max/arg reducers use scalar loops (#92); f32 nrm2 too (#95).
+(defun sbcl-kernel-form (tree type destination arguments d-offset offsets count &optional reducer)
+  (when (or (member reducer '(minimum maximum argmin argmax))
+            (and (eq reducer 'nrm2) (eq type :f32)))
+    (return-from sbcl-kernel-form
+      (lisp-kernel-form tree type destination arguments d-offset offsets count 'fma reducer)))
   (destructuring-bind (package width prefix)
       (if (integer-type-p type)
           (multiple-value-bind (package prefix width) (sbcl-integer-pack type)
@@ -376,7 +436,41 @@ SPILL/RELOAD use a register and slot; other operands name registers or inputs."
           ;; A long LET* also exhausts SBCL's compiler stack; use flat assignments.
           (let* ((result (walk tree))
                  (packs (append (remove nil (coerce inputs 'list)) temporaries))
-                 (lanes (loop repeat width collect (gensym "LANE"))))
+                 (lanes (loop repeat width collect (gensym "LANE")))
+                 (reducer (or reducer 'sum))
+                 (square (gensym "SQUARE")) (term (gensym "TERM"))
+                 (accumulated
+                   (ecase reducer
+                     (sum `(,cast ,result))
+                     (asum `(,(symbol-for "-ANDC1")
+                             (,cast ,(- (coerce 0 (kernel-element-type type)))) (,cast ,result)))
+                     (nrm2 `(let ((,square (,cast ,result)))
+                              (,(symbol-for "*") ,square ,square)))))
+                 (tail-term
+                   (let ((value (scalar-kernel-form tree type arguments offsets index)))
+                     (ecase reducer
+                       (sum value)
+                       (asum `(abs ,value))
+                       (nrm2 `(let ((,term ,value)) (* ,term ,term))))))
+                 (accumulate
+                   (unless destination
+                     `((loop while (<= (+ ,index ,width) ,count) do
+                         (let ,(loop for name in packs collect `(,name (,cast 0)))
+                           ,@(when packs `((declare (type ,cast ,@packs))))
+                           ,@(reverse assignments)
+                           (setf ,sum-pack (,(symbol-for "+") ,sum-pack ,accumulated)))
+                         (incf ,index ,width))
+                       (multiple-value-bind ,lanes (,(symbol-for "-VALUES") ,sum-pack)
+                         (setf ,sum ,(if (integer-type-p type)
+                                         (reduce (lambda (value lane)
+                                                   `(,(integer-operation-symbol :add type) ,value ,lane))
+                                                 lanes :initial-value sum)
+                                         `(+ ,@lanes))))
+                       (loop while (< ,index ,count) do
+                         ,(if (integer-type-p type)
+                              `(setf ,sum (,(integer-operation-symbol :add type) ,sum ,tail-term))
+                              `(incf ,sum ,tail-term))
+                         (incf ,index))))))
             `(let ,(mapcar (lambda (variable) (list variable variable)) variables)
                (declare (type (simple-array ,(kernel-element-type type) (*)) ,@variables)
                         (type fixnum ,count ,@(when destination (list d-offset)) ,@offsets))
@@ -387,34 +481,78 @@ SPILL/RELOAD use a register and slot; other operands name registers or inputs."
                  (declare (type fixnum ,index)
                           ,@(unless destination
                               `((type ,(kernel-element-type type) ,sum) (type ,cast ,sum-pack))))
-                 (loop while (<= (+ ,index ,width) ,count) do
-                   (let ,(loop for name in packs collect `(,name (,cast 0)))
-                     ,@(when packs `((declare (type ,cast ,@packs))))
-                     ,@(nreverse assignments)
-                     ,(if destination
-                          `(setf (,aref ,destination (+ ,d-offset ,index)) (,cast ,result))
-                          `(setf ,sum-pack (,(symbol-for "+") ,sum-pack (,cast ,result)))))
-                   (incf ,index ,width))
-                 ,@(unless destination
-                     `((multiple-value-bind ,lanes (,(symbol-for "-VALUES") ,sum-pack)
-                         (setf ,sum ,(if (integer-type-p type)
-                                          (reduce (lambda (value lane)
-                                                    `(,(integer-operation-symbol :add type) ,value ,lane))
-                                                  lanes :initial-value sum)
-                                          `(+ ,@lanes))))))
-                 (loop while (< ,index ,count) do
-                   ,(if destination
-                        `(setf (aref ,destination (+ ,d-offset ,index))
-                               ,(scalar-kernel-form tree type arguments offsets index))
-                        (if (integer-type-p type)
-                             `(setf ,sum (,(integer-operation-symbol :add type)
-                                          ,sum ,(scalar-kernel-form tree type arguments offsets index)))
-                             `(incf ,sum ,(scalar-kernel-form tree type arguments offsets index))))
-                   (incf ,index))
-                 ,@(unless destination (list sum))))))))))
+                 ,@(if destination
+                       `((loop while (<= (+ ,index ,width) ,count) do
+                           (let ,(loop for name in packs collect `(,name (,cast 0)))
+                             ,@(when packs `((declare (type ,cast ,@packs))))
+                             ,@(nreverse assignments)
+                             (setf (,aref ,destination (+ ,d-offset ,index)) (,cast ,result)))
+                           (incf ,index ,width))
+                         (loop while (< ,index ,count) do
+                           (setf (aref ,destination (+ ,d-offset ,index))
+                                 ,(scalar-kernel-form tree type arguments offsets index))
+                           (incf ,index)))
+                       (if (eq reducer 'nrm2)
+                           `((if (and (handler-case (progn ,@accumulate t)
+                                        (arithmetic-error () nil))
+                                      (<= +nrm2-fast-lower+ ,sum most-positive-double-float))
+                                 (sqrt ,sum)
+                                 (scaled-norm-function
+                                  ,count (lambda (,index)
+                                           ,(scalar-kernel-form tree type arguments offsets index)))))
+                           `(,@accumulate ,sum)))))))))))
+
+;; TODO: reducers other than sum evaluate a block, then reduce it; fuse into the VM (#96).
+;; Reducer codes match ts_kernel_reduction_*.
+(defun native-reduction-form (program foreign table count reducer input-count)
+  (let ((value (gensym "VALUE")) (wide (gensym "WIDE")) (index (gensym "INDEX"))
+        (scale (gensym "SCALE")) (sum (gensym "SUM"))
+        (integerp (integer-type-p (first (find foreign *numeric-types* :key #'third)))))
+    (flet ((call (code &optional (scale-form 0d0))
+             `(call-native-kernel-reduction ,program ,foreign ,table ,input-count ,count
+                                           ,code ,scale-form ,value ,wide ,index))
+           (read-wide () `(cffi:mem-ref ,wide :double)))
+      `(cffi:with-foreign-objects ((,value ,foreign) (,wide :double) (,index :size))
+         ;; Each reducer uses a subset of the output cells; touching all avoids warnings.
+         ,value ,wide ,index
+         ,(ecase reducer
+            ((minimum maximum)
+             `(when (plusp ,count)
+                ,(call (if (eq reducer 'minimum) 1 2))
+                ,(if integerp
+                     `(native-integer-result ,value ,foreign)
+                     `(cffi:mem-ref ,value ,foreign))))
+            ((argmin argmax)
+             `(when (plusp ,count)
+                ,(call (if (eq reducer 'argmin) 1 2))
+                (cffi:mem-ref ,index :size)))
+            (asum
+             `(progn ,(call 3)
+                     ,(if integerp
+                          `(native-integer-result ,value ,foreign)
+                          `(cffi:mem-ref ,value ,foreign))))
+            (nrm2
+             (if integerp
+                 '(error "NRM2 requires float or complex vectors")
+                 (if (eq foreign :double)
+                 `(progn
+                    ,(call 4)
+                    (let ((,sum ,(read-wide)))
+                      (if (<= +nrm2-fast-lower+ ,sum most-positive-double-float)
+                          (sqrt ,sum)
+                          (progn
+                            ,(call 5)
+                            (let ((,scale ,(read-wide)))
+                              (if (zerop ,scale)
+                                  0d0
+                                  (progn ,(call 6 scale)
+                                         (* ,scale (sqrt ,(read-wide))))))))))
+                 `(progn ,(call 4)
+                         (coerce (sqrt ,(read-wide)) 'single-float))))))))))
 
 ;; TODO: pointer/output setup dominates short kernels; specialize runners if worthwhile (#59).
-(defun native-kernel-form (program foreign destination arguments d-offset offsets count)
+(defun native-kernel-form (program foreign destination arguments d-offset offsets count
+                           &optional reducer)
   (let ((pointers (loop for nil in arguments collect (gensym "POINTER")))
         (output (gensym "OUTPUT")) (table (gensym "TABLE")))
     `(with-native-vectors (,foreign (,@(when destination `((,output ,destination ,d-offset)))
@@ -425,14 +563,17 @@ SPILL/RELOAD use a register and slot; other operands name registers or inputs."
          ,@(loop for pointer in pointers for index from 0
                  collect `(setf (cffi:mem-aref ,table :pointer ,index)
                                 ,pointer))
-         ,(if destination
-              `(call-native-kernel ,program ,foreign ,table
-                                   ,output ,count)
-              `(cffi:with-foreign-object (,output ,foreign)
-                 (call-native-kernel ,program ,foreign ,table ,output ,count :sum-p t)
-                 ,(if (integer-type-p (first (find foreign *numeric-types* :key #'third)))
-                      `(native-integer-result ,output ,foreign)
-                      `(cffi:mem-ref ,output ,foreign))))))))
+         ,(cond (destination
+                 `(call-native-kernel ,program ,foreign ,table
+                                      ,output ,count))
+                ((member reducer '(nil sum))
+                 `(cffi:with-foreign-object (,output ,foreign)
+                    (call-native-kernel ,program ,foreign ,table ,output ,count :sum-p t)
+                    ,(if (integer-type-p (first (find foreign *numeric-types* :key #'third)))
+                         `(native-integer-result ,output ,foreign)
+                         `(cffi:mem-ref ,output ,foreign))))
+                (t (native-reduction-form program foreign table count reducer
+                                          (length arguments))))))))
 
 #+ecl
 (declaim (notinline compile-native-kernel-runner))
@@ -465,7 +606,8 @@ SPILL/RELOAD use a register and slot; other operands name registers or inputs."
         #+threads (mp:with-lock (*native-kernel-runner-lock*) (initialize))
         #-threads (initialize))))
 
-(defun validate-integer-kernel (tree type)
+(defun validate-integer-kernel (tree type &optional reducer)
+  (when (eq reducer 'nrm2) (error "NRM2 requires float or complex vectors"))
   (let ((element (kernel-element-type type)))
     (labels ((walk (node)
                (case (first node)
@@ -481,7 +623,9 @@ SPILL/RELOAD use a register and slot; other operands name registers or inputs."
                  (:operation (walk (third node)) (walk (fourth node))))))
       (walk tree))))
 
-(defun validate-complex-kernel (tree)
+(defun validate-complex-kernel (tree &optional reducer)
+  (when (member reducer '(minimum maximum argmin argmax))
+    (error "Complex values have no ordering"))
   (labels ((walk (node)
              (case (first node)
                ((:argument :constant) nil)
@@ -498,7 +642,8 @@ SPILL/RELOAD use a register and slot; other operands name registers or inputs."
                 (walk (fourth node))))))
     (walk tree)))
 
-(defun integer-kernel-function (cache tree type backend destination arguments count d-offset offsets)
+(defun integer-kernel-function (cache tree type backend destination arguments count d-offset offsets
+                                &optional reducer)
   (let ((slot (+ (* 2 (- (position type *numeric-types* :key #'first) 2))
                  (if (eq backend :sbcl) 1 0))))
     (or (aref cache slot)
@@ -507,14 +652,16 @@ SPILL/RELOAD use a register and slot; other operands name registers or inputs."
                #-ecl nil
                        `(lambda (,@(when destination (list destination)) ,@arguments ,count
                                  ,@(when destination (list d-offset)) ,@offsets)
-                          ,(if (eq backend :sbcl)
+                          ,(if (and (eq backend :sbcl) (member reducer '(nil sum)))
                                #+(and sbcl x86-64)
                                (sbcl-integer-kernel-form tree type destination arguments d-offset offsets count)
                                #-(and sbcl x86-64)
                                '(error "SBCL SIMD is unavailable on this platform")
-                               (lisp-kernel-form tree type destination arguments d-offset offsets count))))))))
+                               (lisp-kernel-form tree type destination arguments d-offset offsets count
+                                                 'fma reducer))))))))
 
-(defun complex-kernel-function (cache tree type destination arguments count d-offset offsets)
+(defun complex-kernel-function (cache tree type destination arguments count d-offset offsets
+                                &optional reducer)
   (let ((slot (if (eq type :c32) 0 1)))
     (or (aref cache slot)
         (setf (aref cache slot)
@@ -522,20 +669,24 @@ SPILL/RELOAD use a register and slot; other operands name registers or inputs."
                #-ecl nil
                `(lambda (,@(when destination (list destination)) ,@arguments ,count
                          ,@(when destination (list d-offset)) ,@offsets)
-                  ,(lisp-kernel-form tree type destination arguments d-offset offsets count)))))))
+                  ,(lisp-kernel-form tree type destination arguments d-offset offsets count
+                                     'fma reducer)))))))
 
 (defmacro define-kernel (name (&rest arguments) expression)
-  "Define an elementwise destination kernel or a scalar (SUM expression) kernel.
-Both accept START, END, and per-input start keywords. Experimental."
+  "Define an elementwise destination kernel or a scalar reduction kernel such as
+(SUM expression), (ASUM expression), (NRM2 expression), (MINIMUM expression),
+(MAXIMUM expression), (ARGMIN expression) or (ARGMAX expression). Both accept START,
+END, and per-input start keywords. Experimental."
   (when (mask-kernel-expression-p expression)
     (return-from define-kernel (mask-kernel-expansion name arguments expression)))
   (when (> (length arguments) +kernel-max-arguments+)
     (error "A kernel takes at most ~D arguments" +kernel-max-arguments+))
-  (let* ((reduction-p (and (consp expression) (eq (first expression) 'sum)))
+  (let* ((reducer (and (consp expression) (find (first expression) *kernel-reducers*)))
+         (reduction-p (and reducer t))
          (destination (unless reduction-p (gensym "DESTINATION"))))
     (when reduction-p
       (unless (and arguments (= 2 (length expression)))
-        (error "A sum kernel needs input vectors and one expression")))
+        (error "A ~(~A~) kernel needs input vectors and one expression" reducer)))
     (let ((tree (parse-kernel-expression (if reduction-p (second expression) expression) arguments)))
       (multiple-value-bind (instructions constants scratch-count) (lower-kernel tree)
         (let* ((count (gensym "COUNT"))
@@ -553,10 +704,11 @@ Both accept START, END, and per-input start keywords. Experimental."
                (native-form `(ecase ,type
                                ,@(loop for (key element foreign) in *numeric-types*
                                        collect `(,key ,(native-kernel-form program foreign destination arguments
-                                                                           d-offset offsets count)))))
+                                                                           d-offset offsets count reducer)))))
                (integer-form
                  `(funcall (integer-kernel-function ,integer-functions ',tree ,type *backend*
-                                                   ',destination ',arguments ',count ',d-offset ',offsets)
+                                                   ',destination ',arguments ',count ',d-offset ',offsets
+                                                   ',reducer)
                            ,@vectors ,count ,@all-offsets))
                #+ecl (runner (gensym "RUNNER"))
                #+ecl (runner-arguments (append (list program type count) vectors all-offsets))
@@ -566,32 +718,35 @@ Both accept START, END, and per-input start keywords. Experimental."
                  (,complex-functions (make-array 2 :initial-element nil))
                  #+ecl (,runner ,runner-form))
              (defun ,name (,@vectors &key start end ,@all-starts)
-               ,(if reduction-p "Return the sum of the kernel expression over the input slice."
+               ,(if reduction-p
+                    (format nil "Return the ~(~A~) of the kernel expression over the input slice."
+                            reducer)
                     "Compute the kernel expression into destination and return it.")
-               (multiple-value-bind (,type ,count ,offsets-variable)
+               ,(argument-index-result reducer (gensym "RESULT")
+                `(multiple-value-bind (,type ,count ,offsets-variable)
                    (resolve-slice (list ,@vectors) (list ,@all-starts) start end)
-                 (when (integer-type-p ,type) (validate-integer-kernel ',tree ,type))
+                 (when (integer-type-p ,type) (validate-integer-kernel ',tree ,type ',reducer))
                  (destructuring-bind ,all-offsets ,offsets-variable
                    (declare (type fixnum ,@all-offsets))
                    (if (complex-type-p ,type)
                        (progn
-                         (validate-complex-kernel ',tree)
+                         (validate-complex-kernel ',tree ',reducer)
                          (funcall (complex-kernel-function
                                    ,complex-functions ',tree ,type ',destination ',arguments
-                                   ',count ',d-offset ',offsets)
+                                   ',count ',d-offset ',offsets ',reducer)
                                   ,@vectors ,count ,@all-offsets))
                        (ecase *backend*
                      (:lisp (if (integer-type-p ,type) ,integer-form
                                 (if (eq ,type :f32)
-                                    ,(selected-lisp-kernel-form tree :f32 destination arguments d-offset offsets count)
-                                    ,(selected-lisp-kernel-form tree :f64 destination arguments d-offset offsets count))))
+                                    ,(selected-lisp-kernel-form tree :f32 destination arguments d-offset offsets count reducer)
+                                    ,(selected-lisp-kernel-form tree :f64 destination arguments d-offset offsets count reducer))))
                      (:sbcl
                       ,(if (and (boundp '*sbcl-simd-available-p*) *sbcl-simd-available-p*)
                            #+(and sbcl x86-64)
                            `(if (integer-type-p ,type) ,integer-form
                                 (if (eq ,type :f32)
-                                    ,(sbcl-kernel-form tree :f32 destination arguments d-offset offsets count)
-                                    ,(sbcl-kernel-form tree :f64 destination arguments d-offset offsets count)))
+                                    ,(sbcl-kernel-form tree :f32 destination arguments d-offset offsets count reducer)
+                                    ,(sbcl-kernel-form tree :f64 destination arguments d-offset offsets count reducer)))
                            #-(and sbcl x86-64)
                            '(error "SBCL SIMD is unavailable on this platform")
                            '(error "SBCL SIMD is unavailable on this platform")))
@@ -601,8 +756,8 @@ Both accept START, END, and per-input start keywords. Experimental."
                                            (setf (aref ,programs slot)
                                                  (make-native-program ',bytes ',constants ,scratch-count ,type)))))
                         #+ecl (funcall (ensure-native-kernel-runner
-                                       ,program ,(+ (* 2 (length arguments)) (if reduction-p 1 0))
+                                       ,program ,(+ (* 8 (length arguments)) (position reducer '(nil sum asum nrm2 minimum maximum argmin argmax)))
                                        ',runner-form ,runner)
                                        ,@runner-arguments)
                         #-ecl ,native-form)))))
-                 ,@(when destination (list destination))))))))))
+                 ,@(when destination (list destination)))))))))))

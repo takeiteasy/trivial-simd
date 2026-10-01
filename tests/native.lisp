@@ -388,7 +388,7 @@
     (with-fresh-native-runners
       (let ((released (list 0)))
         (finishes (exercise-native-redefinitions released))
-        (is (functionp (gethash 2 simd::*native-kernel-runners*)))))))
+        (is (functionp (gethash 8 simd::*native-kernel-runners*)))))))
 
 (defun collecting-native-call (function counter)
   (lambda (&rest arguments)
@@ -419,7 +419,7 @@
         (with-function-replaced (simd::compile-native-kernel-runner
                                  (lambda (form fallback) (declare (ignore form)) fallback))
           (finishes (exercise-native-redefinitions released))
-          (is (eq :failed (gethash 2 simd::*native-kernel-runners*))))))))
+          (is (eq :failed (gethash 8 simd::*native-kernel-runners*))))))))
 
 (test native-copy-compact-slices
   (dolist (type '(single-float double-float))

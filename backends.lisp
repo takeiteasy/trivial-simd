@@ -147,23 +147,40 @@
   #-(and sbcl x86-64)
   (error "SBCL SIMD is unavailable on this platform"))
 
-;; TODO: untyped loops box every float, ~25x slower than typed loops (#93)
-(defun lisp-sum (input count offset)
-  (let ((type (vector-type input)))
-    (when (integer-type-p type)
-      (return-from lisp-sum (integer-sum type input count offset))))
-  (let ((result (if (typep input '(simple-array single-float (*))) 0.0f0 0.0d0)))
-    (dotimes (i count result)
-      (incf result (aref input (+ offset i))))))
+(defmacro define-lisp-float-reductions ()
+  `(progn
+     (defun lisp-sum (input count offset)
+       (let ((type (vector-type input)))
+         (when (integer-type-p type)
+           (return-from lisp-sum (integer-sum type input count offset)))
+         (ecase type
+           ,@(loop for (key element) in '((:f32 single-float) (:f64 double-float))
+                   collect
+                   `(,key
+                     (locally (declare (type (simple-array ,element (*)) input)
+                                       (type fixnum count offset))
+                       (let ((result (coerce 0 ',element)))
+                         (declare (type ,element result))
+                         (dotimes (i count result)
+                           (incf result (aref input (+ offset i)))))))))))
+     (defun lisp-dot (left right count left-offset right-offset)
+       (let ((type (vector-type left)))
+         (when (integer-type-p type)
+           (return-from lisp-dot
+             (integer-dot type left right count left-offset right-offset)))
+         (ecase type
+           ,@(loop for (key element) in '((:f32 single-float) (:f64 double-float))
+                   collect
+                   `(,key
+                     (locally (declare (type (simple-array ,element (*)) left right)
+                                       (type fixnum count left-offset right-offset))
+                       (let ((result (coerce 0 ',element)))
+                         (declare (type ,element result))
+                         (dotimes (i count result)
+                           (incf result (* (aref left (+ left-offset i))
+                                           (aref right (+ right-offset i))))))))))))))
 
-(defun lisp-dot (left right count left-offset right-offset)
-  (let ((type (vector-type left)))
-    (when (integer-type-p type)
-      (return-from lisp-dot (integer-dot type left right count left-offset right-offset))))
-  (let ((result (if (typep left '(simple-array single-float (*))) 0.0f0 0.0d0)))
-    (dotimes (i count result)
-      (incf result (* (aref left (+ left-offset i))
-                      (aref right (+ right-offset i)))))))
+(define-lisp-float-reductions)
 
 (defun sbcl-binary (operation destination left right count
                     destination-offset left-offset right-offset)

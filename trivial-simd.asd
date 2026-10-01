@@ -31,6 +31,7 @@
                (:file "tests/blas")
                (:file "tests/complex")
                (:file "tests/reductions")
+               (:file "tests/kernel-reductions")
                (:file "tests/blas-level1")
                (:file "tests/blas-level2")
                (:file "tests/blas-level3")

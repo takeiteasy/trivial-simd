@@ -354,6 +354,7 @@
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defparameter *mask-kernel-comparisons* '(= /= < <= > >=))
+  (defparameter *kernel-reducers* '(sum asum nrm2 minimum maximum argmin argmax))
 
   (defun mask-kernel-expression-p (expression)
     (and (consp expression)
@@ -380,7 +381,7 @@
                                (cddr expression)))
              (error "SELECT needs a mask and two numeric operands"))
            :numeric)
-          ((member (first expression) '(count any all sum))
+          ((member (first expression) (list* 'count 'any 'all *kernel-reducers*))
            (error "Kernel reductions must be top-level"))
           ((member (first expression) '(+ - * / min max sqrt abs fma))
            (let ((arity (length (rest expression))))
@@ -492,7 +493,7 @@
   (defun mask-kernel-dispatch-form (scalar programs program slot bytes constants scratch-count
                                     key foreign kind reduction destination arguments
                                     d-offset input-offsets count)
-    (if (eq reduction 'sum)
+    (if (member reduction *kernel-reducers*)
         scalar
         `(if (eq *backend* :native)
              (let ((,program (or (aref ,programs ,slot)
@@ -506,11 +507,18 @@
                                         d-offset input-offsets count)))
              ,scalar)))
 
+  (defun argument-index-result (reduction result form)
+    "Turn the slice-relative index returned by FORM into START + index for ARGMIN and ARGMAX."
+    (if (member reduction '(argmin argmax))
+        `(let ((,result ,form))
+           (and ,result (+ (or start 0) ,result)))
+        form))
+
   (defun mask-kernel-expansion (name arguments expression)
     ;; TODO: SBCL mask kernels still use scalar loops; add packed expressions (#72).
     (unless arguments (error "A mask kernel needs input vectors"))
     (let* ((outer (and (consp expression) (first expression)))
-           (reduction (and (member outer '(sum count any all)) outer))
+           (reduction (and (member outer (list* 'count 'any 'all *kernel-reducers*)) outer))
            (body (if reduction (second expression) expression))
            (kind (mask-kernel-kind body arguments))
            (destination (unless reduction (gensym "DESTINATION")))
@@ -533,7 +541,8 @@
       `(let ((,programs (make-array ,(length *numeric-types*) :initial-element nil)))
          (defun ,name (,@(when destination (list destination)) ,@arguments
                      &key start end ,@(when destination '(destination-start)) ,@starts)
-         (let ((,type (vector-type ,(first arguments))))
+         ,(argument-index-result reduction result
+           `(let ((,type (vector-type ,(first arguments))))
            ,@(loop for argument in (rest arguments)
                    collect `(unless (eq ,type (vector-type ,argument))
                               (error "Kernel arguments must have the same element type")))
@@ -565,13 +574,8 @@
                                                 (when ,test (incf ,result)))))
                                     (any `(loop for ,index below ,count thereis ,test))
                                     (all `(loop for ,index below ,count always ,test))
-                                    (sum `(let ((,result ,(coerce 0 element)))
-                                            (dotimes (,index ,count ,result)
-                                              ,(if (integer-type-p key)
-                                                   `(setf ,result
-                                                          (,(integer-operation-symbol :add key)
-                                                           ,result ,test))
-                                                   `(incf ,result ,test)))))
+                                    ((sum asum nrm2 minimum maximum argmin argmax)
+                                     (reduction-loop-form reduction key count index test))
                                     (otherwise
                                      `(progn
                                         (dotimes (,index ,count)
@@ -583,4 +587,4 @@
                                    key foreign kind reduction destination arguments
                                    d-offset input-offsets count))
                               (error (condition)
-                                `(error ,(princ-to-string condition)))))))))))))))
+                                `(error ,(princ-to-string condition))))))))))))))))

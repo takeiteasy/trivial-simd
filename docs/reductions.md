@@ -3,7 +3,8 @@
 Scalar reductions over a slice of one vector: `sum`, `dot`, `dotc`, `asum`,
 `nrm2`, `minimum`, `maximum`, `argmin` and `argmax`. All accept the
 [bulk slice keywords](api.md#slices); the single-vector functions take
-`:input-start`.
+`:input-start`. [Kernels](kernels.md#reduction-kernels) apply the same reducers
+to an expression.
 
 | Function | Result | Types |
 |---|---|---|
@@ -63,9 +64,7 @@ every CPU.
 
 | Area | Ticket |
 |---|---|
-| Reducers inside `define-kernel` | [#90](https://todo.sr.ht/~takeiteasy/trivial-simd/90) |
 | SIMD `argmin`, `argmax` and `asum` on SBCL and for integers | [#92](https://todo.sr.ht/~takeiteasy/trivial-simd/92) |
-| The Lisp backend's `sum` and `dot` use untyped loops | [#93](https://todo.sr.ht/~takeiteasy/trivial-simd/93) |
 
 [^nrm2]: The `double-float` fast path accepts sums from `1d-280` to the largest
     double; the scaled pass divides by the largest absolute part. A zero sum

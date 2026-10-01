@@ -273,6 +273,35 @@
                     type length backend (car case)
                     (benchmark-time (cdr case)))))))))
 
+(trivial-simd:define-kernel kernel-argmax-product (a b) (trivial-simd:argmax (* a b)))
+(trivial-simd:define-kernel kernel-asum-product (a b) (trivial-simd:asum (* a b)))
+(trivial-simd:define-kernel kernel-nrm2-product (a b) (trivial-simd:nrm2 (* a b)))
+
+(format t "~%Kernel reducers of a*b~%")
+(dolist (type '(single-float double-float))
+  (dolist (length '(1024 65536))
+    (let ((a (make-array length :element-type type
+                                :initial-contents (loop for i below length
+                                                        collect (coerce (mod (* i 7) 13) type))))
+          (b (make-array length :element-type type :initial-element (coerce 2 type)))
+          (out (make-array length :element-type type)))
+      (dolist (backend (append '(:lisp)
+                               (when trivial-simd::*native-available-p* '(:native))
+                               (when trivial-simd::*sbcl-simd-available-p* '(:sbcl))))
+        (let ((trivial-simd::*backend* backend))
+          (dolist (case (list (list "argmax" #'kernel-argmax-product #'trivial-simd:argmax)
+                              (list "asum" #'kernel-asum-product #'trivial-simd:asum)
+                              (list "nrm2" #'kernel-nrm2-product #'trivial-simd:nrm2)))
+            (destructuring-bind (name kernel bulk) case
+              (let ((fused (lambda () (funcall kernel a b)))
+                    (staged (lambda () (trivial-simd:multiply! out a b) (funcall bulk out))))
+                (unless (<= (abs (- (funcall fused) (funcall staged)))
+                            (* 1e-4 (max 1 (abs (funcall staged)))))
+                  (error "Reducer benchmark result mismatch for ~A" name))
+                (format t "~12A ~7D elements ~7A ~8A kernel ~,3F us/call, multiply+bulk ~,3F us/call~%"
+                        type length backend name
+                        (benchmark-time fused) (benchmark-time staged))))))))))
+
 #+ecl
 (defun make-ecl-benchmark-kernel (definition reduction-p other-p)
   (let* ((name (gensym "BENCHMARK-KERNEL"))
@@ -322,7 +351,7 @@
             (check-ecl-kernel-result result reduction-p output (cdr case))
             (if (eq (car case) function) (push elapsed cold) (push elapsed shared))))
         (unless (and (= 1 (hash-table-count trivial-simd::*native-kernel-runners*))
-                     (functionp (gethash (+ 6 (if reduction-p 1 0)) trivial-simd::*native-kernel-runners*)))
+                     (functionp (gethash (+ 24 (if reduction-p 1 0)) trivial-simd::*native-kernel-runners*)))
           (error "Expected one compiled runner shared by both definitions"))))
     (format t "~A ~A ~A: cold signature ~,3F ms; shared-definition first call ~,3F ms (five-trial medians; clock ~,3F ms)~%"
             definition (if reduction-p :sum :elementwise) type
