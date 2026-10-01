@@ -81,13 +81,13 @@ by it.
 
 ### Planned platforms
 
-| Target | Planned work |
-|---|---|
-| FreeBSD | [Build and test](https://todo.sr.ht/~takeiteasy/trivial-simd/14) |
-| OpenBSD | [Build and test](https://todo.sr.ht/~takeiteasy/trivial-simd/15) |
-| NetBSD | [Build and test](https://todo.sr.ht/~takeiteasy/trivial-simd/16) |
-| Android | [Build and test](https://todo.sr.ht/~takeiteasy/trivial-simd/17) |
-| iOS | [Build and test](https://todo.sr.ht/~takeiteasy/trivial-simd/18) |
+| Target | Implementations | Planned work |
+|---|---|---|
+| FreeBSD | SBCL, CCL, ECL | [Build and test](https://todo.sr.ht/~takeiteasy/trivial-simd/14) |
+| OpenBSD | SBCL, ECL | [Build and test](https://todo.sr.ht/~takeiteasy/trivial-simd/15) |
+| NetBSD | SBCL, ECL | [Build and test](https://todo.sr.ht/~takeiteasy/trivial-simd/16) |
+| Android | ECL | [Build and test](https://todo.sr.ht/~takeiteasy/trivial-simd/17) |
+| iOS | ECL | [Build and test](https://todo.sr.ht/~takeiteasy/trivial-simd/18) |
 
 ### Planned Lisp implementations
 

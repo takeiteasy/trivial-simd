@@ -74,10 +74,10 @@ yet. Blank is not planned.
 | Windows x86-64 | X | [P](https://todo.sr.ht/~takeiteasy/trivial-simd/28) | [P](https://todo.sr.ht/~takeiteasy/trivial-simd/29) |
 | Windows ARM64 | X | | |
 | [FreeBSD](https://todo.sr.ht/~takeiteasy/trivial-simd/14) | P | P | P |
-| [OpenBSD](https://todo.sr.ht/~takeiteasy/trivial-simd/15) | P | P | P |
-| [NetBSD](https://todo.sr.ht/~takeiteasy/trivial-simd/16) | P | P | P |
-| [Android](https://todo.sr.ht/~takeiteasy/trivial-simd/17) | P | P | P |
-| [iOS](https://todo.sr.ht/~takeiteasy/trivial-simd/18) | P | P | P |
+| [OpenBSD](https://todo.sr.ht/~takeiteasy/trivial-simd/15) | P | | P |
+| [NetBSD](https://todo.sr.ht/~takeiteasy/trivial-simd/16) | P | | P |
+| [Android](https://todo.sr.ht/~takeiteasy/trivial-simd/17) | | | P |
+| [iOS](https://todo.sr.ht/~takeiteasy/trivial-simd/18) | | | P |
 
 Planned implementations:
 [ABCL](https://todo.sr.ht/~takeiteasy/trivial-simd/20), [CLISP](https://todo.sr.ht/~takeiteasy/trivial-simd/21), [Clasp](https://todo.sr.ht/~takeiteasy/trivial-simd/22), [CMUCL](https://todo.sr.ht/~takeiteasy/trivial-simd/23), [MKCL](https://todo.sr.ht/~takeiteasy/trivial-simd/24), [LispWorks](https://todo.sr.ht/~takeiteasy/trivial-simd/25), [Allegro CL](https://todo.sr.ht/~takeiteasy/trivial-simd/26), [JSCL](https://todo.sr.ht/~takeiteasy/trivial-simd/27) (Node and browsers), [GCL](https://todo.sr.ht/~takeiteasy/trivial-simd/30).
