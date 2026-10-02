@@ -18,7 +18,8 @@
                (:file "complex-operations")
                (:file "reductions")
                (:file "copy-operations")
-               (:file "kernel"))
+               (:file "kernel")
+               (:file "extension"))
   :in-order-to ((asdf:test-op (asdf:test-op "trivial-simd/tests"))))
 
 (asdf:defsystem "trivial-simd/tests"
@@ -34,7 +35,8 @@
                (:file "tests/integers")
                (:file "tests/complex")
                (:file "tests/reductions")
-               (:file "tests/kernel-reductions"))
+               (:file "tests/kernel-reductions")
+               (:file "tests/extension"))
   :perform (asdf:test-op (operation component)
              (declare (ignore operation component))
              (unless (uiop:symbol-call :fiveam :run! :trivial-simd)
