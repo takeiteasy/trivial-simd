@@ -22,7 +22,7 @@
   :in-order-to ((asdf:test-op (asdf:test-op "trivial-simd/tests"))))
 
 (asdf:defsystem "trivial-simd/tests"
-  :depends-on ("trivial-simd/blas/convenience" "fiveam" "bordeaux-threads")
+  :depends-on ("trivial-simd" "fiveam" "bordeaux-threads")
   :serial t
   :components ((:file "tests/package")
                (:file "tests/operations")
@@ -32,35 +32,10 @@
                (:file "tests/native")
                (:file "tests/kernels")
                (:file "tests/integers")
-               (:file "tests/blas")
                (:file "tests/complex")
                (:file "tests/reductions")
-               (:file "tests/kernel-reductions")
-               (:file "tests/blas-level1")
-               (:file "tests/blas-level2")
-               (:file "tests/blas-level3")
-               (:file "tests/blas-random")
-               (:file "tests/blas-native"))
+               (:file "tests/kernel-reductions"))
   :perform (asdf:test-op (operation component)
              (declare (ignore operation component))
              (unless (uiop:symbol-call :fiveam :run! :trivial-simd)
                (error "trivial-simd tests failed"))))
-
-(asdf:defsystem "trivial-simd/blas"
-  :description "CBLAS-style Common Lisp BLAS routines"
-  :depends-on ("trivial-simd")
-  :serial t
-  :components ((:file "blas/package")
-               (:file "blas/level1")
-               (:file "blas/level1-extra")
-               (:file "blas/matrix-view")
-               (:file "blas/kernel")
-               (:file "blas/level2")
-               (:file "blas/level3"))
-  :in-order-to ((asdf:test-op (asdf:test-op "trivial-simd/tests"))))
-
-(asdf:defsystem "trivial-simd/blas/convenience"
-  :description "Convenience wrappers for trivial-simd/blas"
-  :depends-on ("trivial-simd/blas")
-  :components ((:file "blas/convenience"))
-  :in-order-to ((asdf:test-op (asdf:test-op "trivial-simd/tests"))))

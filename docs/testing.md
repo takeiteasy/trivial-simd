@@ -17,25 +17,8 @@ indexes, overflow, wrapping and error cases.
 Kernel reducer tests compare `minimum`, `maximum`, `argmin`, `argmax`, `asum`
 and `nrm2` kernels with the bulk reducers on every backend, covering slices,
 block boundaries, ties, selections, spilling, complex vectors and overflow.
-BLAS Level 1 tests cover real and complex precisions, offsets, increments,
-errors, rotations, and convenience wrappers. They compare against an available
-system CBLAS (Accelerate on macOS, or OpenBLAS/BLAS on other platforms); only
-the reference comparison is skipped when no CBLAS is installed.
-Level 2 tests cover matrix views, layouts, packed and band storage, transpose,
-triangular solves, Hermitian updates, and reference CBLAS comparisons for
-dense, banded, packed, symmetric, and rank-update operations.
-Level 3 tests cover all precision variants, matrix overlap, padded views,
-operation flags, and CBLAS comparisons across its nine routine families.
-Randomized CBLAS tests compare every Level 2 and 3 family on padded, offset
-subviews in both layouts with all transpose, triangle, side, and diagonal flags
-and negative increments. Zero-scalar tests check that `alpha` and `beta` of
-zero never read the operands they scale. Native BLAS tests force the native and
-Lisp kernels in turn for `gemm`, `symm`, `syrk`, `syr2k`, `trmm`, `trsm`,
-`gemv`, `ger`, and `trsv` across layouts, transposes, offsets, increments, and
-block-edge sizes, and check the fallback when the library lacks the symbols.
-`ctest` also checks the C kernels, including the scalar build and allocation
-failure. On x86-64 it checks the SSE2 BLAS kernels directly and the AVX+FMA
-kernels where the CPU supports them; the software-FMA target forces SSE2.
+`ctest` checks the C kernels, including the scalar build, the software-FMA
+build and allocation failure.
 Direct copy tests check both precisions, round trips, empty ranges, and partial
 copy-back, compact slice transfers, and overlapping copy-mode input snapshots. Native program tests check partial-initialization cleanup, finalization,
 retained functions after redefinition, and collection during active native calls.
@@ -288,27 +271,6 @@ sbcl --script tests/slice-bench.lisp
 ccl --no-init --batch --eval '(load (compile-file "tests/slice-bench.lisp" :output-file "/tmp/slice-bench.fasl"))' --eval '(quit)'
 ecl --norc --eval '(load (compile-file "tests/slice-bench.lisp" :output-file "/tmp/slice-bench.fas"))' --eval '(quit)'
 ```
-
-## BLAS profiling
-
-`tests/blas-profile.c` times `gemm`, `syrk`, `trsm`, row- and column-major
-`trsv`, and `gemv` at 64, 256, and 512 in both precisions. On x86-64 it reports
-the SSE2 and AVX+FMA kernels separately.
-
-```sh
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_BLAS_PROFILE=ON \
-      "-DBLAS_PROFILE_DEFINITIONS=TS_BLAS_DEPTH=384;TS_BLAS_AVX_F64_ROWS=3;TS_BLAS_AVX_F64_COLUMNS=4"
-cmake --build build --target native_blas_profile
-build/native_blas_profile
-```
-
-`BLAS_PROFILE_DEFINITIONS` overrides `TS_BLAS_DEPTH`, `TS_BLAS_ROW_BLOCK`,
-`TS_BLAS_COLUMN_BLOCK`, `TS_BLAS_TRIANGLE_BLOCK` (`trmm` only), and the AVX tile shapes
-`TS_BLAS_AVX_{F32,F64}_{ROWS,COLUMNS}`.[^tiles] The `blas` job of the manual
-**FMA profile** workflow sweeps these on x86-64 Linux; see [CI](ci.md#blas-measurements).
-
-[^tiles]: A tile is `ROWS` vectors by `COLUMNS` scalars; `ROWS × COLUMNS`
-    accumulators must fit the 16 ymm registers with a few to spare.
 
 ## FMA profiling
 

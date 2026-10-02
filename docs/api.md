@@ -120,7 +120,7 @@ ties and optional double accumulation.
 
 `axpy!` uses separate multiplication and addition for floats. `fma!` uses
 the same single-rounding result as scalar [`fma`](kernels.md#numerical-behavior).
-The [BLAS subsystem](blas.md) provides specification-style counts and increments.
+[CLBLAS](https://github.com/takeiteasy/CLBLAS) provides specification-style BLAS counts and increments on top of these operations.
 
 ## Limitations
 

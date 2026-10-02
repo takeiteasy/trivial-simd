@@ -1,8 +1,0 @@
-# SBCL 2.6.8; times are microseconds per call; ratio = ours / CBLAS
-routine  layout        n     ours         cblas        ratio    
-dtrsv    ROW-MAJOR        16        0.436        0.217      2.01
-dtrsv    COLUMN-MAJOR     16        0.385        0.197      1.95
-dtrsv    ROW-MAJOR        64        1.402        0.835      1.68
-dtrsv    COLUMN-MAJOR     64        1.192        0.608      1.96
-dtrsv    ROW-MAJOR       256        9.733        6.860      1.42
-dtrsv    COLUMN-MAJOR    256        9.006        4.776      1.89

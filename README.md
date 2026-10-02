@@ -1,6 +1,6 @@
 # trivial-simd
 
-Bulk SIMD arithmetic and BLAS for Common Lisp float and fixed-width integer
+Bulk SIMD arithmetic for Common Lisp float and fixed-width integer
 vectors. It uses SBCL SIMD where available, a small C library, or a pure Lisp
 fallback.
 
@@ -18,9 +18,8 @@ fallback.
 ## Backends
 
 - `:sbcl` — SBCL on x86-64 when `sb-simd` is available.
-- `:native` — the C library on macOS, Linux, or Windows: SSE2 on x86-64 (plus
-  AVX+FMA for real BLAS on CPUs that have it), NEON on ARM64, and scalar C
-  elsewhere.
+- `:native` — the C library on macOS, Linux, or Windows: SSE2 on x86-64, NEON on
+  ARM64, and scalar C elsewhere.
 - `:lisp` — portable Lisp arithmetic with optional scalar FMA acceleration.
 
 Build the native library with `cmake -S . -B build -DCMAKE_BUILD_TYPE=Release`
@@ -33,11 +32,7 @@ and `cmake --build build --config Release`. The Lisp fallback loads without it.
 - [Masks and selection](docs/masks.md)
 - [Integer vectors](docs/integers.md)
 - [Reductions](docs/reductions.md)
-- [BLAS subsystem](docs/blas.md)
-- [Matrix storage design](docs/matrix-views.md)
-- [BLAS Level 2](docs/blas-level2.md)
-- [BLAS Level 3](docs/blas-level3.md)
-- [BLAS benchmarks](docs/blas-benchmarks.md)
+- [CLBLAS](https://github.com/takeiteasy/CLBLAS): CBLAS-style BLAS built on trivial-simd
 - [Kernels](docs/kernels.md)
 - [Backends and build](docs/backends.md)
 - [Testing and benchmarks](docs/testing.md)
@@ -96,7 +91,6 @@ Planned implementations:
 | Instruction set | `:sbcl` | `:native` | `:lisp` |
 |---|:---:|:---:|:---:|
 | x86-64 SSE2 | X | X | X |
-| x86-64 AVX+FMA (real BLAS) | | X | |
 | ARM64 NEON | | X | X |
 | [x86-64 AVX2](https://todo.sr.ht/~takeiteasy/trivial-simd/4) | | P | |
 | [x86-64 AVX-512](https://todo.sr.ht/~takeiteasy/trivial-simd/5) | | P | |
