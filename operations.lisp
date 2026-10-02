@@ -98,6 +98,19 @@ stride, or NIL to use START or STRIDE (default 1)."
                  (= count (length left) (length right)))
         (dispatch-binary type operation destination left right count 0 0 0)
         (return-from binary-operation destination))))
+  (when (and (null start) (null end) (null destination-start) (null left-start)
+             (null right-start) (null stride) (null destination-stride)
+             (null left-stride) (null right-stride))
+    (let* ((type (vector-type destination))
+           (vector (if (vectorp left) left right))
+           (scalar (if (vectorp left) right left)))
+      (when (and (not (vectorp scalar)) (not (complex-type-p type))
+                 (eq type (vector-type vector))
+                 (= (length destination) (length vector))
+                 (typep scalar (second (numeric-type type))))
+        (dispatch-binary type operation destination left right (length destination) 0
+                         (and (vectorp left) 0) (and (vectorp right) 0))
+        (return-from binary-operation destination))))
   (multiple-value-bind (type count offsets strides)
       (resolve-bulk-operands destination (list left right)
                              (list left-start right-start) start end destination-start
@@ -159,25 +172,47 @@ the ...-START and ...-STRIDE keywords override one vector." verb)
 (define-binary-operation multiply! :multiply "Multiply")
 (define-binary-operation divide! :divide "Divide LEFT by RIGHT,")
 
+(defun dispatch-scale (x a count offset)
+  (ecase *backend*
+    (:sbcl (sbcl-scale x a count offset))
+    (:native (native-scale x a count offset))
+    (:lisp (lisp-scale x a count offset))))
+
 (defun scale! (x a &key start end stride)
   "Multiply X by scalar A in place and return X."
   (when (vectorp a) (error "SCALE! needs a scalar multiplier"))
+  (when (and (null start) (null end) (null stride))
+    (let ((type (vector-type x)))
+      (when (and (not (complex-type-p type)) (typep a (second (numeric-type type))))
+        (dispatch-scale x a (length x) 0)
+        (return-from scale! x))))
   (multiple-value-bind (type count offsets strides)
       (resolve-bulk-operands x (list a) (list nil) start end nil nil stride)
     (let ((offset (first offsets)))
       (with-gathered ((x offset (first strides) :in-out)) count
         (if (complex-type-p type)
             (complex-scale x a count offset)
-            (ecase *backend*
-              (:sbcl (sbcl-scale x a count offset))
-              (:native (native-scale x a count offset))
-              (:lisp (lisp-scale x a count offset)))))))
+            (dispatch-scale x a count offset)))))
   x)
+
+(defun dispatch-axpy (y a x count y-offset x-offset)
+  (ecase *backend*
+    (:sbcl (sbcl-axpy y a x count y-offset x-offset))
+    (:native (native-axpy y a x count y-offset x-offset))
+    (:lisp (lisp-axpy y a x count y-offset x-offset))))
 
 (defun axpy! (y a x &key start end y-start x-start stride y-stride x-stride)
   "Set Y to A*X+Y in place with separate multiplication and addition."
   (when (vectorp a) (error "AXPY! needs a scalar multiplier"))
   (unless (vectorp x) (error "AXPY! needs a vector input"))
+  (when (and (null start) (null end) (null y-start) (null x-start)
+             (null stride) (null y-stride) (null x-stride))
+    (let ((type (vector-type y)))
+      (when (and (not (complex-type-p type)) (eq type (vector-type x))
+                 (= (length y) (length x))
+                 (typep a (second (numeric-type type))))
+        (dispatch-axpy y a x (length y) 0 0)
+        (return-from axpy! y))))
   (multiple-value-bind (type count offsets strides)
       (resolve-bulk-operands y (list a x) (list nil x-start) start end y-start
                              (list nil x-stride) stride y-stride)
@@ -188,10 +223,7 @@ the ...-START and ...-STRIDE keywords override one vector." verb)
           count
         (if (complex-type-p type)
             (complex-axpy y a x count y-offset x-offset)
-            (ecase *backend*
-              (:sbcl (sbcl-axpy y a x count y-offset x-offset))
-              (:native (native-axpy y a x count y-offset x-offset))
-              (:lisp (lisp-axpy y a x count y-offset x-offset)))))))
+            (dispatch-axpy y a x count y-offset x-offset)))))
   y)
 
 (defun fma! (destination x y z &key start end destination-start x-start y-start z-start
@@ -226,10 +258,20 @@ the ...-START and ...-STRIDE keywords override one vector." verb)
          (error ":ACCUMULATE does not apply to integer vectors"))
         (t (and (member type '(:f32 :c32)) t))))
 
+(defun dispatch-sum (input count offset)
+  (ecase *backend*
+    (:sbcl (sbcl-sum input count offset))
+    (:native (native-sum input count offset))
+    (:lisp (lisp-sum input count offset))))
+
 (defun sum (input &key start end input-start accumulate stride input-stride)
   "Return the sum of the :START to :END slice of INPUT at :STRIDE, or a zero if empty.
 With :ACCUMULATE :F64, single-float and complex single-float sums accumulate and
 return double precision."
+  (when (and (null start) (null end) (null input-start) (null accumulate)
+             (null stride) (null input-stride)
+             (not (complex-type-p (vector-type input))))
+    (return-from sum (dispatch-sum input (length input) 0)))
   (multiple-value-bind (type count offsets strides)
       (resolve-slice (list input) (list input-start) start end (list input-stride) stride)
     (let ((offset (first offsets))
@@ -239,16 +281,25 @@ return double precision."
               (wide (if (eq *backend* :native)
                         (native-sum-acc input count offset)
                         (lisp-sum-wide input count offset)))
-              (t (ecase *backend*
-                   (:sbcl (sbcl-sum input count offset))
-                   (:native (native-sum input count offset))
-                   (:lisp (lisp-sum input count offset)))))))))
+              (t (dispatch-sum input count offset)))))))
+
+(defun dispatch-dot (left right count left-offset right-offset)
+  (ecase *backend*
+    (:sbcl (sbcl-dot left right count left-offset right-offset))
+    (:native (native-dot left right count left-offset right-offset))
+    (:lisp (lisp-dot left right count left-offset right-offset))))
 
 (defun dot (left right &key start end left-start right-start accumulate
                          stride left-stride right-stride)
   "Return the dot product of the :START to :END slices of LEFT and RIGHT at :STRIDE.
 With :ACCUMULATE :F64, single-float and complex single-float products accumulate
 and return double precision."
+  (when (and (null start) (null end) (null left-start) (null right-start)
+             (null accumulate) (null stride) (null left-stride) (null right-stride))
+    (let ((type (vector-type left)))
+      (when (and (not (complex-type-p type)) (eq type (vector-type right))
+                 (= (length left) (length right)))
+        (return-from dot (dispatch-dot left right (length left) 0 0)))))
   (multiple-value-bind (type count offsets strides)
       (resolve-slice (list left right) (list left-start right-start) start end
                      (list left-stride right-stride) stride)
@@ -262,10 +313,7 @@ and return double precision."
                 (wide (if (eq *backend* :native)
                           (native-dot-acc left right count left-offset right-offset)
                           (lisp-dot-wide left right count left-offset right-offset)))
-                (t (ecase *backend*
-                     (:sbcl (sbcl-dot left right count left-offset right-offset))
-                     (:native (native-dot left right count left-offset right-offset))
-                     (:lisp (lisp-dot left right count left-offset right-offset))))))))))
+                (t (dispatch-dot left right count left-offset right-offset))))))))
 
 (defun dotc (left right &key start end left-start right-start accumulate
                           stride left-stride right-stride)
