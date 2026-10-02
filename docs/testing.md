@@ -7,7 +7,7 @@ tails, aliasing, wrapping arithmetic, division errors, and type boundaries.
 Extended operation tests cover unary and bounded arithmetic, all conversion
 type pairs and rounding modes, byte masks, selection, and mask kernels.
 Whole-vector call tests compare keyword-free calls with explicit-slice calls and
-check that mismatched lengths, types and scalars still signal errors.
+check that mismatched lengths, types, masks and scalars still signal errors.
 Copy tests cover `copy!`, `fill!` and `swap!` on every element type and backend,
 including overlap, large unaligned slices and error cases.
 Stride tests compare every bulk operation and reduction with a contiguous call on
@@ -153,8 +153,8 @@ ecl --eval '(load (compile-file "tests/bench.lisp" :output-file "/tmp/trivial-si
 Run this script explicitly when you want measurements. The ASDF test system
 and GitHub Actions do not invoke it.
 
-`tests/overhead-bench.lisp` times 4-, 32- and 1,024-element `add!` and `dot`
-calls against scalar loops on every available backend:
+`tests/overhead-bench.lisp` times 4-, 32- and 1,024-element `add!`, `dot`, `min!`
+and `compare!` calls against scalar loops on every available backend:
 
 ```sh
 sbcl --script tests/overhead-bench.lisp

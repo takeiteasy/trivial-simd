@@ -21,10 +21,39 @@ per-vector offsets and per-vector strides."
                  count offset stride (length vector))))
       (values count offsets strides))))
 
+(defun whole-extended-slice (destination operands operand-starts start end destination-start
+                             numeric-type mask-operand operand-strides stride destination-stride)
+  "Resolve a call with no slice or stride keywords whose operands already agree,
+or return NIL for EXTENDED-SLICE to resolve and validate."
+  (when (and (null start) (null end) (null destination-start)
+             (null stride) (null destination-stride)
+             (every #'null operand-starts) (every #'null operand-strides))
+    (let ((type (or numeric-type (vector-type destination)))
+          (length (length destination))
+          (offsets (list 0)))
+      (loop for operand in operands
+            for index from 0
+            do (cond ((vectorp operand)
+                      (unless (and (eq (vector-type operand)
+                                       (if (eql index mask-operand) :u8 type))
+                                   (= (length operand) length))
+                        (return-from whole-extended-slice nil))
+                      (push 0 offsets))
+                     ((and (not (eql index mask-operand))
+                           (typep operand (second (numeric-type type))))
+                      (push nil offsets))
+                     (t (return-from whole-extended-slice nil))))
+      (values type length (nreverse offsets)))))
+
 (defun extended-slice (destination operands operand-starts start end destination-start
                        &key numeric-type mask-operand operand-strides stride destination-stride)
   "Resolve DESTINATION and OPERANDS; return the type, count, and the offsets and
 strides of DESTINATION then every operand, with NIL for scalars."
+  (multiple-value-bind (type count offsets)
+      (whole-extended-slice destination operands operand-starts start end destination-start
+                            numeric-type mask-operand operand-strides stride destination-stride)
+    (when type
+      (return-from extended-slice (values type count offsets nil))))
   (let* ((type (or numeric-type (vector-type destination)))
          (strided (or stride destination-stride (some #'identity operand-strides)))
          (vectors (list destination))
@@ -67,6 +96,11 @@ strides of DESTINATION then every operand, with NIL for scalars."
 
 (defun native-extended-function (operation type)
   (native-bulk-function (format nil "%NATIVE-EXTENDED-~A-" operation) type))
+
+(define-compiler-macro native-extended-function (&whole form operation type)
+  (if (stringp operation)
+      `(native-bulk-function ,(format nil "%NATIVE-EXTENDED-~A-" operation) ,type)
+      form))
 
 (defun check-native-extended-status (status)
   (unless (zerop status)
@@ -149,6 +183,102 @@ strides of DESTINATION then every operand, with NIL for scalars."
             (%native-extended-f64-to-f32 output source count)
             (%native-extended-f32-to-f64 output source count))))))
 
+;; Typed Lisp loops. An operand is a vector read at OFFSET or a scalar; the
+;; typed array and value are bound outside the loop so the loop body is typed.
+(defmacro with-lisp-operand ((reference operand offset element) &body body)
+  (let ((array (gensym "ARRAY")) (value (gensym "VALUE"))
+        (base (gensym "BASE")) (vector-p (gensym "VECTOR-P")))
+    `(let* ((,vector-p (vectorp ,operand))
+            (,array (if ,vector-p ,operand (load-time-value (make-array 0 :element-type ',element))))
+            (,value (if ,vector-p (coerce 0 ',element) ,operand))
+            (,base (or ,offset 0)))
+       (declare (type (simple-array ,element (*)) ,array) (type ,element ,value)
+                (type fixnum ,base))
+       (flet ((,reference (i)
+                (declare (type fixnum i))
+                (if ,vector-p (aref ,array (+ ,base i)) ,value)))
+         (declare (inline ,reference))
+         ,@body))))
+
+(defmacro define-lisp-extended-loops ()
+  `(progn
+     ,@(loop for (key element) in *numeric-types*
+             append
+             (append
+              `((defun ,(lisp-bulk-symbol "%LISP-MINMAX-" key)
+                    (operation destination left right count d-offset l-offset r-offset)
+                  (declare (type (simple-array ,element (*)) destination)
+                           (type fixnum count d-offset))
+                  (with-lisp-operand (left-ref left l-offset ,element)
+                    (with-lisp-operand (right-ref right r-offset ,element)
+                      (if (eq operation :min)
+                          (dotimes (i count)
+                            (let ((a (left-ref i)) (b (right-ref i)))
+                              (setf (aref destination (+ d-offset i)) (if (< b a) b a))))
+                          (dotimes (i count)
+                            (let ((a (left-ref i)) (b (right-ref i)))
+                              (setf (aref destination (+ d-offset i)) (if (> b a) b a)))))))
+                  destination)
+                (defun ,(lisp-bulk-symbol "%LISP-CLAMP-" key)
+                    (destination input lower upper count d-offset i-offset l-offset u-offset)
+                  (declare (type (simple-array ,element (*)) destination)
+                           (type fixnum count d-offset))
+                  (with-lisp-operand (input-ref input i-offset ,element)
+                    (with-lisp-operand (lower-ref lower l-offset ,element)
+                      (with-lisp-operand (upper-ref upper u-offset ,element)
+                        (dotimes (i count)
+                          (let ((x (input-ref i)) (low (lower-ref i)) (high (upper-ref i)))
+                            (when (> low high) (error "CLAMP! lower bound exceeds upper bound"))
+                            (let ((bounded (if (> low x) low x)))
+                              (setf (aref destination (+ d-offset i))
+                                    (if (< high bounded) high bounded))))))))
+                  destination)
+                (defun ,(lisp-bulk-symbol "%LISP-COMPARE-" key)
+                    (mask operator left right count m-offset l-offset r-offset)
+                  (declare (type (simple-array (unsigned-byte 8) (*)) mask)
+                           (type fixnum count m-offset))
+                  (with-lisp-operand (left-ref left l-offset ,element)
+                    (with-lisp-operand (right-ref right r-offset ,element)
+                      (ecase operator
+                        ,@(loop for (name function) in '((:eq =) (:ne /=) (:lt <)
+                                                         (:le <=) (:gt >) (:ge >=))
+                                collect `(,name
+                                          (dotimes (i count)
+                                            (setf (aref mask (+ m-offset i))
+                                                  (if (,function (left-ref i) (right-ref i))
+                                                      1 0))))))))
+                  mask)
+                (defun ,(lisp-bulk-symbol "%LISP-SELECT-" key)
+                    (destination mask on-true on-false count d-offset m-offset t-offset f-offset)
+                  (declare (type (simple-array ,element (*)) destination)
+                           (type (simple-array (unsigned-byte 8) (*)) mask)
+                           (type fixnum count d-offset m-offset))
+                  (with-lisp-operand (true-ref on-true t-offset ,element)
+                    (with-lisp-operand (false-ref on-false f-offset ,element)
+                      (dotimes (i count)
+                        (setf (aref destination (+ d-offset i))
+                              (if (zerop (aref mask (+ m-offset i))) (false-ref i) (true-ref i))))))
+                  destination))
+              (when (member key '(:f32 :f64))
+                `((defun ,(lisp-bulk-symbol "%LISP-UNARY-" key)
+                      (operation destination input count d-offset i-offset)
+                    (declare (type (simple-array ,element (*)) destination input)
+                             (type fixnum count d-offset i-offset))
+                    (ecase operation
+                      (:negate (dotimes (i count)
+                                 (setf (aref destination (+ d-offset i)) (- (aref input (+ i-offset i))))))
+                      (:abs (dotimes (i count)
+                              (setf (aref destination (+ d-offset i)) (abs (aref input (+ i-offset i))))))
+                      (:sqrt (dotimes (i count)
+                               (setf (aref destination (+ d-offset i))
+                                     (kernel-sqrt (aref input (+ i-offset i))))))
+                      (:reciprocal (dotimes (i count)
+                                     (setf (aref destination (+ d-offset i))
+                                           (/ (coerce 1 ',element) (aref input (+ i-offset i)))))))
+                    destination)))))))
+
+(define-lisp-extended-loops)
+
 (defun extended-unary (operation destination input start end destination-start input-start
                        stride destination-stride input-stride)
   (unless (vectorp input) (error "A unary operation needs a vector input"))
@@ -177,6 +307,9 @@ strides of DESTINATION then every operand, with NIL for scalars."
                           #-(and sbcl x86-64) (error "SBCL SIMD unavailable")
                           #+(and sbcl x86-64) #'%sbcl-extended-unary-f64
                           #-(and sbcl x86-64) (error "SBCL SIMD unavailable"))
+                      operation destination input count d-offset i-offset))
+            ((not (integer-type-p type))
+             (funcall (lisp-bulk-function "%LISP-UNARY-" destination)
                       operation destination input count d-offset i-offset))
             (t
              (dotimes (i count)
@@ -224,11 +357,8 @@ strides of DESTINATION then every operand, with NIL for scalars."
           count
         (if (eq *backend* :native)
             (native-extended-minmax operation destination left right count d-offset l-offset r-offset)
-            (dotimes (i count)
-              (setf (aref destination (+ d-offset i))
-                    (funcall (if (eq operation :min) #'kernel-min-left #'kernel-max-left)
-                             (operand-value left l-offset i)
-                             (operand-value right r-offset i))))))))
+            (funcall (lisp-bulk-function "%LISP-MINMAX-" destination)
+                     operation destination left right count d-offset l-offset r-offset)))))
   destination)
 
 (defmacro define-extended-minmax (name operation)
@@ -265,12 +395,8 @@ strides of DESTINATION then every operand, with NIL for scalars."
         (if (eq *backend* :native)
             (native-extended-clamp destination input lower upper count
                                    d-offset i-offset l-offset u-offset)
-            (dotimes (i count)
-              (let ((low (operand-value lower l-offset i))
-                    (high (operand-value upper u-offset i)))
-                (when (> low high) (error "CLAMP! lower bound exceeds upper bound"))
-                (setf (aref destination (+ d-offset i))
-                      (kernel-min-left (kernel-max-left (aref input (+ i-offset i)) low) high))))))))
+            (funcall (lisp-bulk-function "%LISP-CLAMP-" destination)
+                     destination input lower upper count d-offset i-offset l-offset u-offset)))))
   destination)
 
 (defun integer-limits (type)
@@ -357,12 +483,17 @@ strides of DESTINATION then every operand, with NIL for scalars."
                         (left l-offset (second strides))
                         (right r-offset (third strides)))
             count
-          (if (and (eq *backend* :native) (not (complex-type-p type)))
-              (native-extended-compare mask operator left right type count m-offset l-offset r-offset)
-              (dotimes (i count)
-                (setf (aref mask (+ m-offset i))
-                      (if (compare-values operator (operand-value left l-offset i)
-                                          (operand-value right r-offset i)) 1 0))))))))
+          (cond ((complex-type-p type)
+                 (dotimes (i count)
+                   (setf (aref mask (+ m-offset i))
+                         (if (compare-values operator (operand-value left l-offset i)
+                                             (operand-value right r-offset i)) 1 0))))
+                ((eq *backend* :native)
+                 (native-extended-compare mask operator left right type count
+                                          m-offset l-offset r-offset))
+                (t
+                 (funcall (lisp-bulk-function "%LISP-COMPARE-" (if (vectorp left) left right))
+                          mask operator left right count m-offset l-offset r-offset)))))))
   mask)
 
 (defun select! (destination mask on-true on-false &key start end destination-start
@@ -381,14 +512,19 @@ strides of DESTINATION then every operand, with NIL for scalars."
                       (on-true t-offset (third strides))
                       (on-false f-offset (fourth strides)))
           count
-        (if (and (eq *backend* :native) (not (complex-type-p type)))
-            (native-extended-select destination mask on-true on-false count
-                                    d-offset m-offset t-offset f-offset)
-            (dotimes (i count)
-              (setf (aref destination (+ d-offset i))
-                    (if (zerop (aref mask (+ m-offset i)))
-                        (operand-value on-false f-offset i)
-                        (operand-value on-true t-offset i))))))))
+        (cond ((complex-type-p type)
+               (dotimes (i count)
+                 (setf (aref destination (+ d-offset i))
+                       (if (zerop (aref mask (+ m-offset i)))
+                           (operand-value on-false f-offset i)
+                           (operand-value on-true t-offset i)))))
+              ((eq *backend* :native)
+               (native-extended-select destination mask on-true on-false count
+                                       d-offset m-offset t-offset f-offset))
+              (t
+               (funcall (lisp-bulk-function "%LISP-SELECT-" destination)
+                        destination mask on-true on-false count
+                        d-offset m-offset t-offset f-offset))))))
   destination)
 
 (defun mask-reduction (operation mask start end mask-start stride mask-stride)

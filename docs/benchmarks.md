@@ -50,17 +50,25 @@ use identical typed arrays; output buffers are reused.[^scalar]
 ## Call overhead
 
 A call with no slice or stride keywords validates its operands and goes straight
-to the backend. Small arrays remain dominated by that fixed cost: a scalar loop
-is faster than any backend up to a few hundred elements.[^overhead]
+to the backend. This holds for arithmetic, `sum`, `dot`, min/max, clamp,
+comparison, selection and the unary operations. Small arrays remain dominated by
+that fixed cost: a scalar loop is faster than any backend up to a few hundred
+elements.[^overhead]
 
 | Elements | Operation | Scalar | Lisp fallback | Native |
 |---:|---|---:|---:|---:|
-| 4 | add | 0.010 | 0.055 | 0.086 |
-| 4 | dot | 0.009 | 0.040 | 0.072 |
-| 32 | add | 0.029 | 0.126 | 0.088 |
-| 32 | dot | 0.024 | 0.084 | 0.080 |
-| 1,024 | add | 0.847 | 2.176 | 0.209 |
-| 1,024 | dot | 0.938 | 1.515 | 0.313 |
+| 4 | add | 0.010 | 0.055 | 0.083 |
+| 4 | dot | 0.009 | 0.034 | 0.063 |
+| 4 | min | - | 0.131 | 0.194 |
+| 4 | compare | - | 0.119 | 0.187 |
+| 32 | add | 0.029 | 0.120 | 0.088 |
+| 32 | dot | 0.024 | 0.073 | 0.070 |
+| 32 | min | - | 0.176 | 0.196 |
+| 32 | compare | - | 0.163 | 0.196 |
+| 1,024 | add | 0.838 | 2.183 | 0.213 |
+| 1,024 | dot | 0.938 | 1.500 | 0.302 |
+| 1,024 | min | - | 1.978 | 0.256 |
+| 1,024 | compare | - | 1.809 | 0.240 |
 
 Calls with `:start`, `:end`, `:stride` or per-vector keywords resolve slices
 first and cost more.
@@ -184,7 +192,7 @@ compiler, CPU, memory access mode, and system load.
     macOS ARM64 on 2026-10-02, using the same timing method as the tables above.
     Raw output: [SBCL](benchmark-runs/2026-10-02-call-overhead-sbcl.txt). The Lisp
     fallback columns in the array tables above were measured earlier; this table
-    is current for `add!`.
+    is current.
 
 [^timing]: Arrays and programs are prepared outside timing. Each case warms up,
     calibrates batches to at least 50 ms, and reports the median of three

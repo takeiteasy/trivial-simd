@@ -325,8 +325,19 @@
               ,@body)))
          (let ((,pointer (cffi:null-pointer))) ,@body))))
 
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defun native-bulk-symbol (prefix type)
+    (intern (format nil "~A~A" prefix type) :trivial-simd)))
+
 (defun native-bulk-function (prefix type)
-  (symbol-function (intern (format nil "~A~A" prefix type) :trivial-simd)))
+  (symbol-function (native-bulk-symbol prefix type)))
+
+(define-compiler-macro native-bulk-function (&whole form prefix type)
+  (if (stringp prefix)
+      `(ecase ,type
+         ,@(loop for key in (append (mapcar #'first *numeric-types*) '(:c32 :c64))
+                 collect `(,key (symbol-function ',(native-bulk-symbol prefix key)))))
+      form))
 
 (defun native-scalar-bits (type value)
   (if (integer-type-p type)
