@@ -28,24 +28,35 @@
   "Return :SBCL, :NATIVE, or :LISP for the active backend."
   *backend*)
 
-(defmacro lisp-loop (scalar-operator)
-  `(dotimes (i count)
-     (setf (aref destination (+ destination-offset i))
-           (,scalar-operator (aref left (+ left-offset i))
-                             (aref right (+ right-offset i))))))
+(defmacro define-lisp-float-binary ()
+  `(defun lisp-float-binary (type operation destination left right count
+                             destination-offset left-offset right-offset)
+     (ecase type
+       ,@(loop for (key element) in '((:f32 single-float) (:f64 double-float))
+               collect
+               `(,key
+                 (locally (declare (type (simple-array ,element (*)) destination left right)
+                                   (type fixnum count destination-offset left-offset right-offset))
+                   (ecase operation
+                     ,@(loop for (op scalar-operator) in '((:add +) (:subtract -)
+                                                           (:multiply *) (:divide /))
+                             collect
+                             `(,op (dotimes (i count)
+                                     (setf (aref destination (+ destination-offset i))
+                                           (,scalar-operator (aref left (+ left-offset i))
+                                                             (aref right (+ right-offset i))))))))))))
+     destination))
+
+(define-lisp-float-binary)
 
 (defun lisp-binary (operation destination left right count
                     destination-offset left-offset right-offset)
   (let ((type (vector-type destination)))
-    (when (integer-type-p type)
-      (return-from lisp-binary (integer-binary type operation destination left right count
-                      destination-offset left-offset right-offset))))
-  (ecase operation
-    (:add (lisp-loop +))
-    (:subtract (lisp-loop -))
-    (:multiply (lisp-loop *))
-    (:divide (lisp-loop /)))
-  destination)
+    (if (integer-type-p type)
+        (integer-binary type operation destination left right count
+                        destination-offset left-offset right-offset)
+        (lisp-float-binary type operation destination left right count
+                           destination-offset left-offset right-offset))))
 
 (defmacro define-lisp-bulk-loops ()
   `(progn
@@ -92,8 +103,19 @@
 
 (define-lisp-bulk-loops)
 
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defun lisp-bulk-symbol (prefix type)
+    (intern (format nil "~A~A" prefix type) :trivial-simd)))
+
 (defun lisp-bulk-function (prefix vector)
-  (symbol-function (intern (format nil "~A~A" prefix (vector-type vector)) :trivial-simd)))
+  (lisp-bulk-symbol prefix (vector-type vector)))
+
+(define-compiler-macro lisp-bulk-function (&whole form prefix vector)
+  (if (stringp prefix)
+      `(ecase (vector-type ,vector)
+         ,@(loop for key in (append (mapcar #'first *numeric-types*) '(:c32 :c64))
+                 collect `(,key ',(lisp-bulk-symbol prefix key))))
+      form))
 
 (defun lisp-scalar-binary (operation destination left right count d-offset l-offset r-offset)
   (funcall (lisp-bulk-function "%LISP-SCALAR-BINARY-" destination)

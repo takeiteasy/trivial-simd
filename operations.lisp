@@ -61,11 +61,43 @@ stride, or NIL to use START or STRIDE (default 1)."
         (return-from resolve-slice (values type length offsets strides))))
     (resolve-strided-slice vectors starts start end strides)))
 
+(defun dispatch-binary (type operation destination left right count
+                        destination-offset left-offset right-offset)
+  (cond ((complex-type-p type)
+         (complex-binary operation destination left right count
+                         destination-offset left-offset right-offset))
+        ((and (vectorp left) (vectorp right))
+         (ecase *backend*
+           (:sbcl (sbcl-binary operation destination left right count
+                               destination-offset left-offset right-offset))
+           (:native (native-binary operation destination left right count
+                                   destination-offset left-offset right-offset))
+           (:lisp (lisp-binary operation destination left right count
+                               destination-offset left-offset right-offset))))
+        (t
+         (ecase *backend*
+           (:sbcl (sbcl-scalar-binary operation destination left right count
+                                      destination-offset left-offset right-offset))
+           (:native (native-scalar-binary operation destination left right count
+                                          destination-offset left-offset right-offset))
+           (:lisp (lisp-scalar-binary operation destination left right count
+                                      destination-offset left-offset right-offset))))))
+
 (defun binary-operation (operation destination left right
                          start end destination-start left-start right-start
                          stride destination-stride left-stride right-stride)
   (unless (or (vectorp left) (vectorp right))
     (error "A binary operation needs a vector operand"))
+  (when (and (vectorp left) (vectorp right)
+             (null start) (null end) (null destination-start) (null left-start)
+             (null right-start) (null stride) (null destination-stride)
+             (null left-stride) (null right-stride))
+    (let ((type (vector-type destination))
+          (count (length destination)))
+      (when (and (eq type (vector-type left)) (eq type (vector-type right))
+                 (= count (length left) (length right)))
+        (dispatch-binary type operation destination left right count 0 0 0)
+        (return-from binary-operation destination))))
   (multiple-value-bind (type count offsets strides)
       (resolve-bulk-operands destination (list left right)
                              (list left-start right-start) start end destination-start
@@ -76,25 +108,8 @@ stride, or NIL to use START or STRIDE (default 1)."
                         (left left-offset left-stride)
                         (right right-offset right-stride))
             count
-          (cond ((complex-type-p type)
-                 (complex-binary operation destination left right count
-                                 destination-offset left-offset right-offset))
-                ((and (vectorp left) (vectorp right))
-                 (ecase *backend*
-                   (:sbcl (sbcl-binary operation destination left right count
-                                       destination-offset left-offset right-offset))
-                   (:native (native-binary operation destination left right count
-                                           destination-offset left-offset right-offset))
-                   (:lisp (lisp-binary operation destination left right count
-                                       destination-offset left-offset right-offset))))
-                (t
-                 (ecase *backend*
-                   (:sbcl (sbcl-scalar-binary operation destination left right count
-                                              destination-offset left-offset right-offset))
-                   (:native (native-scalar-binary operation destination left right count
-                                                destination-offset left-offset right-offset))
-                   (:lisp (lisp-scalar-binary operation destination left right count
-                                              destination-offset left-offset right-offset)))))))))
+          (dispatch-binary type operation destination left right count
+                           destination-offset left-offset right-offset)))))
   destination)
 
 (defun resolve-bulk-operands (destination operands starts start end destination-start
