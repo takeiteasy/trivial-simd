@@ -1,0 +1,28 @@
+SBCL 2.6.8 | machine ARM64
+
+Call overhead, single-float, microseconds per call
+Backend      Op       Elements us/call   
+LISP         add!            4     0.0551
+LISP         dot             4     0.0400
+SCALAR       add             4     0.0107
+SCALAR       dot             4     0.0094
+LISP         add!           32     0.1194
+LISP         dot            32     0.0847
+SCALAR       add            32     0.0290
+SCALAR       dot            32     0.0404
+LISP         add!         1024     2.1752
+LISP         dot          1024     1.5108
+SCALAR       add          1024     0.8465
+SCALAR       dot          1024     0.9381
+NATIVE       add!            4     0.0856
+NATIVE       dot             4     0.0756
+SCALAR       add             4     0.0106
+SCALAR       dot             4     0.0093
+NATIVE       add!           32     0.0876
+NATIVE       dot            32     0.0792
+SCALAR       add            32     0.0287
+SCALAR       dot            32     0.0311
+NATIVE       add!         1024     0.2085
+NATIVE       dot          1024     0.3120
+SCALAR       add          1024     0.8390
+SCALAR       dot          1024     0.9379

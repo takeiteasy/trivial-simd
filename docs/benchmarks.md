@@ -47,6 +47,24 @@ use identical typed arrays; output buffers are reused.[^scalar]
 | 65,536 | multiply-add | 65.713 | 192.531 | 31.726 | 314.398 | 2.07x |
 | 65,536 | dot | 61.415 | 97.091 | 30.808 | 139.016 | 1.99x |
 
+## Call overhead
+
+A call with no slice or stride keywords validates its operands and goes straight
+to the backend. Small arrays remain dominated by that fixed cost: a scalar loop
+is faster than any backend up to a few hundred elements.[^overhead]
+
+| Elements | Operation | Scalar | Lisp fallback | Native |
+|---:|---|---:|---:|---:|
+| 4 | add | 0.010 | 0.055 | 0.086 |
+| 4 | dot | 0.009 | 0.040 | 0.072 |
+| 32 | add | 0.029 | 0.126 | 0.088 |
+| 32 | dot | 0.024 | 0.084 | 0.080 |
+| 1,024 | add | 0.847 | 2.176 | 0.209 |
+| 1,024 | dot | 0.938 | 1.515 | 0.313 |
+
+Calls with `:start`, `:end`, `:stride` or per-vector keywords resolve slices
+first and cost more.
+
 ## Lisp implementation comparison
 
 Native pointer access for 1,024-element arrays on the same Apple M1. Cells show
@@ -148,7 +166,7 @@ complete Lisp timings, concurrent calls, and the storage design.
 
 ## Reproducing
 
-Run [the array benchmark](testing.md#benchmark) and
+Run [the array benchmark](testing.md#benchmark), the call-overhead benchmark and
 [the kernel profile](testing.md#kernel-profiling). Results change with the Lisp
 compiler, CPU, memory access mode, and system load.
 
@@ -161,6 +179,12 @@ compiler, CPU, memory access mode, and system load.
 - Short kernel setup and copy-mode costs remain; see
   [kernel limitations](kernels.md#limitations) and
   [array access limitations](backends.md#limitations).
+
+[^overhead]: Single-float, from `tests/overhead-bench.lisp` on SBCL 2.6.8 and
+    macOS ARM64 on 2026-10-02, using the same timing method as the tables above.
+    Raw output: [SBCL](benchmark-runs/2026-10-02-call-overhead-sbcl.txt). The Lisp
+    fallback columns in the array tables above were measured earlier; this table
+    is current for `add!`.
 
 [^timing]: Arrays and programs are prepared outside timing. Each case warms up,
     calibrates batches to at least 50 ms, and reports the median of three
