@@ -53,22 +53,24 @@ A call with no slice or stride keywords validates its operands and goes straight
 to the backend. This holds for arithmetic, `sum`, `dot`, min/max, clamp,
 comparison, selection and the unary operations. Small arrays remain dominated by
 that fixed cost: a scalar loop is faster than any backend up to a few hundred
-elements.[^overhead]
+elements. Float vectors of up to 64 elements [run inline](small-arrays.md)
+instead, at about the cost of a scalar loop; the Inline column shows a dash above
+that length.[^overhead]
 
-| Elements | Operation | Scalar | Lisp fallback | Native |
-|---:|---|---:|---:|---:|
-| 4 | add | 0.010 | 0.055 | 0.083 |
-| 4 | dot | 0.009 | 0.034 | 0.063 |
-| 4 | min | - | 0.131 | 0.194 |
-| 4 | compare | - | 0.119 | 0.187 |
-| 32 | add | 0.029 | 0.120 | 0.088 |
-| 32 | dot | 0.024 | 0.073 | 0.070 |
-| 32 | min | - | 0.176 | 0.196 |
-| 32 | compare | - | 0.163 | 0.196 |
-| 1,024 | add | 0.838 | 2.183 | 0.213 |
-| 1,024 | dot | 0.938 | 1.500 | 0.302 |
-| 1,024 | min | - | 1.978 | 0.256 |
-| 1,024 | compare | - | 1.809 | 0.240 |
+| Elements | Operation | Scalar | Inline | Lisp fallback | Native |
+|---:|---|---:|---:|---:|---:|
+| 4 | add | 0.011 | 0.010 | 0.056 | 0.083 |
+| 4 | dot | 0.009 | 0.009 | 0.035 | 0.063 |
+| 4 | min | - | 0.010 | 0.130 | 0.193 |
+| 4 | compare | - | - | 0.125 | 0.182 |
+| 32 | add | 0.029 | 0.025 | 0.119 | 0.088 |
+| 32 | dot | 0.040 | 0.019 | 0.073 | 0.070 |
+| 32 | min | - | 0.025 | 0.176 | 0.192 |
+| 32 | compare | - | - | 0.162 | 0.182 |
+| 1,024 | add | 0.842 | - | 2.180 | 0.212 |
+| 1,024 | dot | 0.939 | - | 1.501 | 0.300 |
+| 1,024 | min | - | - | 1.983 | 0.254 |
+| 1,024 | compare | - | - | 1.809 | 0.237 |
 
 Calls with `:start`, `:end`, `:stride` or per-vector keywords resolve slices
 first and cost more.

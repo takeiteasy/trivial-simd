@@ -24,6 +24,7 @@ Integer arithmetic [wraps at the vector width](integers.md).
 | [`sum`, `dot`, `dotc`, `asum`, `nrm2`](reductions.md) | Scalar sum, dot product, absolute sum, Euclidean norm |
 | [`minimum`, `maximum`, `argmin`, `argmax`](reductions.md) | Extreme element or its index |
 | `(backend)` | `:sbcl`, `:native`, or `:lisp` |
+| [Small arrays](small-arrays.md) | Short float vectors run inline, without a backend call |
 
 The four binary `!` functions accept a scalar on either side, with a vector
 on the other side. `fma!` accepts scalars or vectors in any mix, including

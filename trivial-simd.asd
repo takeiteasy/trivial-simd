@@ -14,6 +14,7 @@
                (:file "backends")
                (:file "strided")
                (:file "operations")
+               (:file "small-arrays")
                (:file "extended-operations")
                (:file "complex-operations")
                (:file "reductions")
@@ -27,6 +28,7 @@
   :serial t
   :components ((:file "tests/package")
                (:file "tests/operations")
+               (:file "tests/small-arrays")
                (:file "tests/extended")
                (:file "tests/copy")
                (:file "tests/strides")

@@ -6,6 +6,10 @@ backend for both float types and eight integer types, empty vectors, SIMD
 tails, aliasing, wrapping arithmetic, division errors, and type boundaries.
 Extended operation tests cover unary and bounded arithmetic, all conversion
 type pairs and rounding modes, byte masks, selection, and mask kernels.
+The suite disables the [inline small-array path](small-arrays.md) so that small
+calls exercise the backends; the inline tests enable it and compare every inline
+operation with the backends for lengths around the limit, and check that
+mismatches and errors still reach the normal path.
 Whole-vector call tests compare keyword-free calls with explicit-slice calls and
 check that mismatched lengths, types, masks and scalars still signal errors.
 Copy tests cover `copy!`, `fill!` and `swap!` on every element type and backend,
@@ -154,7 +158,8 @@ Run this script explicitly when you want measurements. The ASDF test system
 and GitHub Actions do not invoke it.
 
 `tests/overhead-bench.lisp` times 4-, 32- and 1,024-element `add!`, `dot`, `min!`
-and `compare!` calls against scalar loops on every available backend:
+and `compare!` calls against scalar loops, the inline path and every available
+backend:
 
 ```sh
 sbcl --script tests/overhead-bench.lisp

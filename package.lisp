@@ -5,6 +5,6 @@
            #:negate! #:abs! #:sqrt! #:reciprocal! #:min! #:max! #:clamp!
            #:copy! #:fill! #:swap!
            #:convert! #:compare! #:select! #:select #:count #:any #:all
-           #:sum #:dot #:dotc #:backend
+           #:sum #:dot #:dotc #:backend #:*inline-small-arrays*
            #:minimum #:maximum #:argmin #:argmax #:asum #:nrm2
            #:define-kernel #:fma))
