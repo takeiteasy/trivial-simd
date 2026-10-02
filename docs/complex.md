@@ -16,7 +16,7 @@ the vector's complex precision.
 Converting a complex value to real or integer requires a zero imaginary part;
 otherwise it signals an error. Complex magnitudes use Euclidean absolute
 value. BLAS absolute sums use a different definition, described in
-[CLBLAS Level 1](https://github.com/takeiteasy/CLBLAS/blob/trunk/docs/level1.md).
+[Level 1 BLAS](blas-level1.md).
 
 ```lisp
 (let ((x (make-array 2 :element-type '(complex single-float)

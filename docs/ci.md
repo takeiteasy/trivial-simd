@@ -62,6 +62,15 @@ twice the Linux rate; public repositories use standard runners for free.[^cost]
     section of the matrix file.
 [^cost]: GitHub's current rates are in its Actions billing documentation.
 
+## BLAS measurements
+
+The **FMA profile** workflow also has a `blas` job. It builds the BLAS profile
+with each tile and blocking override, runs it twice per build, then runs the
+SBCL BLAS benchmark with native kernels always dispatched
+(`BLAS_BENCH_THRESHOLD=1`) and with Lisp kernels to find the threshold. Output
+lands in the job logs, and `lscpu` is recorded first because runner CPUs vary.
+See [BLAS profiling](testing.md#blas-profiling).
+
 ## FMA measurements
 
 Run the **FMA profile** workflow manually for x86-64 Linux correctness checks
