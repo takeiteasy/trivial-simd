@@ -33,7 +33,6 @@ and `cmake --build build --config Release`. The Lisp fallback loads without it.
 - [Masks and selection](docs/masks.md)
 - [Integer vectors](docs/integers.md)
 - [Reductions](docs/reductions.md)
-- [Extension API](docs/extension.md)
 - [CLBLAS](https://github.com/takeiteasy/CLBLAS): CBLAS-style BLAS built on trivial-simd
 - [Kernels](docs/kernels.md)
 - [Backends and build](docs/backends.md)
