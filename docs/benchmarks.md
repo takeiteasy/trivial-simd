@@ -1,14 +1,16 @@
 # Benchmark results
 
 On the measured Apple M1, SBCL native pointer access beats typed scalar Lisp loops
-for 1,024- and 65,536-element arrays. Scalar loops are faster at 32 elements;
+for 1,024- and 65,536-element arrays. Backend calls are slower than scalar loops
+at 32 elements; short float vectors [run inline](small-arrays.md) instead, and
 copying inputs and outputs costs more than the scalar loop in these cases.
 Native sum kernels avoid an intermediate vector. Reusable spill scratch does
 not meet the 10% adoption threshold, so normal calls retain per-call allocation.
 
-Array and sum tables are measured on 2026-09-29 at implementation commit
-`8dd1cdb`, with SBCL 2.6.8, CCL 1.13, and ECL 26.5.5 on macOS ARM64. The
-main array and sum tables use SBCL, native NEON, and pointer array access.
+The array tables are measured on 2026-10-02 at implementation commit `1061ab8`
+with SBCL 2.6.8 on macOS ARM64. The sum tables and the CCL 1.13 and ECL 26.5.5
+comparison are measured on 2026-09-29 at commit `8dd1cdb`. The main tables use
+SBCL, native NEON, and pointer array access.
 Times are microseconds per complete warmed call; speedup is the scalar time
 divided by native time.[^timing] These are machine-specific
 measurements, rather than performance guarantees.
@@ -23,29 +25,29 @@ use identical typed arrays; output buffers are reused.[^scalar]
 
 | Elements | Operation | Scalar | Lisp fallback | Native | Native copy | Native speedup |
 |---:|---|---:|---:|---:|---:|---:|
-| 32 | add | 0.029 | 0.699 | 0.082 | 0.520 | 0.36x |
-| 32 | multiply-add | 0.035 | 0.135 | 0.132 | 0.338 | 0.27x |
-| 32 | dot | 0.024 | 0.093 | 0.067 | 0.346 | 0.36x |
-| 1,024 | add | 0.966 | 19.462 | 0.192 | 2.856 | 5.04x |
-| 1,024 | multiply-add | 1.111 | 3.052 | 0.354 | 3.532 | 3.14x |
-| 1,024 | dot | 0.938 | 1.573 | 0.297 | 2.038 | 3.16x |
-| 65,536 | add | 61.196 | 1242.797 | 8.286 | 152.486 | 7.39x |
-| 65,536 | multiply-add | 67.269 | 192.742 | 16.069 | 207.656 | 4.19x |
-| 65,536 | dot | 61.423 | 100.529 | 15.440 | 110.412 | 3.98x |
+| 32 | add | 0.029 | 0.120 | 0.086 | 0.532 | 0.34x |
+| 32 | multiply-add | 0.036 | 0.164 | 0.179 | 0.375 | 0.20x |
+| 32 | dot | 0.024 | 0.077 | 0.068 | 0.342 | 0.36x |
+| 1,024 | add | 0.967 | 2.184 | 0.215 | 2.869 | 4.50x |
+| 1,024 | multiply-add | 1.113 | 3.051 | 0.401 | 3.593 | 2.78x |
+| 1,024 | dot | 0.939 | 1.499 | 0.301 | 2.024 | 3.12x |
+| 65,536 | add | 61.858 | 135.479 | 8.286 | 154.354 | 7.47x |
+| 65,536 | multiply-add | 67.367 | 191.727 | 16.236 | 208.926 | 4.15x |
+| 65,536 | dot | 61.520 | 93.853 | 15.477 | 112.428 | 3.97x |
 
 ### double-float
 
 | Elements | Operation | Scalar | Lisp fallback | Native | Native copy | Native speedup |
 |---:|---|---:|---:|---:|---:|---:|
-| 32 | add | 0.028 | 0.823 | 0.084 | 0.522 | 0.34x |
-| 32 | multiply-add | 0.035 | 0.136 | 0.137 | 0.343 | 0.26x |
-| 32 | dot | 0.025 | 0.093 | 0.068 | 0.347 | 0.37x |
-| 1,024 | add | 0.967 | 28.096 | 0.297 | 2.918 | 3.25x |
-| 1,024 | multiply-add | 1.163 | 3.061 | 0.607 | 3.749 | 1.92x |
-| 1,024 | dot | 0.938 | 1.546 | 0.531 | 2.248 | 1.77x |
-| 65,536 | add | 61.071 | 1826.875 | 16.417 | 159.283 | 3.72x |
-| 65,536 | multiply-add | 65.713 | 192.531 | 31.726 | 314.398 | 2.07x |
-| 65,536 | dot | 61.415 | 97.091 | 30.808 | 139.016 | 1.99x |
+| 32 | add | 0.029 | 0.119 | 0.097 | 0.539 | 0.29x |
+| 32 | multiply-add | 0.036 | 0.155 | 0.193 | 0.389 | 0.18x |
+| 32 | dot | 0.025 | 0.074 | 0.063 | 0.348 | 0.39x |
+| 1,024 | add | 0.970 | 2.179 | 0.318 | 2.971 | 3.05x |
+| 1,024 | multiply-add | 1.168 | 3.068 | 0.650 | 3.881 | 1.80x |
+| 1,024 | dot | 0.938 | 1.498 | 0.527 | 2.269 | 1.78x |
+| 65,536 | add | 61.267 | 134.984 | 16.520 | 163.342 | 3.71x |
+| 65,536 | multiply-add | 65.827 | 191.576 | 33.482 | 245.086 | 1.97x |
+| 65,536 | dot | 61.435 | 93.727 | 30.779 | 128.018 | 2.00x |
 
 ## Call overhead
 
@@ -192,20 +194,19 @@ compiler, CPU, memory access mode, and system load.
 
 [^overhead]: Single-float, from `tests/overhead-bench.lisp` on SBCL 2.6.8 and
     macOS ARM64 on 2026-10-02, using the same timing method as the tables above.
-    Raw output: [SBCL](benchmark-runs/2026-10-02-call-overhead-sbcl.txt). The Lisp
-    fallback columns in the array tables above were measured earlier; this table
-    is current.
+    Raw output: [SBCL](benchmark-runs/2026-10-02-call-overhead-sbcl.txt).
 
 [^timing]: Arrays and programs are prepared outside timing. Each case warms up,
     calibrates batches to at least 50 ms, and reports the median of three
-    further batches. Array and sum tables come from `tests/bench.lisp` at
-    implementation commit `8dd1cdb` on 2026-09-29; results are checked before
-    timing. Values are rounded for display. Raw output:
+    further batches. The array tables come from `tests/bench.lisp` at
+    implementation commit `1061ab8` on 2026-10-02, which calls the functions
+    through `funcall` so the backends are measured; the sum tables and the CCL
+    and ECL comparison come from commit `8dd1cdb` on 2026-09-29. Results are
+    checked before timing. Values are rounded for display. Raw output:
+    [SBCL](benchmark-runs/2026-10-02-sbcl.txt) (arrays),
     [SBCL](benchmark-runs/2026-09-29-sbcl.txt),
     [CCL](benchmark-runs/2026-09-29-ccl.txt),
-    [ECL](benchmark-runs/2026-09-29-ecl.txt). The Lisp fallback `dot` cells come from
-    the 2026-10-01 [run](benchmark-runs/2026-10-01-kernel-reducers-sbcl.txt), after the
-    typed Lisp loops.
+    [ECL](benchmark-runs/2026-09-29-ecl.txt).
 
 [^scalar]: Scalar functions are compiled typed Lisp loops without explicit
     SIMD. The compiler may still emit vector instructions. `Native copy`

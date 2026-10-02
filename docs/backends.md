@@ -122,8 +122,9 @@ Direct numeric-vector access relies on the tested SBCL, ECL, and CCL CFFI
 implementations; CFFI documents shareable byte vectors rather than a general
 numeric-vector guarantee.[^pointer] The native backend copies arrays on other
 Lisp implementations, using typed per-element loops.[^copy] Support
-for more implementations is tracked by their own tickets above. Small arrays may
-still run faster in Lisp; use the [benchmark](testing.md) for a workload.
+for more implementations is tracked by their own tickets above. Short float
+vectors [run inline](small-arrays.md); for other small arrays, use the
+[benchmark](testing.md) for a workload.
 Copy mode allocates buffers for the requested slice and copies only its elements.
 Each input has separate storage, including repeated and aliased inputs.
 
