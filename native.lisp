@@ -153,9 +153,22 @@
      (define-native ("ts_extended_f32_to_f64" %native-extended-f32-to-f64) :void
        (output :pointer) (input :pointer) (count :size))
      (define-native ("ts_extended_f64_to_f32" %native-extended-f64-to-f32) :void
-       (output :pointer) (input :pointer) (count :size))))
+       (output :pointer) (input :pointer) (count :size))
+     ,@(loop for (c-name lisp-name) in
+               '(("ts_extended_bf16_to_f32" %native-extended-bf16-to-f32)
+                 ("ts_extended_f32_to_bf16" %native-extended-f32-to-bf16)
+                 ("ts_extended_f16_to_f32" %native-extended-f16-to-f32)
+                 ("ts_extended_f32_to_f16" %native-extended-f32-to-f16))
+             collect `(define-native (,c-name ,lisp-name) :void
+                        (output :pointer) (input :pointer) (count :size)))))
 
 (define-native-extended-calls)
+
+(defvar *native-float-encoding-available-p*
+  (and *native-available-p*
+       (every (lambda (name) (ignore-errors (cffi:foreign-symbol-pointer name)))
+              '("ts_extended_bf16_to_f32" "ts_extended_f32_to_bf16"
+                "ts_extended_f16_to_f32" "ts_extended_f32_to_f16"))))
 
 (define-native ("ts_blas_gemm_f32" %native-blas-gemm-f32) :int
   (m :int64) (n :int64) (k :int64) (alpha :float)

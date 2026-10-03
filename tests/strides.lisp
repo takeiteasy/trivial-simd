@@ -170,6 +170,20 @@ a contiguous call on plainly gathered temporaries. An item is a scalar or
                              (list :in (scrambled-vector type 40 1) :input))
                        (subseq strides 0 2))))))
 
+(test strided-convert-encoded
+  (with-stride-cases (type '(single-float) strides)
+    (dolist (encoding '(:bf16 :f16))
+      (check-strided 'simd:convert!
+                     (list (list :out (copy-vector '(unsigned-byte 16) 40 300) :destination)
+                           (list :in (scrambled-vector 'single-float 40 1) :input))
+                     (subseq strides 0 2)
+                     :extra-keys (list :destination-encoding encoding))
+      (check-strided 'simd:convert!
+                     (list (list :out (copy-vector 'single-float 40 300) :destination)
+                           (list :in (scrambled-vector '(unsigned-byte 16) 40 1) :input))
+                     (subseq strides 0 2)
+                     :extra-keys (list :input-encoding encoding)))))
+
 (test strided-masks
   (with-stride-cases (type '(single-float (signed-byte 32) (complex double-float)) strides)
     (let ((mask (make-array 40 :element-type '(unsigned-byte 8) :initial-element 9)))
