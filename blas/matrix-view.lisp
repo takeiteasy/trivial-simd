@@ -12,13 +12,9 @@
   (ku 0 :read-only t))
 
 (defun matrix-element-type (data)
-  (cond ((typep data '(simple-array single-float (*))) 'single-float)
-        ((typep data '(simple-array double-float (*))) 'double-float)
-        ((typep data '(simple-array (complex single-float) (*)))
-         '(complex single-float))
-        ((typep data '(simple-array (complex double-float) (*)))
-         '(complex double-float))
-        (t (error "Matrix backing storage must be a simple float or complex float vector"))))
+  (or (storage-element-type data)
+      (error "Matrix backing storage must be a simple float or complex float vector, ~
+              or a vector view of one")))
 
 (defun validate-view-arguments (data rows cols layout offset)
   (matrix-element-type data)
@@ -26,7 +22,7 @@
     (error "Matrix dimensions must be nonnegative integers"))
   (unless (member layout '(:row-major :column-major))
     (error "Invalid matrix layout: ~S" layout))
-  (unless (and (integerp offset) (<= 0 offset) (<= offset (length data)))
+  (unless (and (integerp offset) (<= 0 offset) (<= offset (storage-length data)))
     (error "Matrix offset exceeds backing storage")))
 
 (defun make-matrix-view (data rows cols &key (layout :row-major)
@@ -38,7 +34,7 @@
     (unless (and (integerp ld) (<= (max 1 minor) ld))
       (error "Invalid matrix leading dimension"))
     (unless (or (zerop rows) (zerop cols)
-                (< (+ offset (* (1- major) ld) (1- minor)) (length data)))
+                (< (+ offset (* (1- major) ld) (1- minor)) (storage-length data)))
       (error "Matrix view exceeds backing storage"))
     (%make-matrix-view :data data :rows rows :cols cols :layout layout
                        :leading-dimension ld :offset offset :kind :dense
@@ -54,7 +50,7 @@
   (make-matrix-view (matrix-view-data view) rows cols
                     :layout (matrix-view-layout view)
                     :leading-dimension (matrix-view-leading-dimension view)
-                    :offset (min (length (matrix-view-data view))
+                    :offset (min (storage-length (matrix-view-data view))
                                  (+ (matrix-view-offset view)
                                     (matrix-index view row column)))))
 
@@ -69,13 +65,14 @@
                (<= 0 row) (< row (matrix-view-rows view))
                (<= 0 column) (< column (matrix-view-cols view)))
     (error "Invalid dense matrix index"))
-  (aref (matrix-view-data view)
-        (+ (matrix-view-offset view) (matrix-index view row column))))
+  (trivial-simd::vector-ref (matrix-view-data view)
+                            (+ (matrix-view-offset view) (matrix-index view row column))))
 
 (defun (setf matrix-ref) (value view row column)
   (matrix-ref view row column)
-  (setf (aref (matrix-view-data view)
-              (+ (matrix-view-offset view) (matrix-index view row column))) value))
+  (setf (trivial-simd::vector-ref (matrix-view-data view)
+                                  (+ (matrix-view-offset view) (matrix-index view row column)))
+        value))
 
 (defun make-band-matrix-view (data rows cols &key (kind :general) (kl 0) (ku 0)
                                                      bandwidth
@@ -97,7 +94,7 @@
     (unless (and (integerp ld) (<= width ld))
       (error "Invalid band leading dimension"))
     (unless (or (zerop rows) (zerop cols)
-                (<= (+ offset (* (1- major) ld) width) (length data)))
+                (<= (+ offset (* (1- major) ld) width) (storage-length data)))
       (error "Band view exceeds backing storage"))
     (%make-matrix-view :data data :rows rows :cols cols :layout layout
                        :leading-dimension ld :offset offset :kind kind
@@ -105,7 +102,7 @@
 
 (defun make-packed-matrix-view (data n &key (layout :row-major) (offset 0))
   (validate-view-arguments data n n layout offset)
-  (unless (<= (+ offset (floor (* n (1+ n)) 2)) (length data))
+  (unless (<= (+ offset (floor (* n (1+ n)) 2)) (storage-length data))
     (error "Packed view exceeds backing storage"))
   (%make-matrix-view :data data :rows n :cols n :layout layout
                      :leading-dimension 0 :offset offset :kind :packed
@@ -146,11 +143,13 @@
 
 (defun stored-ref (view row column uplo zero)
   (let ((index (stored-index view row column uplo)))
-    (if index (aref (matrix-view-data view) (+ (matrix-view-offset view) index))
+    (if index
+        (trivial-simd::vector-ref (matrix-view-data view) (+ (matrix-view-offset view) index))
         zero)))
 
 (defun (setf stored-ref) (value view row column uplo zero)
   (declare (ignore zero))
   (let ((index (stored-index view row column uplo)))
     (unless index (error "Matrix element is outside the stored triangle or band"))
-    (setf (aref (matrix-view-data view) (+ (matrix-view-offset view) index)) value)))
+    (setf (trivial-simd::vector-ref (matrix-view-data view) (+ (matrix-view-offset view) index))
+          value)))

@@ -6,7 +6,9 @@
 Arithmetic inputs and destination have the same element type. Scalars match
 that element type exactly; integer scalars fit its signed or unsigned range.
 [Conversion](conversion.md) and [masks](masks.md) use mixed element types.
-Integer arithmetic [wraps at the vector width](integers.md).
+Integer arithmetic [wraps at the vector width](integers.md). A
+[vector view](vector-views.md) of foreign memory is accepted wherever a vector
+is.
 
 | Function | Result |
 |---|---|
@@ -23,6 +25,7 @@ Integer arithmetic [wraps at the vector width](integers.md).
 | [Masks and selection](masks.md) | Compare, select, count, any, all |
 | [`sum`, `dot`, `dotc`, `asum`, `nrm2`](reductions.md) | Scalar sum, dot product, absolute sum, Euclidean norm |
 | [`minimum`, `maximum`, `argmin`, `argmax`](reductions.md) | Extreme element or its index |
+| [`make-vector-view`](vector-views.md) | A vector of foreign memory |
 | `(backend)` | `:sbcl`, `:native`, or `:lisp` |
 | [Small arrays](small-arrays.md) | Short float vectors run inline, without a backend call |
 

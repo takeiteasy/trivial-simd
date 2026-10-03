@@ -47,6 +47,14 @@ zero never read the operands they scale. Native BLAS tests force the native and
 Lisp kernels in turn for `gemm`, `symm`, `syrk`, `syr2k`, `trmm`, `trsm`,
 `gemv`, `ger`, and `trsv` across layouts, transposes, offsets, increments, and
 block-edge sizes, and check the fallback when the library lacks the symbols.
+Vector view tests run every bulk operation, reduction, conversion, mask
+operation, copy, kernel and BLAS family on views of foreign copies of Lisp
+vectors, alone and mixed with Lisp vectors, on every backend and access mode,
+with 5-element and default buffer blocks. They compare the results and final
+memory with the same call on Lisp vectors, and cover slices, strides, ties
+across blocks, overlapping copies within one buffer, matrix overlap by address,
+errors, direct native pointer use, and (on SBCL) that a large view is read
+without a full-length copy.
 `ctest` also checks the C kernels, including the scalar build and allocation
 failure. On x86-64 it checks the SSE2 BLAS kernels directly and the AVX+FMA
 kernels where the CPU supports them; the software-FMA target forces SSE2.

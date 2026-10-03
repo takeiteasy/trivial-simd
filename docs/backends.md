@@ -127,6 +127,7 @@ vectors [run inline](small-arrays.md); for other small arrays, use the
 [benchmark](testing.md) for a workload.
 Copy mode allocates buffers for the requested slice and copies only its elements.
 Each input has separate storage, including repeated and aliased inputs.
+[Vector views](vector-views.md) pass their own pointer in both modes.
 
 [^avx2]: CPUs with FMA but no AVX2 (AMD Piledriver and Steamroller) use the SSE2
     kernels. MSVC enables FMA only through `/arch:AVX2`, so every compiler

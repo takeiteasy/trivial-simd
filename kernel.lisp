@@ -672,6 +672,58 @@ Empty slices give NIL for the extrema and a zero otherwise."
                   ,(lisp-kernel-form tree type destination arguments d-offset offsets count
                                      'fma reducer)))))))
 
+(defun kernel-combine-form (reducer type)
+  "Form folding the block results of a REDUCER kernel over vectors of TYPE."
+  (ecase reducer
+    ((nil) nil)
+    ((sum asum) `(sum-combiner ,type))
+    (nrm2 '#'norm-combiner)
+    ((minimum maximum) `(extremum-combiner ,(eq reducer 'maximum)))
+    ((argmin argmax) `(index-combiner ,(eq reducer 'argmax)))
+    (count '#'count-combiner)
+    (any '#'any-combiner)
+    (all '#'all-combiner)))
+
+(defun kernel-value-form (tree type arguments offsets index reducer)
+  "Form computing the kernel expression at INDEX of Lisp vector ARGUMENTS."
+  `(ecase ,type
+     ,@(loop for (key element) in *numeric-types*
+             collect `(,key
+                       ,(if (or (not (integer-type-p key))
+                                (ignore-errors (validate-integer-kernel tree key reducer) t))
+                            `(let ,(mapcar (lambda (argument) (list argument argument)) arguments)
+                               (declare (type (simple-array ,element (*)) ,@arguments))
+                               ,(scalar-kernel-form tree key arguments offsets index))
+                            nil)))))
+
+(defun staged-kernel-form (name reducer type destination d-offset arguments offsets starts
+                           count direct body &optional value)
+  "Wrap BODY, the computation of kernel NAME over the slices, to stage vector
+views: each block calls NAME again on Lisp buffers, passing the offsets as the
+start keywords in STARTS (the destination's first). The result is DESTINATION,
+when there is one, or the reduction. For ARGMIN and ARGMAX, VALUE is a function
+of an index variable returning the form computing the element there, which the
+block results are compared by."
+  (let* ((bindings `(,@(when destination `((,destination ,d-offset nil :out)))
+                     ,@(mapcar (lambda (argument offset) (list argument offset nil))
+                               arguments offsets)))
+         (call `(,name ,@(when destination (list destination)) ,@arguments :end ,count
+                       ,@(loop for start in starts
+                               for offset in (if destination (cons d-offset offsets) offsets)
+                               append (list (intern (symbol-name start) :keyword) offset))))
+         (index (gensym "INDEX"))
+         (staged `(with-staged ,bindings
+                      (,count :direct ,direct :combine ,(kernel-combine-form reducer type)
+                              :block-form
+                              ,(if (member reducer '(argmin argmax))
+                                   `(let ((,index ,call))
+                                      (and ,index (cons ,index ,(funcall value index))))
+                                   call))
+                    ,body)))
+    (cond ((member reducer '(argmin argmax)) `(staged-index ,staged))
+          (destination `(progn ,staged ,destination))
+          (t staged))))
+
 (defmacro define-kernel (name (&rest arguments) expression)
   "Define an elementwise destination kernel or a scalar reduction kernel such as
 (SUM expression), (ASUM expression), (NRM2 expression), (MINIMUM expression),
@@ -728,7 +780,10 @@ END, and per-input start keywords. Experimental."
                  (when (integer-type-p ,type) (validate-integer-kernel ',tree ,type ',reducer))
                  (destructuring-bind ,all-offsets ,offsets-variable
                    (declare (type fixnum ,@all-offsets))
-                   (if (complex-type-p ,type)
+                   ,(staged-kernel-form
+                     name reducer type destination d-offset arguments offsets all-starts count
+                     `(and (eq *backend* :native) (not (complex-type-p ,type)))
+                     `(if (complex-type-p ,type)
                        (progn
                          (validate-complex-kernel ',tree ',reducer)
                          (funcall (complex-kernel-function
@@ -759,5 +814,7 @@ END, and per-input start keywords. Experimental."
                                        ,program ,(+ (* 8 (length arguments)) (position reducer '(nil sum asum nrm2 minimum maximum argmin argmax)))
                                        ',runner-form ,runner)
                                        ,@runner-arguments)
-                        #-ecl ,native-form)))))
+                        #-ecl ,native-form))))
+                     (lambda (index)
+                       (kernel-value-form tree type arguments offsets index reducer))))
                  ,@(when destination (list destination)))))))))))

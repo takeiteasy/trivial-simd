@@ -1,6 +1,7 @@
 # Matrix storage design
 
-BLAS matrix operands use a simple specialized vector plus dimension metadata.
+BLAS matrix operands use a simple specialized vector, or a
+[vector view](vector-views.md) of foreign memory, plus dimension metadata.
 A view records its backing vector, row and column counts, layout, base offset,
 and leading dimension. Views share storage; creating a submatrix does not copy
 elements. `make-matrix-view` constructs a dense view and `matrix-subview`
@@ -33,10 +34,12 @@ triangle. Both constructors accept `:layout` and `:offset`; band views also
 accept `:leading-dimension`. The operation's `:upper` or `:lower` flag
 selects which triangle is stored. These views share their backing vector.
 
-Level 2 and 3 routines use portable Lisp loops. Native kernels that use a view's
-backing vector must pin or copy it through the same paths as core numeric
-vectors.[^pointer] A native pointer to a view starts at the element offset.
-Alignment of the backing vector does not imply alignment at a nonzero offset.
+Native kernels pin or copy a view's backing vector through the same paths as
+core numeric vectors, and pass a vector view's own pointer.[^pointer] A native
+pointer to a view starts at the element offset. Alignment of the backing vector
+does not imply alignment at a nonzero offset. The Lisp loops read a vector view
+through its pointer. Matrix views share storage, and overlap checks compare
+vector views by address.
 
 The design uses separate real and complex specialized vectors. It does not
 assume that a displaced or rank-2 Common Lisp array exposes a contiguous,
