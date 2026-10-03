@@ -230,19 +230,36 @@
                  (cffi:mem-aref fa ,foreign 1) (imagpart a)
                  (cffi:mem-aref fb ,foreign 0) (realpart b)
                  (cffi:mem-aref fb ,foreign 1) (imagpart b))
-           (cffi:foreign-funcall ,c-name :pointer fa :pointer fb :pointer fc
-                                 :pointer fs :void)
+           ;; Some libraries compute an infinity or NaN here, so mask traps to
+           ;; get a value to report instead of an error from inside the call.
+           (without-float-traps
+             (cffi:foreign-funcall ,c-name :pointer fa :pointer fb :pointer fc
+                                   :pointer fs :void))
            (multiple-value-bind (r unchanged c s) (,routine a b)
-             (is (= unchanged b))
-             (is (close-enough-p (realpart r) (cffi:mem-aref fa ,foreign 0)
-                                 ',real-type))
-             (is (close-enough-p (imagpart r) (cffi:mem-aref fa ,foreign 1)
-                                 ',real-type))
-             (is (close-enough-p c (cffi:mem-ref fc ,foreign) ',real-type))
-             (is (close-enough-p (realpart s) (cffi:mem-aref fs ,foreign 0)
-                                 ',real-type))
-             (is (close-enough-p (imagpart s) (cffi:mem-aref fs ,foreign 1)
-                                 ',real-type))))))))
+             (let ((reference-r (complex (cffi:mem-aref fa ,foreign 0)
+                                         (cffi:mem-aref fa ,foreign 1)))
+                   (reference-c (cffi:mem-ref fc ,foreign))
+                   (reference-s (complex (cffi:mem-aref fs ,foreign 0)
+                                         (cffi:mem-aref fs ,foreign 1))))
+               (flet ((check (label actual expected)
+                        ;; An infinite reference would widen the tolerance to
+                        ;; infinity and accept any value, so require a finite one.
+                        (is (without-float-traps
+                              (and (= expected expected)
+                                   (< (abs expected) most-positive-double-float)
+                                   (close-enough-p actual expected ',real-type)))
+                            "~A(~A, ~A) ~A: computed ~A, reference ~A~%  ~
+                             computed  r=~A c=~A s=~A~%  ~
+                             reference r=~A c=~A s=~A"
+                            ,c-name a b label actual expected
+                            r c s reference-r reference-c reference-s)))
+                 (is (= unchanged b) "~A: B changed from ~A to ~A"
+                     ',routine b unchanged)
+                 (check "realpart r" (realpart r) (realpart reference-r))
+                 (check "imagpart r" (imagpart r) (imagpart reference-r))
+                 (check "c" c reference-c)
+                 (check "realpart s" (realpart s) (realpart reference-s))
+                 (check "imagpart s" (imagpart s) (imagpart reference-s))))))))))
 
 (define-complex-rotg-reference blas-crotg-reference :float single-float
   "cblas_crotg" trivial-simd/blas:crotg)
