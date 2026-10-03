@@ -190,6 +190,13 @@ ecl --eval '(load (compile-file "tests/bench.lisp" :output-file "/tmp/trivial-si
 Run this script explicitly when you want measurements. The ASDF test system
 and GitHub Actions do not invoke it.
 
+`tests/view-bench.lisp` times `dot`, `axpy!`, `convert!` and a sum kernel with one
+[vector view](vector-views.md) operand against Lisp vectors on every backend:
+
+```sh
+sbcl --script tests/view-bench.lisp
+```
+
 `tests/overhead-bench.lisp` times 4-, 32- and 1,024-element `add!`, `dot`, `min!`
 and `compare!` calls against scalar loops, the inline path and every available
 backend:
@@ -376,5 +383,5 @@ for each Lisp. See [ARM64 FMA measurements](arm64-fma.md#performance-gate).
     library cannot share the ARM64 `build/`. The SBCL tarball keeps its contrib
     fasls under `obj/sbcl-home`, which the script sets as `SBCL_HOME`.
 
-[^sbcl-heap]: The ARM64 SBCL script reserves a 4 GiB dynamic heap for compiling
-    the suite; the default 1 GiB heap can be exhausted during compilation.
+[^sbcl-heap]: The ARM64 SBCL script and the SBCL CI jobs reserve a 4 GiB dynamic
+    heap for compiling the suite; the default 1 GiB heap is close to its limit.

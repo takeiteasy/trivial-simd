@@ -56,20 +56,19 @@ same reduction of a Lisp vector. Integer results are identical.
 
 ## Performance
 
-| Operation | `:native` | `:sbcl` | `:lisp` |
-|---|---:|---:|---:|
-| `dot` | 359 / 359 | 4,625 / 3,563 | 3,969 / 3,031 |
-| `axpy!` | 289 / 297 | 4,313 / 3,344 | 4,063 / 3,094 |
-| `convert!` to double-float | 547 / 488 | 570 / 547 | 146,800 / 146,800 |
-| `(sum (* a b))` kernel | 309 / 340 | 3,094 / 1,969 | 4,125 / 2,969 |
+| Operation | `:native` | `:lisp` |
+|---|---:|---:|
+| `dot` | 253 / 253 | 2,120 / 1,505 |
+| `axpy!` | 173 / 176 | 2,438 / 1,829 |
+| `convert!` to double-float | 159 / 185 | 40,279 / 41,795 |
+| `(sum (* a b))` kernel | 181 / 181 | 1,983 / 1,359 |
 
 Microseconds with a view operand / with a Lisp vector, for 1,048,576
-single-float elements, best of five. One operand (the `dot` and kernel input,
-the `axpy!` and `convert!` source) is a view; the others are Lisp vectors.
-Measured 2026-10-03 on a 2.8 GHz Intel Xeon cloud VM with SBCL 2.2.9. The
-native backend reads the view in place; the buffered backends pay one extra
-copy of each element, and the `:lisp` conversion is a per-element generic loop
-either way.
+single-float elements. One operand (the `dot` and kernel input, the `axpy!` and
+`convert!` source) is a view; the others are Lisp vectors. Measured 2026-10-03 on
+an Apple M1 with SBCL 2.6.8 by `tests/view-bench.lisp`, which also lists the
+`:sbcl` backend where SBCL SIMD is available (x86-64). The native backend reads
+the view in place; the buffered backends pay one extra copy of each element.
 
 ## Limitations
 

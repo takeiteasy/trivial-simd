@@ -684,26 +684,52 @@ Empty slices give NIL for the extrema and a zero otherwise."
     (any '#'any-combiner)
     (all '#'all-combiner)))
 
-(defun kernel-value-form (tree type arguments offsets index reducer)
-  "Form computing the kernel expression at INDEX of Lisp vector ARGUMENTS."
-  `(ecase ,type
-     ,@(loop for (key element) in *numeric-types*
-             collect `(,key
-                       ,(if (or (not (integer-type-p key))
-                                (ignore-errors (validate-integer-kernel tree key reducer) t))
-                            `(let ,(mapcar (lambda (argument) (list argument argument)) arguments)
-                               (declare (type (simple-array ,element (*)) ,@arguments))
-                               ,(scalar-kernel-form tree key arguments offsets index))
-                            nil)))))
+(defun kernel-tree-value (tree type vectors offsets index &optional masked)
+  "Value of the kernel expression TREE at INDEX of the Lisp VECTORS (element type
+TYPE) whose slices start at OFFSETS. It runs the operations of the compiled
+scalar forms, so a call needs no per-type expansion. MASKED selects the MIN and MAX
+of mask kernels."
+  (let ((integerp (integer-type-p type)) (element (kernel-element-type type)))
+    (labels ((integer-call (kind &rest operands)
+               (apply (integer-operation-symbol kind type) operands))
+             (walk (node)
+               (ecase (first node)
+                 (:argument (let ((position (second node)))
+                              (aref (nth position vectors) (+ (nth position offsets) index))))
+                 (:constant (coerce (second node) element))
+                 (:negate (if integerp
+                              (integer-call :negate (walk (second node)))
+                              (- (walk (second node)))))
+                 (:unary (let ((value (walk (third node))))
+                           (cond ((eq (second node) :sqrt) (kernel-sqrt value))
+                                 (integerp (integer-call :abs value))
+                                 (t (abs value)))))
+                 (:fma (apply #'fma (mapcar #'walk (rest node))))
+                 (:select (if (walk (second node)) (walk (third node)) (walk (fourth node))))
+                 (:operation
+                  (let ((kind (second node)) (left (walk (third node))) (right (walk (fourth node))))
+                    (case kind
+                      (:eq (= left right)) (:ne (/= left right)) (:lt (< left right))
+                      (:le (<= left right)) (:gt (> left right)) (:ge (>= left right))
+                      (:min (cond (integerp (integer-call :min left right))
+                                  (masked (kernel-min-left left right))
+                                  (t (kernel-min left right))))
+                      (:max (cond (integerp (integer-call :max left right))
+                                  (masked (kernel-max-left left right))
+                                  (t (kernel-max left right))))
+                      (t (if integerp
+                             (integer-call kind left right)
+                             (funcall (car (rassoc kind *kernel-operators*)) left right)))))))))
+      (walk tree))))
 
 (defun staged-kernel-form (name reducer type destination d-offset arguments offsets starts
-                           count direct body &optional value)
+                           count direct body &optional value declarations)
   "Wrap BODY, the computation of kernel NAME over the slices, to stage vector
 views: each block calls NAME again on Lisp buffers, passing the offsets as the
 start keywords in STARTS (the destination's first). The result is DESTINATION,
 when there is one, or the reduction. For ARGMIN and ARGMAX, VALUE is a function
 of an index variable returning the form computing the element there, which the
-block results are compared by."
+block results are compared by. DECLARATIONS apply to BODY's variables."
   (let* ((bindings `(,@(when destination `((,destination ,d-offset nil :out)))
                      ,@(mapcar (lambda (argument offset) (list argument offset nil))
                                arguments offsets)))
@@ -714,6 +740,7 @@ block results are compared by."
          (index (gensym "INDEX"))
          (staged `(with-staged ,bindings
                       (,count :direct ,direct :combine ,(kernel-combine-form reducer type)
+                              :declarations ,declarations
                               :block-form
                               ,(if (member reducer '(argmin argmax))
                                    `(let ((,index ,call))
@@ -816,5 +843,7 @@ END, and per-input start keywords. Experimental."
                                        ,@runner-arguments)
                         #-ecl ,native-form))))
                      (lambda (index)
-                       (kernel-value-form tree type arguments offsets index reducer))))
+                       `(kernel-tree-value ',tree ,type (list ,@arguments) (list ,@offsets)
+                                           ,index))
+                     `((type fixnum ,@all-offsets))))
                  ,@(when destination (list destination)))))))))))

@@ -82,6 +82,11 @@ jobs:
           asdf-system: trivial-simd
           cache: false
 
+      - name: Reserve a 4 GiB SBCL heap
+        if: contains(matrix.lisp, 'sbcl')
+        shell: lispsh -eo pipefail {0}
+        run: ros config set dynamic-space-size 4GB
+
       - name: Run tests
         shell: lispsh -eo pipefail {0}
         run: ros -Q run --eval '(handler-case (load "tests/run.lisp") (error (condition) (format *error-output* "~A~%" condition) (uiop:quit 1)))'

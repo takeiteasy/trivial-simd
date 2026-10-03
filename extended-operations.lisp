@@ -810,13 +810,5 @@ strides of DESTINATION then every operand, with NIL for scalars."
                               (error (condition)
                                 `(error ,(princ-to-string condition)))))))
                 (lambda (position)
-                  `(ecase ,type
-                     ,@(loop for (key) in *numeric-types*
-                             collect
-                             `(,key
-                               ,(handler-case
-                                    `(let ,(loop for value in values for argument in arguments
-                                                 for offset in input-offsets
-                                                 collect `(,value (aref ,argument (+ ,offset ,position))))
-                                       ,(mask-kernel-scalar-form body arguments values key))
-                                  (error () nil))))))))))))))))
+                  `(kernel-tree-value ',(mask-kernel-tree body arguments) ,type (list ,@arguments)
+                                      (list ,@input-offsets) ,position t))))))))))))

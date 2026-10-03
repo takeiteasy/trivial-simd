@@ -140,6 +140,7 @@ from OFFSET at STRIDE."
 (defvar *view-block-size* 4096
   "Elements per block when a backend reads a vector view through a Lisp buffer.")
 
+;; FIXME: only views are compared; overlapping staged Lisp vectors are not (#121).
 (defun staging-order (specs count)
   "Return :FORWARD, :REVERSE or :WHOLE: the block order that lets every output
 view read the input views it overlaps before overwriting them, or :WHOLE when
@@ -243,7 +244,7 @@ fold the block results with COMBINE (see STAGING-FINISH-BLOCK)."
     (staging-result staging)))
 
 (defmacro with-staged ((&rest bindings)
-                       (count &key direct combine (staged (gensym "STAGED"))
+                       (count &key direct combine (staged (gensym "STAGED")) declarations
                                    (block-form nil block-form-p))
                        &body body)
   "Run BODY like WITH-GATHERED when no operand in BINDINGS is a vector view. With
@@ -252,30 +253,33 @@ a view, run BODY directly on it when DIRECT is true and every view is contiguous
 block of Lisp buffers through RUN-STAGED, folding block results with COMBINE.
 COUNT must be a variable; BODY sees it, and each binding's vector and offset,
 rebound, and sees the variable STAGED true for a block. BLOCK-FORM, when given,
-runs for each block instead of BODY."
+runs for each block instead of BODY. DECLARATIONS are declaration specifiers
+for BODY's variables."
   (check-type count symbol)
-  (let ((function (gensym "BLOCK"))
+  (let ((function (gensym "BODY")) (block (gensym "BLOCK"))
         (parameters (loop for (vector offset) in bindings append (list vector offset))))
-    `(if (and (or ,@(loop for (vector) in bindings collect `(vector-view-p ,vector)))
-              ,(if direct
-                   `(not (and ,direct
-                              ,@(loop for (vector nil stride) in bindings
-                                      collect `(or (not (vector-view-p ,vector))
-                                                   (member ,stride '(nil 1))))))
-                   t))
-         (flet ((,function (,@parameters ,count)
-                  (declare (ignorable ,@parameters))
-                  (let ((,staged t))
-                    (declare (ignorable ,staged))
-                    ,@(if block-form-p (list block-form) body))))
-           (declare (dynamic-extent #',function))
-           (run-staged ,count
-                       (list ,@(loop for (vector offset stride role) in bindings
-                                     collect `(list ,vector ,offset ,stride ,(or role :in))))
-                       #',function ,combine))
-         (let ((,staged nil))
-           (declare (ignorable ,staged))
-           (with-gathered ,bindings ,count ,@body)))))
+    `(flet ((,function (,@parameters ,count ,staged)
+              (declare (ignorable ,@parameters ,staged) ,@declarations)
+              ,@body))
+       (declare (dynamic-extent #',function))
+       (if (and (or ,@(loop for (vector) in bindings collect `(vector-view-p ,vector)))
+                ,(if direct
+                     `(not (and ,direct
+                                ,@(loop for (vector nil stride) in bindings
+                                        collect `(or (not (vector-view-p ,vector))
+                                                     (member ,stride '(nil 1))))))
+                     t))
+           (flet ((,block (,@parameters ,count)
+                    (declare (ignorable ,@parameters))
+                    ,(if block-form-p
+                         block-form
+                         `(,function ,@parameters ,count t))))
+             (declare (dynamic-extent #',block))
+             (run-staged ,count
+                         (list ,@(loop for (vector offset stride role) in bindings
+                                       collect `(list ,vector ,offset ,stride ,(or role :in))))
+                         #',block ,combine))
+           (with-gathered ,bindings ,count (,function ,@parameters ,count nil))))))
 
 (defun sum-combiner (type)
   "Combine block sums of numeric TYPE, wrapping integer sums like the backends."

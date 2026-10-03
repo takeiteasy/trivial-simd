@@ -407,6 +407,24 @@ subnormal difference, which traps on Lisps that enable underflow traps."
           (is (= (simd:sum (contents d)) (simd:sum (contents x))))
           (finishes (simd:fill! y 0.0)))))))
 
+(test vector-view-native-copy-access
+  ;; In :COPY mode a view still binds its own memory, not a copy of it.
+  (when simd::*native-available-p*
+    (with-backend (:native)
+      (with-view-memory
+        (let* ((simd::*native-array-access* :copy)
+               (x (mirror (sample-vector :f32 2000)))
+               (y (mirror (sample-vector :f32 2000 :seed 1)))
+               (array (sample-vector :f32 2000 :seed 2))
+               (expected (simd:dot (contents x) array))
+               (simd::*view-block-size* nil))
+          (is (= expected (simd:dot x array)))
+          (finishes (simd:axpy! y 2.0 x))
+          (is (equalp (contents y)
+                      (let ((reference (sample-vector :f32 2000 :seed 1)))
+                        (simd:axpy! reference 2.0 (contents x))
+                        reference))))))))
+
 #+sbcl
 (test vector-view-bounded-staging
   ;; The Lisp backend reads a large view through a small buffer, not a full copy.

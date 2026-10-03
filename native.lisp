@@ -374,7 +374,8 @@ Lisp vector's data pinned for BODY."
 back for the POINTERs in OUTPUTS. A vector view binds its own memory instead."
   (let ((copies (loop for nil in bindings collect (gensym "COPY"))))
     `(cffi:with-foreign-objects
-         ,(loop for copy in copies collect `(,copy ,type (max 1 ,count)))
+         ,(loop for copy in copies for (nil vector) in bindings
+                collect `(,copy ,type (if (vector-view-p ,vector) 1 (max 1 ,count))))
        (let ,(loop for (pointer vector start) in bindings for copy in copies
                    collect `(,pointer (if (vector-view-p ,vector)
                                           (element-pointer (vector-view-pointer ,vector)
