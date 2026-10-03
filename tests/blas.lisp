@@ -69,6 +69,16 @@
                       (cffi:foreign-symbol-pointer "cblas_saxpy"))
                   (error () nil))))
 
+(defmacro without-float-traps (&body body)
+  #+sbcl `(sb-int:with-float-traps-masked (:divide-by-zero :invalid :overflow :inexact)
+            ,@body)
+  #+ecl `(progn (ext:trap-fpe t nil)
+                (unwind-protect (progn ,@body) (ext:trap-fpe t t)))
+  #+ccl `(let ((mode (ccl:get-fpu-mode)))
+           (ccl:set-fpu-mode :division-by-zero nil :invalid nil :overflow nil)
+           (unwind-protect (progn ,@body) (apply #'ccl:set-fpu-mode mode)))
+  #-(or sbcl ecl ccl) `(progn ,@body))
+
 (test blas-axpy-reference
   (when (reference-blas-available-p)
     (dolist (type '(single-float double-float))
