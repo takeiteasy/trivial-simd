@@ -12,6 +12,8 @@ one unit either side, and pseudo-random single-floats. They compare the results
 with a rational round-to-nearest-even reference and cover subnormals,
 infinities, overflow, signed zeros, NaN payloads, slices, strides, tails and
 errors. Signaling NaN inputs are skipped on Lisps that cannot hold one (ECL).
+A test fails when the native library is loaded but lacks the bf16/f16 symbols,
+which loading also reports with a warning; rebuild with CMake to fix it.
 The suite disables the [inline small-array path](small-arrays.md) so that small
 calls exercise the backends; the inline tests enable it and compare every inline
 operation with the backends for lengths around the limit, and check that

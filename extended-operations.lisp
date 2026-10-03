@@ -439,7 +439,7 @@ strides of DESTINATION then every operand, with NIL for scalars."
     (vector-type input)
     (multiple-value-bind (encoding encode)
         (when (or destination-encoding input-encoding)
-          (check-float-encodings destination input destination-encoding input-encoding))
+          (check-float-encodings destination input destination-encoding input-encoding rounding))
       (multiple-value-bind (count offsets strides)
           (resolve-mixed-slice (list destination input)
                                (list destination-start input-start) start end
@@ -450,7 +450,7 @@ strides of DESTINATION then every operand, with NIL for scalars."
               count
             ;; TODO: scalar paths for other type pairs; add packed conversions where safe (#72).
             (cond (encoding
-                   (convert-encoded encoding encode destination input count d-offset i-offset))
+                   (convert-encoded encoding encode rounding destination input count d-offset i-offset))
                   ((and (member *backend* '(:native :sbcl)) *native-available-p*
                         (member destination-type '(:f32 :f64))
                         (member (vector-type input) '(:f32 :f64))

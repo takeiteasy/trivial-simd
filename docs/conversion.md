@@ -53,18 +53,20 @@ and f16, or to or from double-float, convert through a single-float vector.
 | Direction | Behavior |
 |---|---|
 | bf16 or f16 to single-float | Exact, including subnormals, infinities and signed zeros |
-| single-float to bf16 or f16 | Round to nearest, ties to even; overflow becomes infinity of the same sign |
+| single-float to bf16 or f16 | `:rounding :nearest-even` (default): ties to even, overflow becomes infinity of the same sign. `:truncate`: toward zero, overflow becomes the largest finite value |
 | NaN in either direction | Quiet NaN with the same sign and the leading payload bits that fit |
 
-Narrowing ignores `:rounding`. f16 rounds values from 65520 upward to infinity
+Narrowing supports `:nearest-even` and `:truncate`; `:floor` and `:ceiling`
+signal an error ([limitation](#limitations)). Widening is exact, so it accepts
+any `:rounding`. Infinities and NaN are unaffected by `:truncate`. With nearest-even, f16 rounds values from 65520 upward to infinity
 and values at or below 2^-25 to a signed zero; values between round to f16
 subnormals. bf16 shares the single-float exponent range, so single-float
 subnormals round to bf16 subnormals, and only magnitudes that round above the
 largest bf16 value become infinity. A NaN never rounds to infinity.
 
-The conversions work on bit patterns, so their results do not depend on the
-floating-point rounding mode, flush-to-zero setting or trap mask. Every backend
-produces the same bits. The native and SBCL backends use the native library:
+The conversions do not depend on the caller's floating-point rounding mode,
+flush-to-zero setting or trap mask, and raise no floating-point exceptions.
+Every backend produces the same bits.[^fpcr] The native and SBCL backends use the native library:
 SSE2 integer code on x86-64 for both encodings, and NEON on ARM64, with the
 `FCVTL`/`FCVTN` conversion instructions for f16. On x86-64, a block of eight
 elements with one that rounds to an f16 subnormal takes the scalar path, as do
@@ -73,8 +75,15 @@ uses typed integer loops.
 
 ## Limitations
 
+bf16 and f16 narrowing does not support `:floor` or `:ceiling`; this is tracked
+in [#119](https://todo.sr.ht/~takeiteasy/trivial-simd/119).
 Most type pairs use scalar loops; expanding packed SIMD coverage is tracked in
 [#72](https://todo.sr.ht/~takeiteasy/trivial-simd/72).
 Shifted overlap follows the [bulk overlap limitation](api.md#limitations).
 Floating-point exceptional behavior outside the float-to-integer rules is
 covered by the [IEEE consistency limitation](kernels.md#limitations).
+
+[^fpcr]: The bf16 paths and the x86-64 paths use integer instructions. The ARM64
+    f16 loops use `FCVTL`/`FCVTN`, so they save FPCR and FPSR, run with FPCR set
+    to round to nearest even (or toward zero for `:truncate`), no flush-to-zero
+    and no traps, and restore both on return.

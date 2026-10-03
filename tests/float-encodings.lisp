@@ -66,8 +66,9 @@
                                                            mantissa-bits))))
                 values)))))
 
-(defun reference-encode (encoding f32-bits)
-  "Expected encoded bits for single-float F32-BITS, rounding to nearest even."
+(defun reference-encode (encoding f32-bits &optional (rounding :nearest-even))
+  "Expected encoded bits for single-float F32-BITS, rounding to nearest even or
+toward zero, where finite overflow gives the largest finite value."
   (multiple-value-bind (exponent-bits mantissa-bits) (encoding-format encoding)
     (let* ((sign (if (logbitp 31 f32-bits) #x8000 0))
            (magnitude (ldb (byte 31 0) f32-bits))
@@ -88,13 +89,15 @@
                            (if (<= (aref table middle) value)
                                (setf low middle)
                                (setf high (1- middle)))))
-                (if (or (= low infinity) (= (aref table low) value))
-                    low
+                (cond
+                  ((eq rounding :truncate) (min low (1- infinity)))
+                  ((or (= low infinity) (= (aref table low) value)) low)
+                  (t
                     (let ((midpoint (/ (+ (aref table low) (aref table (1+ low))) 2)))
                       (cond ((< value midpoint) low)
                             ((> value midpoint) (1+ low))
                             ((evenp low) low)
-                            (t (1+ low))))))))))))
+                            (t (1+ low)))))))))))))
 
 (defun u16-vector (contents)
   (make-array (length contents) :element-type '(unsigned-byte 16) :initial-contents contents))
@@ -141,6 +144,11 @@ fixed pseudo-random sample."
             :expected (and (< index (length expected)) (aref expected index))
             :actual (and (< index (length actual)) (aref actual index))))))
 
+(test float-encoding-native-library-current
+  (when simd::*native-available-p*
+    (is-true simd::*native-float-encoding-available-p*
+             "build/ lacks the bf16/f16 symbols, so the native path is untested; rebuild with cmake")))
+
 (test float-encoding-decode-exhaustive
   (dolist (encoding '(:bf16 :f16))
     (let* ((input (u16-vector (loop for bits below #x10000 collect bits)))
@@ -159,20 +167,23 @@ fixed pseudo-random sample."
 (test float-encoding-encode-rounding
   (dolist (encoding '(:bf16 :f16))
     (let* ((bits (encode-inputs encoding))
-           (input (f32-vector-from-bits bits))
-           (expected (map 'vector (lambda (x) (reference-encode encoding x)) bits)))
-      (dolist (backend (available-backends))
-        (with-backend (backend)
-          (let ((destination (make-array (length input) :element-type '(unsigned-byte 16))))
-            (is (eq destination (simd:convert! destination input :destination-encoding encoding)))
-            (let ((problem (first-mismatch expected destination)))
-              (is (null problem) "~S ~S encode: ~S" backend encoding
-                  (and problem (append problem (list :input (aref bits (getf problem :index)))))))))))))
+           (input (f32-vector-from-bits bits)))
+      (dolist (rounding '(:nearest-even :truncate))
+        (let ((expected (map 'vector (lambda (x) (reference-encode encoding x rounding)) bits)))
+          (dolist (backend (available-backends))
+            (with-backend (backend)
+              (let ((destination (make-array (length input) :element-type '(unsigned-byte 16))))
+                (is (eq destination (simd:convert! destination input :destination-encoding encoding
+                                                                     :rounding rounding)))
+                (let ((problem (first-mismatch expected destination)))
+                  (is (null problem) "~S ~S ~S encode: ~S" backend encoding rounding
+                      (and problem
+                           (append problem (list :input (aref bits (getf problem :index))))))))))))))) 
 
-(defun encode-bits (encoding f32-bits)
+(defun encode-bits (encoding f32-bits &optional (rounding :nearest-even))
   (let ((destination (make-array 1 :element-type '(unsigned-byte 16))))
     (simd:convert! destination (f32-vector-from-bits (list f32-bits))
-                   :destination-encoding encoding)
+                   :destination-encoding encoding :rounding rounding)
     (aref destination 0)))
 
 (defun decode-bits (encoding bits)
@@ -235,6 +246,22 @@ fixed pseudo-random sample."
       (is (= #x7fc10000 (decode-bits :bf16 #x7f81)))        ; signaling NaN becomes quiet
       (is (= #xffc00000 (decode-bits :bf16 #xffc0))))))
 
+(test float-encoding-truncate-special-values
+  (dolist (backend (available-backends))
+    (with-backend (backend)
+      (is (= #x7bff (encode-bits :f16 #x477ff000 :truncate)))    ; 65520 stays finite
+      (is (= #x7bff (encode-bits :f16 #x47800000 :truncate)))    ; 65536
+      (is (= #xfbff (encode-bits :f16 #xd01502f9 :truncate)))    ; -1e10
+      (is (= #x7c00 (encode-bits :f16 #x7f800000 :truncate)))    ; infinity stays
+      (is (= #x7e00 (encode-bits :f16 #x7fc00000 :truncate)))
+      (is (= #x0000 (encode-bits :f16 #x337fffff :truncate)))    ; just below 2^-24 to zero
+      (is (= #x0001 (encode-bits :f16 #x33ffffff :truncate)))    ; almost 2^-23 truncates down
+      (is (= #x03ff (encode-bits :f16 #x387ff000 :truncate)))    ; not rounded up to normal
+      (is (= #x7f7f (encode-bits :bf16 #x7f7fffff :truncate)))   ; no overflow to infinity
+      (is (= #x3f81 (encode-bits :bf16 #x3f81ffff :truncate)))
+      (is (= #xbf81 (encode-bits :bf16 #xbf81ffff :truncate)))   ; toward zero, not floor
+      (is (= #x7f80 (encode-bits :bf16 #x7f800000 :truncate))))))
+
 (test float-encoding-slices-and-tails
   (dolist (backend (available-backends))
     (with-backend (backend)
@@ -269,6 +296,9 @@ fixed pseudo-random sample."
         (signals error (simd:convert! singles halves :input-encoding :bfloat16))
         (signals error (simd:convert! bytes singles :destination-encoding :f16))
         (signals error (simd:convert! singles bytes :input-encoding :bf16))
+        (signals error (simd:convert! halves singles :destination-encoding :bf16 :rounding :floor))
+        (signals error (simd:convert! halves singles :destination-encoding :f16 :rounding :ceiling))
+        (simd:convert! singles halves :input-encoding :f16 :rounding :floor)
         (signals error (simd:convert! halves doubles :destination-encoding :bf16))
         (signals error (simd:convert! doubles halves :input-encoding :f16))
         (signals error (simd:convert! halves halves :input-encoding :f16

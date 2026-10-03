@@ -156,19 +156,32 @@
        (output :pointer) (input :pointer) (count :size))
      ,@(loop for (c-name lisp-name) in
                '(("ts_extended_bf16_to_f32" %native-extended-bf16-to-f32)
-                 ("ts_extended_f32_to_bf16" %native-extended-f32-to-bf16)
-                 ("ts_extended_f16_to_f32" %native-extended-f16-to-f32)
+                 ("ts_extended_f16_to_f32" %native-extended-f16-to-f32))
+             collect `(define-native (,c-name ,lisp-name) :void
+                        (output :pointer) (input :pointer) (count :size)))
+     ,@(loop for (c-name lisp-name) in
+               '(("ts_extended_f32_to_bf16" %native-extended-f32-to-bf16)
                  ("ts_extended_f32_to_f16" %native-extended-f32-to-f16))
              collect `(define-native (,c-name ,lisp-name) :void
-                        (output :pointer) (input :pointer) (count :size)))))
+                        (output :pointer) (input :pointer) (count :size) (truncate :int)))))
 
 (define-native-extended-calls)
 
+(defvar *native-float-encoding-symbols*
+  '("ts_extended_bf16_to_f32" "ts_extended_f32_to_bf16"
+    "ts_extended_f16_to_f32" "ts_extended_f32_to_f16"))
+
+(defun missing-native-symbols (names)
+  (remove-if (lambda (name) (ignore-errors (cffi:foreign-symbol-pointer name))) names))
+
 (defvar *native-float-encoding-available-p*
   (and *native-available-p*
-       (every (lambda (name) (ignore-errors (cffi:foreign-symbol-pointer name)))
-              '("ts_extended_bf16_to_f32" "ts_extended_f32_to_bf16"
-                "ts_extended_f16_to_f32" "ts_extended_f32_to_f16"))))
+       (null (missing-native-symbols *native-float-encoding-symbols*))))
+
+(when (and *native-available-p* (not *native-float-encoding-available-p*))
+  (warn "The native library lacks ~{~A~^, ~}, so bf16/f16 CONVERT! uses the slower ~
+         Lisp path. Rebuild it with cmake."
+        (missing-native-symbols *native-float-encoding-symbols*)))
 
 (define-native ("ts_blas_gemm_f32" %native-blas-gemm-f32) :int
   (m :int64) (n :int64) (k :int64) (alpha :float)
