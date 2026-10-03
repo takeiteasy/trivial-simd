@@ -333,26 +333,63 @@
     (:int64 (copy-from-s64 pointer vector start count))
     (:uint64 (copy-from-u64 pointer vector start count))))
 
+(defmacro with-vector-pointer ((pointer vector) &body body)
+  "Bind POINTER to the first element of VECTOR: a vector view's own memory, or a
+Lisp vector's data pinned for BODY."
+  (let ((value (gensym "VECTOR")))
+    #+sbcl
+    `(let ((,value ,vector))
+       (sb-sys:with-pinned-objects (,value)
+         (let ((,pointer (if (vector-view-p ,value)
+                             (vector-view-pointer ,value)
+                             (sb-sys:vector-sap
+                              (the (sb-kernel:simple-unboxed-array (*)) ,value)))))
+           ,@body)))
+    ;; ECL does not move vectors.
+    #+ecl
+    `(let* ((,value ,vector)
+            (,pointer (if (vector-view-p ,value)
+                          (vector-view-pointer ,value)
+                          (si:make-foreign-data-from-array ,value))))
+       ,@body)
+    ;; CCL pins a vector only for a body, so the body is a local function here.
+    #-(or sbcl ecl)
+    (let ((function (gensym "BODY")) (raw (gensym "RAW")))
+      `(let ((,value ,vector))
+         (flet ((,function (,pointer) ,@body))
+           (declare (dynamic-extent #',function))
+           (if (vector-view-p ,value)
+               (,function (vector-view-pointer ,value))
+               #+ccl (cffi:with-pointer-to-vector-data (,raw ,value) (,function ,raw))
+               #-ccl (error "Pinned array access is unsupported on this implementation")))))))
+
 (defmacro with-pinned-pointers ((&rest bindings) &body body)
-  #+(or sbcl ccl ecl)
   (if bindings
-      `(cffi:with-pointer-to-vector-data ,(first bindings)
+      `(with-vector-pointer ,(first bindings)
          (with-pinned-pointers ,(rest bindings) ,@body))
-      `(progn ,@body))
-  #-(or sbcl ccl ecl)
-  (progn bindings body
-         '(error "Pinned array access is unsupported on this implementation")))
+      `(progn ,@body)))
 
 (defmacro with-copied-pointers ((&rest bindings) type outputs count &body body)
-  `(cffi:with-foreign-objects
-       ,(loop for (pointer) in bindings collect `(,pointer ,type (max 1 ,count)))
-     ,@(loop for (pointer vector start) in bindings
-             unless (member pointer outputs)
-               collect `(copy-to-foreign ,vector ,pointer ,type ,start ,count))
-     (multiple-value-prog1 (progn ,@body)
-       ,@(loop for (pointer vector start) in bindings
-               when (member pointer outputs)
-                 collect `(copy-from-foreign ,pointer ,vector ,type ,start ,count)))))
+  "Bind each (POINTER VECTOR START) to a foreign copy of COUNT elements, copied
+back for the POINTERs in OUTPUTS. A vector view binds its own memory instead."
+  (let ((copies (loop for nil in bindings collect (gensym "COPY"))))
+    `(cffi:with-foreign-objects
+         ,(loop for copy in copies for (nil vector) in bindings
+                collect `(,copy ,type (if (vector-view-p ,vector) 1 (max 1 ,count))))
+       (let ,(loop for (pointer vector start) in bindings for copy in copies
+                   collect `(,pointer (if (vector-view-p ,vector)
+                                          (element-pointer (vector-view-pointer ,vector)
+                                                           ,type ,start)
+                                          ,copy)))
+         ,@(loop for (pointer vector start) in bindings
+                 unless (member pointer outputs)
+                   collect `(unless (vector-view-p ,vector)
+                              (copy-to-foreign ,vector ,pointer ,type ,start ,count)))
+         (multiple-value-prog1 (progn ,@body)
+           ,@(loop for (pointer vector start) in bindings
+                   when (member pointer outputs)
+                     collect `(unless (vector-view-p ,vector)
+                                (copy-from-foreign ,pointer ,vector ,type ,start ,count))))))))
 
 (defmacro with-native-vectors ((type-var (&rest bindings) &key outputs count) &body body)
   "Bind (POINTER VECTOR START) to COUNT elements using *NATIVE-ARRAY-ACCESS*."
@@ -398,29 +435,26 @@
 
 (defmacro with-native-bulk-output ((pointer vector offset type count &key read) &body body)
   (let ((raw (gensym "RAW")))
-    `(ecase *native-array-access*
-       (:pointer
-        (cffi:with-pointer-to-vector-data (,raw ,vector)
-          (let ((,pointer (element-pointer ,raw ,type ,offset)))
-            ,@body)))
-       (:copy
-        (cffi:with-foreign-object (,pointer ,type (max 1 ,count))
-          ,@(when read `((copy-to-foreign ,vector ,pointer ,type ,offset ,count)))
-          (multiple-value-prog1 (progn ,@body)
-            (copy-from-foreign ,pointer ,vector ,type ,offset ,count)))))))
+    `(if (or (eq *native-array-access* :pointer) (vector-view-p ,vector))
+         (with-vector-pointer (,raw ,vector)
+           (let ((,pointer (element-pointer ,raw ,type ,offset)))
+             ,@body))
+         (cffi:with-foreign-object (,pointer ,type (max 1 ,count))
+           ,@(when read `((copy-to-foreign ,vector ,pointer ,type ,offset ,count)))
+           (multiple-value-prog1 (progn ,@body)
+             (copy-from-foreign ,pointer ,vector ,type ,offset ,count))))))
 
 (defmacro with-native-bulk-input ((pointer value offset type count) &body body)
   (let ((raw (gensym "RAW")))
-    `(if (vectorp ,value)
-         (ecase *native-array-access*
-           (:pointer
-            (cffi:with-pointer-to-vector-data (,raw ,value)
+    `(cond ((not (operand-vector-p ,value))
+            (let ((,pointer (cffi:null-pointer))) ,@body))
+           ((or (eq *native-array-access* :pointer) (vector-view-p ,value))
+            (with-vector-pointer (,raw ,value)
               (let ((,pointer (element-pointer ,raw ,type ,offset))) ,@body)))
-           (:copy
+           (t
             (cffi:with-foreign-object (,pointer ,type (max 1 ,count))
               (copy-to-foreign ,value ,pointer ,type ,offset ,count)
-              ,@body)))
-         (let ((,pointer (cffi:null-pointer))) ,@body))))
+              ,@body)))))
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defun native-bulk-symbol (prefix type)
@@ -451,9 +485,9 @@
         (with-native-bulk-input (b right r-offset foreign count)
           (let ((status (funcall (native-bulk-function "%NATIVE-BULK-BINARY-" type)
                                  opcode output a b
-                                 (if (vectorp left) (coerce 0 (second (numeric-type type)))
+                                 (if (operand-vector-p left) (coerce 0 (second (numeric-type type)))
                                      (native-scalar-bits type left))
-                                 (if (vectorp right) (coerce 0 (second (numeric-type type)))
+                                 (if (operand-vector-p right) (coerce 0 (second (numeric-type type)))
                                      (native-scalar-bits type right))
                                  count)))
             (when (integer-type-p type) (check-native-integer-status status))))))
@@ -479,9 +513,9 @@
           (with-native-bulk-input (c z z-offset foreign count)
             (funcall (native-bulk-function "%NATIVE-BULK-FMA-" type)
                      output a b c
-                     (if (vectorp x) (coerce 0 (second (numeric-type type))) x)
-                     (if (vectorp y) (coerce 0 (second (numeric-type type))) y)
-                     (if (vectorp z) (coerce 0 (second (numeric-type type))) z)
+                     (if (operand-vector-p x) (coerce 0 (second (numeric-type type))) x)
+                     (if (operand-vector-p y) (coerce 0 (second (numeric-type type))) y)
+                     (if (operand-vector-p z) (coerce 0 (second (numeric-type type))) z)
                      count)))))
   destination))
 

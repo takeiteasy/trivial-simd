@@ -138,9 +138,13 @@
              (or destination-encoding input-encoding)))
     (values (or destination-encoding input-encoding) (and destination-encoding t))))
 
+(defun native-encoded-conversion-p ()
+  "True when bf16 and f16 CONVERT! calls the native library."
+  (and (member *backend* '(:native :sbcl)) *native-float-encoding-available-p*))
+
 (defun convert-encoded (encoding encode rounding destination input count d-offset i-offset)
   (let ((truncate (eq rounding :truncate)))
-    (cond ((and (member *backend* '(:native :sbcl)) *native-float-encoding-available-p*)
+    (cond ((native-encoded-conversion-p)
            (native-convert-encoded encoding encode truncate destination input count d-offset i-offset))
           (encode
            (lisp-encode-floats encoding truncate destination input count d-offset i-offset))

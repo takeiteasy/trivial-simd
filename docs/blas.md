@@ -20,7 +20,7 @@ routines, arguments, returns, and precision variants. The
 `(saxpy n alpha x incx y incy &key x-offset y-offset)` and its `daxpy`,
 `caxpy`, and `zaxpy` variants set `y ← alpha*x + y` for `n` elements and
 return `y`. Scalars and vectors match the named precision. Vectors are
-simple specialized vectors. Offsets default to zero and name the beginning
+simple specialized vectors or [vector views](vector-views.md). Offsets default to zero and name the beginning
 of each storage span. Increments are nonzero integers. A negative increment
 visits the span in reverse order.[^negative] Invalid types, increments, or
 out-of-bounds spans signal an error. Zero `n` and zero `alpha` leave `y`

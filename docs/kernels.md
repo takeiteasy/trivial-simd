@@ -13,7 +13,7 @@ backend execution. It is experimental.
 
 An elementwise kernel takes `destination`, one vector per argument, and the
 [slice keywords](api.md#slices), plus one `<argument>-start` keyword per argument.
-It returns `destination`.
+It returns `destination`. Any vector may be a [vector view](vector-views.md).
 
 ## Expressions
 

@@ -71,9 +71,9 @@ Overlapping slices of one vector copy as if SOURCE were read first."
                      start end (list destination-stride source-stride) stride)
     (declare (ignore type))
     (destructuring-bind (destination-offset source-offset) offsets
-      (with-gathered ((destination destination-offset (first strides) :out)
-                      (source source-offset (second strides)))
-          count
+      (with-staged ((destination destination-offset (first strides) :out)
+                    (source source-offset (second strides)))
+          (count)
         (replace destination source
                  :start1 destination-offset :end1 (+ destination-offset count)
                  :start2 source-offset :end2 (+ source-offset count)))))
@@ -86,7 +86,8 @@ Overlapping slices of one vector copy as if SOURCE were read first."
     (unless (typep value (second (numeric-type type)))
       (error 'type-error :datum value :expected-type (second (numeric-type type))))
     (let ((offset (first offsets)))
-      (with-gathered ((destination offset (first strides) :out)) count
+      (with-staged ((destination offset (first strides) :out))
+          (count :direct (native-copy-p type count +native-fill-minimum-bytes+))
         (if (native-copy-p type count +native-fill-minimum-bytes+)
             (native-fill destination value count offset)
             (fill destination value :start offset :end (+ offset count))))))
@@ -98,9 +99,9 @@ Overlapping slices of one vector copy as if SOURCE were read first."
       (resolve-slice (list x y) (list x-start y-start) start end
                      (list x-stride y-stride) stride)
     (destructuring-bind (x-offset y-offset) offsets
-      (with-gathered ((x x-offset (first strides) :in-out)
-                      (y y-offset (second strides) :in-out))
-          count
+      (with-staged ((x x-offset (first strides) :in-out)
+                    (y y-offset (second strides) :in-out))
+          (count :direct (native-copy-p type count +native-swap-minimum-bytes+))
         (cond ((zerop count))
               ((native-copy-p type count +native-swap-minimum-bytes+)
                (native-swap x y count x-offset y-offset))

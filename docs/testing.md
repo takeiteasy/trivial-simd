@@ -47,6 +47,14 @@ zero never read the operands they scale. Native BLAS tests force the native and
 Lisp kernels in turn for `gemm`, `symm`, `syrk`, `syr2k`, `trmm`, `trsm`,
 `gemv`, `ger`, and `trsv` across layouts, transposes, offsets, increments, and
 block-edge sizes, and check the fallback when the library lacks the symbols.
+Vector view tests run every bulk operation, reduction, conversion, mask
+operation, copy, kernel and BLAS family on views of foreign copies of Lisp
+vectors, alone and mixed with Lisp vectors, on every backend and access mode,
+with 5-element and default buffer blocks. They compare the results and final
+memory with the same call on Lisp vectors, and cover slices, strides, ties
+across blocks, overlapping copies within one buffer, matrix overlap by address,
+errors, direct native pointer use, and (on SBCL) that a large view is read
+without a full-length copy.
 `ctest` also checks the C kernels, including the scalar build and allocation
 failure. On x86-64 it checks the SSE2 BLAS kernels directly and the AVX+FMA
 kernels where the CPU supports them; the software-FMA target forces SSE2.
@@ -181,6 +189,13 @@ ecl --eval '(load (compile-file "tests/bench.lisp" :output-file "/tmp/trivial-si
 
 Run this script explicitly when you want measurements. The ASDF test system
 and GitHub Actions do not invoke it.
+
+`tests/view-bench.lisp` times `dot`, `axpy!`, `convert!` and a sum kernel with one
+[vector view](vector-views.md) operand against Lisp vectors on every backend:
+
+```sh
+sbcl --script tests/view-bench.lisp
+```
 
 `tests/overhead-bench.lisp` times 4-, 32- and 1,024-element `add!`, `dot`, `min!`
 and `compare!` calls against scalar loops, the inline path and every available
@@ -368,5 +383,5 @@ for each Lisp. See [ARM64 FMA measurements](arm64-fma.md#performance-gate).
     library cannot share the ARM64 `build/`. The SBCL tarball keeps its contrib
     fasls under `obj/sbcl-home`, which the script sets as `SBCL_HOME`.
 
-[^sbcl-heap]: The ARM64 SBCL script reserves a 4 GiB dynamic heap for compiling
-    the suite; the default 1 GiB heap can be exhausted during compilation.
+[^sbcl-heap]: The ARM64 SBCL script and the SBCL CI jobs reserve a 4 GiB dynamic
+    heap for compiling the suite; the default 1 GiB heap is close to its limit.

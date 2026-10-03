@@ -14,12 +14,31 @@
   (cdr (assoc type (get base 'kernels) :test #'equal)))
 
 (defmacro define-kernel (base type lambda-list &body body)
-  "Define the BASE kernel for element TYPE and register it for FIND-KERNEL."
+  "Define the BASE kernel for element TYPE and register it for FIND-KERNEL.
+Parameters declared as simple vectors of TYPE may also be vector views: calls
+with a view run a variant that reads every such parameter through its pointer."
   (let ((name (kernel-symbol base type)))
-    `(progn
-       (defun ,name ,lambda-list ,@body)
-       (push (cons ',type #',name) (get ',base 'kernels))
-       ',name)))
+    (multiple-value-bind (storage declarations forms) (storage-parameters body type)
+      (if (null storage)
+          `(progn
+             (defun ,name ,lambda-list ,@body)
+             (push (cons ',type #',name) (get ',base 'kernels))
+             ',name)
+          (let ((view-name (kernel-symbol (format nil "~A/VIEW" base) type))
+                (dispatch-name (kernel-symbol (format nil "~A/DISPATCH" base) type)))
+            (when (intersection lambda-list lambda-list-keywords)
+              (error "A BLAS kernel takes only required parameters"))
+            `(progn
+               (defun ,name ,lambda-list ,@body)
+               (defun ,view-name ,lambda-list
+                 ,@(view-kernel-body type storage declarations forms))
+               (defun ,dispatch-name ,lambda-list
+                 (if (or ,@(loop for variable in storage
+                                 collect `(trivial-simd:vector-view-p ,variable)))
+                     (,view-name ,@lambda-list)
+                     (,name ,@lambda-list)))
+               (push (cons ',type #',dispatch-name) (get ',base 'kernels))
+               ',name))))))
 
 (defvar *native-blas-threshold* #+ecl 1 #-ecl 1000
   "Smallest operation count (multiply-adds) sent to the native BLAS kernels.")

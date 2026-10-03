@@ -8,21 +8,32 @@
   (validate-kernel-limits view))
 
 (defun matrix-intervals-overlap-p (a b)
-  (when (and (eq (matrix-view-data a) (matrix-view-data b))
-             (plusp (matrix-view-rows a)) (plusp (matrix-view-cols a))
+  (multiple-value-bind (a-memory a-origin) (storage-origin (matrix-view-data a))
+    (multiple-value-bind (b-memory b-origin) (storage-origin (matrix-view-data b))
+      (and (eq a-memory b-memory)
+           (matrix-rows-overlap-p a b (- a-origin b-origin))))))
+
+(defun matrix-rows-overlap-p (a b shift)
+  "True when dense views A and B, whose storages start SHIFT bytes apart, share
+an element."
+  (when (and (plusp (matrix-view-rows a)) (plusp (matrix-view-cols a))
              (plusp (matrix-view-rows b)) (plusp (matrix-view-cols b)))
-    (let* ((ar (eq (matrix-view-layout a) :row-major))
+    (let* ((size (trivial-simd::vector-element-size
+                  (trivial-simd::vector-type (matrix-view-data a))))
+           (ar (eq (matrix-view-layout a) :row-major))
            (br (eq (matrix-view-layout b) :row-major))
            (ac (if ar (matrix-view-rows a) (matrix-view-cols a)))
            (bc (if br (matrix-view-rows b) (matrix-view-cols b)))
-           (aw (if ar (matrix-view-cols a) (matrix-view-rows a)))
-           (bw (if br (matrix-view-cols b) (matrix-view-rows b)))
+           (aw (* size (if ar (matrix-view-cols a) (matrix-view-rows a))))
+           (bw (* size (if br (matrix-view-cols b) (matrix-view-rows b))))
            (ai 0) (bi 0))
       (loop while (and (< ai ac) (< bi bc)) do
-        (let ((as (+ (matrix-view-offset a) (* ai (matrix-view-leading-dimension a))))
-              (bs (+ (matrix-view-offset b) (* bi (matrix-view-leading-dimension b)))))
+        (let ((as (+ shift (* size (+ (matrix-view-offset a)
+                                      (* ai (matrix-view-leading-dimension a))))))
+              (bs (* size (+ (matrix-view-offset b)
+                             (* bi (matrix-view-leading-dimension b))))))
           (when (and (< as (+ bs bw)) (< bs (+ as aw)))
-            (return-from matrix-intervals-overlap-p t))
+            (return-from matrix-rows-overlap-p t))
           (if (<= (+ as aw) (+ bs bw)) (incf ai) (incf bi)))))))
 
 (defun validate-level3-overlap (output &rest inputs)

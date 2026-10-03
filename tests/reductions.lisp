@@ -163,8 +163,9 @@
         (right (make-array 1001 :element-type 'single-float :initial-element 1f0))
         (c32 (make-array 1001 :element-type '(complex single-float)
                               :initial-element #C(1f0 0f0))))
+    ;; CCL x86-64 drops a constant-index SETF AREF on complex arrays (#123).
     (setf (aref left 0) 16777216f0
-          (aref c32 0) #C(16777216f0 0f0))
+          (row-major-aref c32 0) #C(16777216f0 0f0))
     (dolist (backend (available-backends))
       (with-backend (backend)
         (is (eql 16778216d0 (simd:sum left :accumulate :f64)))

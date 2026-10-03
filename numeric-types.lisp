@@ -29,12 +29,20 @@
 (defun integer-operation-symbol (operation type)
   (intern (format nil "INTEGER-~A-~A" operation type) :trivial-simd))
 
+(defstruct (vector-view (:constructor %make-vector-view (pointer type length))
+                        (:copier nil))
+  "LENGTH elements of numeric TYPE in foreign memory starting at POINTER."
+  (pointer nil :read-only t)
+  (type :f32 :type keyword :read-only t)
+  (length 0 :type (integer 0 #.most-positive-fixnum) :read-only t))
+
 (defmacro define-vector-type ()
   `(defun vector-type (vector)
      (etypecase vector
        ((simple-array (complex single-float) (*)) :c32)
        ((simple-array (complex double-float) (*)) :c64)
        ,@(loop for (key element) in *numeric-types*
-               collect `((simple-array ,element (*)) ,key)))))
+               collect `((simple-array ,element (*)) ,key))
+       (vector-view (vector-view-type vector)))))
 
 (define-vector-type)
