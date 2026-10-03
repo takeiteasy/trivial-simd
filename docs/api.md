@@ -19,7 +19,7 @@ Integer arithmetic [wraps at the vector width](integers.md).
 | `(fma! destination x y z &key ...)` | Fused elementwise `x*y+z` for floats |
 | [`copy!`, `fill!`, `swap!`](copy.md) | Copy, set or exchange slices of any numeric vector |
 | [Unary and bounded operations](elementwise.md) | Negate, absolute value, square root, reciprocal, min, max, clamp |
-| [`convert!`](conversion.md) | Convert among numeric vector types |
+| [`convert!`](conversion.md) | Convert among numeric vector types and bf16/f16 storage |
 | [Masks and selection](masks.md) | Compare, select, count, any, all |
 | [`sum`, `dot`, `dotc`, `asum`, `nrm2`](reductions.md) | Scalar sum, dot product, absolute sum, Euclidean norm |
 | [`minimum`, `maximum`, `argmin`, `argmax`](reductions.md) | Extreme element or its index |

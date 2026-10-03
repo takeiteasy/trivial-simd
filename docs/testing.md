@@ -6,6 +6,12 @@ backend for both float types and eight integer types, empty vectors, SIMD
 tails, aliasing, wrapping arithmetic, division errors, and type boundaries.
 Extended operation tests cover unary and bounded arithmetic, all conversion
 type pairs and rounding modes, byte masks, selection, and mask kernels.
+bf16 and f16 tests widen all 65536 bit patterns of each encoding on every
+backend, and narrow every encoded value, the midpoints between neighbours and
+one unit either side, and pseudo-random single-floats. They compare the results
+with a rational round-to-nearest-even reference and cover subnormals,
+infinities, overflow, signed zeros, NaN payloads, slices, strides, tails and
+errors. Signaling NaN inputs are skipped on Lisps that cannot hold one (ECL).
 The suite disables the [inline small-array path](small-arrays.md) so that small
 calls exercise the backends; the inline tests enable it and compare every inline
 operation with the backends for lengths around the limit, and check that

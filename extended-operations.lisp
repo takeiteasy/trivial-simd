@@ -432,28 +432,35 @@ strides of DESTINATION then every operand, with NIL for scalars."
 
 (defun convert! (destination input &key start end destination-start input-start
                                     stride destination-stride input-stride
-                                    (rounding :nearest-even))
+                                    (rounding :nearest-even) destination-encoding input-encoding)
   (unless (member rounding '(:nearest-even :truncate :floor :ceiling))
     (error "Unknown conversion rounding mode ~S" rounding))
   (let ((destination-type (vector-type destination)))
     (vector-type input)
-    (multiple-value-bind (count offsets strides)
-        (resolve-mixed-slice (list destination input)
-                             (list destination-start input-start) start end
-                             (list destination-stride input-stride) stride)
-      (destructuring-bind (d-offset i-offset) offsets
-        (with-gathered ((destination d-offset (first strides) :out)
-                        (input i-offset (second strides)))
-            count
-          ;; TODO: scalar paths for other type pairs; add packed conversions where safe (#72).
-          (if (and (member *backend* '(:native :sbcl)) *native-available-p*
-                   (member destination-type '(:f32 :f64))
-                   (member (vector-type input) '(:f32 :f64))
-                   (not (eq destination-type (vector-type input))))
-              (native-extended-float-convert destination input count d-offset i-offset)
-              (dotimes (i count)
-                (setf (aref destination (+ d-offset i))
-                      (convert-element (aref input (+ i-offset i)) destination-type rounding))))))))
+    (multiple-value-bind (encoding encode)
+        (when (or destination-encoding input-encoding)
+          (check-float-encodings destination input destination-encoding input-encoding))
+      (multiple-value-bind (count offsets strides)
+          (resolve-mixed-slice (list destination input)
+                               (list destination-start input-start) start end
+                               (list destination-stride input-stride) stride)
+        (destructuring-bind (d-offset i-offset) offsets
+          (with-gathered ((destination d-offset (first strides) :out)
+                          (input i-offset (second strides)))
+              count
+            ;; TODO: scalar paths for other type pairs; add packed conversions where safe (#72).
+            (cond (encoding
+                   (convert-encoded encoding encode destination input count d-offset i-offset))
+                  ((and (member *backend* '(:native :sbcl)) *native-available-p*
+                        (member destination-type '(:f32 :f64))
+                        (member (vector-type input) '(:f32 :f64))
+                        (not (eq destination-type (vector-type input))))
+                   (native-extended-float-convert destination input count d-offset i-offset))
+                  (t
+                   (dotimes (i count)
+                     (setf (aref destination (+ d-offset i))
+                           (convert-element (aref input (+ i-offset i))
+                                            destination-type rounding))))))))))
   destination)
 
 (defun compare-values (operator left right)
