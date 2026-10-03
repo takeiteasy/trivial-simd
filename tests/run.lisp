@@ -5,8 +5,10 @@
       (when (probe-file path)
         (load path)
         (return)))))
-(asdf:load-asd (merge-pathnames "../trivial-simd.asd"
-                                (uiop:pathname-directory-pathname *load-truename*)))
+;; Prefer this checkout over a copy that Quicklisp local-projects links to.
+(let ((root (merge-pathnames "../" (uiop:pathname-directory-pathname *load-truename*))))
+  (asdf:initialize-source-registry
+   `(:source-registry (:directory ,root) :inherit-configuration)))
 (asdf:load-system "trivial-simd")
 (when (string-equal (or (uiop:getenv "RUNNER_ARCH") "") "ARM64")
   (unless (let ((machine (string-upcase (machine-type))))
