@@ -14,7 +14,7 @@ on:
         options: [all, linux, windows]
         default: all
       lisp:
-        description: Run only Lisps whose name contains this text (for example ccl); empty for all
+        description: Run only Lisps whose name contains this text (for example ecl); empty for all
         type: string
         default: ''
 
@@ -90,81 +90,6 @@ jobs:
       - name: Run tests
         shell: lispsh -eo pipefail {0}
         run: ros -Q run --eval '(handler-case (load "tests/run.lisp") (error (condition) (format *error-output* "~A~%" condition) (uiop:quit 1)))'
-
-      - name: CCL lifetime stress and fresh suites
-        if: contains(matrix.lisp, 'ccl')
-        shell: lispsh -eo pipefail {0}
-        run: |
-          ros -Q run --load tests/run-lifetime-stress.lisp
-          for trial in 1 2 3; do
-            ros -Q run --eval '(handler-case (load "tests/run.lisp") (error (condition) (format *error-output* "~A~%" condition) (uiop:quit 1)))'
-          done
-
-  arm-ccl:
-    needs: plan
-    if: contains(fromJSON(needs.plan.outputs.extras), 'arm-ccl')
-    name: CCL / ARM64
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { name: Linux, os: ubuntu-24.04-arm, archive: linuxarm64.tar.gz, checksum: 966a7182607e729e41e42159efea4618c2b305dc000e2b902ffe8aa7199ab449, executable: arm64cl }
-    env:
-      TRIVIAL_SIMD_BACKEND: native
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Check runner architecture
-        run: test "$RUNNER_ARCH" = ARM64
-
-      - name: Build native library
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-
-      - name: Compile native library
-        run: cmake --build build --config Release
-
-      - name: Test native kernel VM
-        run: ctest --test-dir build -C Release --output-on-failure
-
-      - name: Install CCL ARM64
-        shell: bash
-        env:
-          CCL_ARCHIVE: ${{ matrix.archive }}
-          CCL_SHA256: ${{ matrix.checksum }}
-        run: |
-          curl -fL "https://github.com/Clozure/ccl/releases/download/v1.13-arm64-pre2/$CCL_ARCHIVE" -o "$RUNNER_TEMP/$CCL_ARCHIVE"
-          echo "$CCL_SHA256  $RUNNER_TEMP/$CCL_ARCHIVE" | shasum -a 256 -c -
-          mkdir "$RUNNER_TEMP/ccl"
-          tar -xzf "$RUNNER_TEMP/$CCL_ARCHIVE" -C "$RUNNER_TEMP/ccl"
-          curl -fL 'https://raw.githubusercontent.com/Clozure/ccl/v1.13-arm64-pre2/tools/asdf.lisp' -o "$RUNNER_TEMP/ccl/asdf.lisp"
-          echo "874e8f235ea633a090c7ab2665b1f624d1910eb7f6fc10349a596085c1cbb189  $RUNNER_TEMP/ccl/asdf.lisp" | shasum -a 256 -c -
-
-      - name: Install Lisp dependencies
-        shell: bash
-        env:
-          CCL_EXECUTABLE: ${{ matrix.executable }}
-        run: |
-          curl -fL 'https://beta.quicklisp.org/quicklisp.lisp' -o "$RUNNER_TEMP/quicklisp.lisp"
-          "$RUNNER_TEMP/ccl/$CCL_EXECUTABLE" --no-init --batch --load "$RUNNER_TEMP/ccl/asdf.lisp" --load "$RUNNER_TEMP/quicklisp.lisp" --eval '(quicklisp-quickstart:install)' --eval '(quit)'
-          "$RUNNER_TEMP/ccl/$CCL_EXECUTABLE" --no-init --batch --load "$RUNNER_TEMP/ccl/asdf.lisp" --load "$HOME/quicklisp/setup.lisp" --eval '(ql:quickload (list :cffi :fiveam :trivial-garbage :bordeaux-threads))' --eval '(quit)'
-
-      - name: Run tests
-        shell: bash
-        env:
-          CCL_EXECUTABLE: ${{ matrix.executable }}
-        run: |
-          "$RUNNER_TEMP/ccl/$CCL_EXECUTABLE" --no-init --batch --load "$RUNNER_TEMP/ccl/asdf.lisp" --load tests/run.lisp --eval '(quit)'
-
-      - name: Lifetime stress and fresh suites
-        shell: bash
-        env:
-          CCL_EXECUTABLE: ${{ matrix.executable }}
-        run: |
-          "$RUNNER_TEMP/ccl/$CCL_EXECUTABLE" --no-init --batch --load "$RUNNER_TEMP/ccl/asdf.lisp" --load tests/run-lifetime-stress.lisp --eval '(quit)'
-          for trial in 1 2 3; do
-            "$RUNNER_TEMP/ccl/$CCL_EXECUTABLE" --no-init --batch --load "$RUNNER_TEMP/ccl/asdf.lisp" --eval '(handler-case (load "tests/run.lisp") (error (condition) (format *error-output* "~A~%" condition) (uiop:quit 1)))' --eval '(quit)'
-          done
 
   arm-windows:
     needs: plan

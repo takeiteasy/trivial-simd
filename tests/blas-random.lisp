@@ -34,10 +34,17 @@
     (:upper 121) (:lower 122) (:non-unit 131) (:unit 132)
     (:left 141) (:right 142)))
 
+(defparameter *blas-random-components*
+  (loop for type in '(single-float double-float)
+        collect (cons type (make-array 17 :element-type type
+                                       :initial-contents
+                                       (loop for i from -8 to 8 collect (coerce (/ i 8) type))))))
+
 (defun blas-random-element (type)
-  (let ((real (coerce (/ (- (blas-random 17) 8) 8) (blas-component type))))
+  (let* ((components (cdr (assoc (blas-component type) *blas-random-components*)))
+         (real (aref components (blas-random 17))))
     (if (consp type)
-        (complex real (coerce (/ (- (blas-random 17) 8) 8) (blas-component type)))
+        (complex real (aref components (blas-random 17)))
         real)))
 
 (defun blas-tolerance (type)
@@ -753,3 +760,16 @@
                (blas-scalar type 3/4 1/4) a b real-beta c)
       (dotimes (i n)
         (is (zerop (imagpart (trivial-simd/blas:matrix-ref c i i))))))))
+
+(test blas-random-elements-match-rational
+  (dolist (type *blas-random-types*)
+    (let* ((*blas-random-seed* 12345)
+           (expected (loop repeat 64 collect
+                           (let ((real (coerce (/ (- (blas-random 17) 8) 8) (blas-component type))))
+                             (if (consp type)
+                                 (complex real (coerce (/ (- (blas-random 17) 8) 8) (blas-component type)))
+                                 real))))
+           (final-seed *blas-random-seed*))
+      (setf *blas-random-seed* 12345)
+      (is (equalp expected (loop repeat 64 collect (blas-random-element type))))
+      (is (= final-seed *blas-random-seed*)))))

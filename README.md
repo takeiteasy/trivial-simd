@@ -66,15 +66,15 @@ See [full results and measurement details](docs/benchmarks.md).
 
 `X` is supported: the combination passes the test suite in
 [CI](docs/backends.md#tested-combinations). `L` passes the suite in
-[local runs](docs/backends.md#local-runs) but not in CI. `P` is planned and not
+[local runs](docs/backends.md#local-runs) but not in CI. `H` has historical CI coverage but no active CI job. `P` is planned and not
 supported yet. Blank is not planned.
 
 ### Platforms and Lisp implementations
 
 | Platform / architecture | SBCL | CCL | ECL |
 |---|:---:|:---:|:---:|
-| Linux x86-64 | X | X | X |
-| Linux ARM64 | X | X | X |
+| Linux x86-64 | X | H | X |
+| Linux ARM64 | X | H | X |
 | macOS ARM64[^macos-local] | L | L | L |
 | macOS x86-64[^macos-local] | L | L | L |
 | Windows x86-64 | X | [P](https://todo.sr.ht/~takeiteasy/trivial-simd/28) | [P](https://todo.sr.ht/~takeiteasy/trivial-simd/29) |

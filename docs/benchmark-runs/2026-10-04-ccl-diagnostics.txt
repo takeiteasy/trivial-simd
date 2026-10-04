@@ -1,0 +1,31 @@
+CCL local diagnostics, 2026-10-04
+Apple M1 macOS, ARM64 CCL v1.13-459-g690ff7ea and Rosetta CCL 1.13.
+Wall-clock single-run diagnostic samples, with per-test instrumentation.
+Runs overlap other local validation; these are not controlled benchmark medians.
+No GitHub CCL jobs were dispatched. Linux-specific behavior is unverified.
+
+ARM64 CCL, setup using rational coercion:
+GEMM:       7.097s, setup 6.982s, Lisp 0.073s, native 0.004s, comparison 0.034s
+Rank:      36.849s, setup 35.671s, Lisp 0.459s, native 0.016s, comparison 0.694s
+
+ARM64 CCL, exact float arithmetic instead of per-element rational coercion:
+Full suite: 218.600s, zero failures.
+Triangular: 149.587s, setup 147.188s, Lisp 1.334s, native 0.059s, comparison 0.968s
+
+ARM64 CCL, cached exact components and hoisted constant float conversions:
+Full suite: 43.178s, zero failures.
+GEMM:       0.552s, setup 0.451s, Lisp 0.064s, native 0.003s, comparison 0.031s
+Rank:       3.438s, setup 2.368s, Lisp 0.417s, native 0.012s, comparison 0.637s
+Triangular: 9.865s, setup 7.784s, Lisp 1.192s, native 0.046s, comparison 0.832s
+
+Rosetta CCL, bounded cold full-suite attempt before final setup changes:
+Library load/compile: 3.773s
+Test load/compile: 101.175s
+Native copy compact slices: 66.190s
+Native program redefinition: 5.037s
+Stopped by the 300-second process-group timeout, exit 124.
+
+Rosetta standalone setup profile before caching components:
+100,000 double-float sample elements: 9.297876s
+300x300 matrix-view creation: 0.000036s
+300x300 padded view: 8.566908s

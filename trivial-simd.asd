@@ -28,6 +28,7 @@
   :depends-on ("trivial-simd/blas/convenience" "fiveam" "bordeaux-threads")
   :serial t
   :components ((:file "tests/package")
+               (:file "tests/diagnostics")
                (:file "tests/operations")
                (:file "tests/small-arrays")
                (:file "tests/extended")
@@ -49,7 +50,7 @@
                (:file "tests/views"))
   :perform (asdf:test-op (operation component)
              (declare (ignore operation component))
-             (unless (uiop:symbol-call :fiveam :run! :trivial-simd)
+             (unless (uiop:symbol-call :trivial-simd/tests :run-tests)
                (error "trivial-simd tests failed"))))
 
 (asdf:defsystem "trivial-simd/blas"

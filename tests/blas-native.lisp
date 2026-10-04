@@ -15,7 +15,7 @@
             (if (eq ,path :native) 1 most-positive-fixnum))
           (trivial-simd/blas::*native-blas-level2-threshold*
             trivial-simd/blas::*native-blas-threshold*))
-     ,@body))
+     (measure-test-phase ,path (lambda () ,@body))))
 
 (defun padded-view (type rows cols layout &optional dominant)
   (let* ((minor (if (eq layout :row-major) cols rows))
@@ -26,11 +26,12 @@
                                                                   :leading-dimension ld
                                                                   :offset offset)))
       (when dominant
-        (dotimes (i (length data))
-          (setf (aref data i) (/ (aref data i) (coerce (max rows cols) type))))
-        (dotimes (i (min rows cols))
-          (incf (aref data (+ offset (trivial-simd/blas::matrix-index view i i)))
-                (coerce 4 type))))
+        (let ((order (coerce (max rows cols) type))
+              (diagonal (coerce 4 type)))
+          (dotimes (i (length data))
+            (setf (aref data i) (/ (aref data i) order)))
+          (dotimes (i (min rows cols))
+            (incf (aref data (+ offset (trivial-simd/blas::matrix-index view i i))) diagonal))))
       view)))
 
 (defun copy-view (view)

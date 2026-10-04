@@ -181,8 +181,13 @@ trials. It requires the native library and exits with failure on any error.
 ccl --no-init --batch --load tests/run-lifetime-stress.lisp --eval '(quit)'
 ```
 
-CCL CI jobs and both local CCL scripts run 500 trials and five full suites
-in fresh processes.
+Both local CCL scripts run 500 trials and five full suites in fresh processes.
+CCL is excluded from GitHub workflows.
+
+## Test diagnostics
+
+See [timed and bounded local runs](test-diagnostics.md) for selecting tests,
+locating slow BLAS phases and retaining output from timed-out commands.
 
 ## Benchmark
 

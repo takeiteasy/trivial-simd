@@ -24,8 +24,8 @@ SBCL on ARM64 selects the C backend when built, or the Lisp fallback otherwise.
 | Platform | Lisp implementation | Required backend in CI |
 |---|---|---|
 | Linux x86-64 | SBCL | `:sbcl`, `:lisp` |
-| Linux x86-64 | CCL, ECL | `:native` |
-| Linux ARM64 | SBCL, ECL, CCL[^ccl-arm] | `:native` |
+| Linux x86-64 | ECL | `:native` |
+| Linux ARM64 | SBCL, ECL | `:native` |
 | Windows x86-64 | SBCL | `:native`, `:lisp` |
 | Windows ARM64 | SBCL | `:native` |
 
@@ -116,6 +116,13 @@ by it.
 | ECL on Windows | [Add CI coverage](https://todo.sr.ht/~takeiteasy/trivial-simd/29) |
 | GCL | [Add fallback and tests](https://todo.sr.ht/~takeiteasy/trivial-simd/30) |
 
+### CCL coverage
+
+CCL has no GitHub CI jobs. Linux coverage relies on historical CI results;
+macOS validation runs locally. Remaining x86-64 test setup and lifetime-stress
+costs, including the unconfirmed Linux stall, are tracked in
+[#125](https://todo.sr.ht/~takeiteasy/trivial-simd/125).
+
 ### Array access
 
 Direct numeric-vector access relies on the tested SBCL, ECL, and CCL CFFI
@@ -138,7 +145,5 @@ Each input has separate storage, including repeated and aliased inputs.
     implementation. Copy mode dispatches once by element type and uses literal CFFI types
     in specialized loops. Foreign index zero corresponds to each vector’s requested
     start; output copy-back touches only the destination slice (`*native-array-access*` is `:copy`).
-[^ccl-arm]: ARM64 CI uses Clozure CL `v1.13-arm64-pre2` on Linux. Newer
-    preview builds work locally; see [local runs](#local-runs).
 [^rosetta]: Rosetta emulates the x86-64 CPU, so SSE2 and `sb-simd` paths run but
     timings and AVX detection do not match Intel hardware.

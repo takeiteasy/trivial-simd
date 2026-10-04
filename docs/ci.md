@@ -30,16 +30,18 @@ New pushes cancel the previous run for the same branch or pull request.
 The job list lives in [`.github/ci-matrix.json`](../.github/ci-matrix.json).
 [`.github/scripts/plan.sh`](../.github/scripts/plan.sh) selects from it.
 
+CCL runs locally only; neither the main matrix nor the manual profiling workflow
+starts CCL jobs. See [local diagnostics](testing.md#test-diagnostics).
+
 ## Running a slice
 
 ```sh
 gh workflow run ci.yml -f os=windows            # every Windows job
-gh workflow run ci.yml -f os=linux -f lisp=ccl  # CCL on Linux only
 gh workflow run ci.yml -f lisp=ecl              # ECL on every OS
 ```
 
 `os` is `all`, `linux`, or `windows`. `lisp` is matched against the
-Lisp name in the matrix (`sbcl`, `ccl`, `ecl`).
+Lisp name in the matrix (`sbcl`, `ecl`).
 
 ## Before dispatching
 
@@ -75,6 +77,6 @@ See [BLAS profiling](testing.md#blas-profiling).
 ## FMA measurements
 
 Run the **FMA profile** workflow manually for x86-64 Linux correctness checks
-and repeated SBCL, CCL, and ECL FMA measurements. It includes the native
+and repeated SBCL and ECL FMA measurements. It includes the native
 hardware-selected and forced software profiles. Timing results appear in the
 job logs; see [FMA profiling](testing.md#fma-profiling) for local commands.

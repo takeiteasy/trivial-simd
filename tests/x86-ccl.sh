@@ -27,8 +27,8 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=x86_64
 cmake --build build
 ctest --test-dir build --output-on-failure
 
-arch -x86_64 "$ccl_dir/dx86cl64" --no-init --batch --load tests/run.lisp "$@" --eval '(quit)'
-arch -x86_64 "$ccl_dir/dx86cl64" --no-init --batch --load tests/run-lifetime-stress.lisp --eval '(quit)'
+TRIVIAL_SIMD_TEST_RUN=1 arch -x86_64 "$ccl_dir/dx86cl64" --no-init --batch --load tests/run.lisp "$@" --eval '(quit)'
+TRIVIAL_SIMD_TEST_RUN=2 arch -x86_64 "$ccl_dir/dx86cl64" --no-init --batch --load tests/run-lifetime-stress.lisp --eval '(quit)'
 for trial in 1 2 3; do
-    arch -x86_64 "$ccl_dir/dx86cl64" --no-init --batch --load tests/run.lisp --eval '(quit)'
+    TRIVIAL_SIMD_TEST_RUN=$((trial + 2)) arch -x86_64 "$ccl_dir/dx86cl64" --no-init --batch --load tests/run.lisp --eval '(quit)'
 done
