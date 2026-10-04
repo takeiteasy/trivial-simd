@@ -43,6 +43,13 @@
 (trivial-simd:define-kernel kernel-dot (a b) (trivial-simd:sum (* a b)))
 (trivial-simd:define-kernel root-sum (a) (trivial-simd:sum (sqrt (abs a))))
 
+(let ((matrix (make-array 6 :element-type 'single-float
+                            :initial-contents '(1.0 2.0 3.0 4.0 5.0 6.0)))
+      (weights (make-array 3 :element-type 'single-float :initial-element 2.0))
+      (results (make-array 2 :element-type 'single-float)))
+  (kernel-dot matrix weights :rows 2 :row-length 3 :b-row-stride 0 :destination results)
+  (assert (equalp results #(12.0 30.0))))
+
 (let ((a (make-array 257 :element-type 'single-float :initial-element -4.0))
       (b (make-array 257 :element-type 'single-float :initial-element 2.0)))
   (assert (= -2056.0 (kernel-dot a b)))

@@ -14,6 +14,33 @@ native reduction baseline.
 See [spill profiling](kernel-spilling.md) for register-heavy kernels and scratch
 storage measurements.
 
+## Row batching
+
+Batching amortizes setup across rows. Apple M1, SBCL 2.6.8, native pointer
+access, measured 2026-10-04: 1,024 row dot products, microseconds per complete
+operation. Results match separate row calls before timing.
+
+| Type | Row width | Separate calls | One batch | Speedup |
+|---|---:|---:|---:|---:|
+| single-float | 4 | 332.938 | 10.848 | 30.69x |
+| single-float | 32 | 339.066 | 13.676 | 24.79x |
+| single-float | 256 | 368.617 | 50.240 | 7.34x |
+| single-float | 1,024 | 508.125 | 187.861 | 2.70x |
+| double-float | 4 | 344.527 | 11.077 | 31.10x |
+| double-float | 32 | 351.344 | 17.914 | 19.61x |
+| double-float | 256 | 436.977 | 95.042 | 4.60x |
+| double-float | 1,024 | 700.094 | 369.676 | 1.89x |
+
+At width 32, per-row native cost is 0.0134 µs for single-float and 0.0175 µs
+for double-float, versus 0.3311/0.3431 µs for separate calls. Copy access
+measures 8.45x/7.85x speedup for the same batch. A one-row batch is slower;
+use scalar calls for isolated rows.
+
+The [raw measurements](benchmark-runs/2026-10-04-kernel-rows-sbcl.txt) include
+Lisp fallback and copy access for 1/32/1,024 rows. See the
+[batch interface](kernel-rows.md), [limitations](kernel-rows.md#limitations), and
+[benchmark command](testing.md#row-batch-benchmark).
+
 ## Multiply-add
 
 `(+ (* a b) c)` uses separate multiplication and addition. `two ops` is

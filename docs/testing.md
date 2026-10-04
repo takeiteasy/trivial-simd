@@ -259,6 +259,25 @@ benchmark on ECL so the measurement loop and ordinary kernel definitions use
 compiled code.[^compilation]
 Results depend on the Lisp implementation, compiler, CPU, and array access cost.
 
+## Row-batch benchmark
+
+`tests/kernel-rows-bench.lisp` compares one batched dot kernel with separate
+row calls for both float types, 1/32/1,024 rows, and widths 4/32/256/1,024.
+It checks results before warmed, calibrated median timings and reports
+microseconds per batch, per row, and speedup. Outputs are reused and compilation
+is excluded. See [row-batch results](kernel-performance.md#row-batching).
+
+```sh
+sbcl --script tests/kernel-rows-bench.lisp
+ccl --no-init --batch --eval '(load (compile-file "tests/kernel-rows-bench.lisp" :output-file "/tmp/kernel-rows-bench.fasl"))' --eval '(quit)'
+ecl --eval '(load (compile-file "tests/kernel-rows-bench.lisp" :output-file "/tmp/kernel-rows-bench.fas"))' --eval '(quit)'
+```
+
+Batch regression tests cover row layouts, scalar equivalence, pointer/copy
+access, foreign views, overlap errors, one-call execution, symbol fallback,
+spilling, redefinition and concurrent calls. Native tests check one scratch
+allocation per batch, allocation failure, overflow, domain errors and cleanup.
+
 ## Kernel profiling
 
 The optional profile measures identical native bytecode with per-call allocation

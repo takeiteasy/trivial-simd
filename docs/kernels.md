@@ -78,6 +78,10 @@ may differ slightly by backend because the addition order differs.[^sum]
 `nrm2` of single-float inputs accumulates in double precision and rounds once.
 Ties keep the first element, matching the [bulk reductions](reductions.md#ties-and-signed-zeros).
 
+Float `sum` kernels also accept `:rows`, `:row-length`, `:destination`, and
+per-input row strides. [Row batching](kernel-rows.md) applies the expression to
+several rows; native arithmetic sums execute the batch in one foreign call.
+
 ## Numerical behavior
 
 `sqrt` signals an error for a negative operand on every backend; negative zero
@@ -124,8 +128,8 @@ Native code and constant buffers are allocated lazily and reclaimed when their
 kernel function becomes unreachable. Retained references to an older function
 remain callable after redefinition. Reclamation follows garbage collection.[^ownership]
 
-On ECL, native calls share a compiled setup helper by input count and
-reducer. Different expressions, numeric types, and pointer/copy access reuse
+On ECL, scalar and elementwise native calls share a compiled setup helper by
+input count and reducer. Different expressions, numeric types, and pointer/copy access reuse
 the same helper. This includes `eval` definitions.
 The first native call for a signature compiles its helper; later definitions
 reuse it. Failed compilation selects each kernel's own interpreted fallback

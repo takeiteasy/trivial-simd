@@ -650,7 +650,68 @@ static void check_swap_and_fill(void) {
     assert(bytes[3] == 0xFE);
 }
 
+#define CHECK_ROWS(suffix, type) \
+static void check_rows_##suffix(void) { \
+    type a[1800], b[600], out[4] = {-9, -9, -9, -9}; \
+    for (size_t i = 0; i < 1800; ++i) a[i] = (type)((int)(i % 13) - 6); \
+    for (size_t i = 0; i < 600; ++i) b[i] = (type)(i % 7 + 1); \
+    const type *inputs[] = {a, b}; \
+    int64_t strides[] = {600, 0}; \
+    uint8_t code[] = {TS_OP_MULTIPLY, 0, 8, 9, TS_OP_SPILL, 0, 0, 0, \
+                      TS_OP_RELOAD, 1, 0, 0, TS_OP_COPY, TS_KERNEL_OUTPUT, 1, 0}; \
+    size_t lengths[] = {0, 1, 3, 4, 5, 255, 256, 257, 600}; \
+    for (size_t l = 0; l < sizeof(lengths) / sizeof(lengths[0]); ++l) { \
+        size_t before = allocations; \
+        assert(ts_kernel_sum_rows_##suffix(code, sizeof(code), NULL, inputs, 2, strides, out, 3, lengths[l], 1) == 0); \
+        assert(allocations == before + (lengths[l] != 0) && allocations == releases); \
+        for (size_t r = 0; r < 3; ++r) { \
+            const type *row[] = {a + r * 600, b}; \
+            type expected; \
+            assert(ts_kernel_sum_##suffix(code, sizeof(code), NULL, row, &expected, lengths[l], 1) == 0); \
+            assert(memcmp(out + r, &expected, sizeof(type)) == 0); \
+        } \
+        assert(out[3] == -9); \
+    } \
+    inputs[0] = a + 1200; strides[0] = -600; \
+    assert(ts_kernel_sum_rows_##suffix(code, sizeof(code), NULL, inputs, 2, strides, out, 3, 600, 1) == 0); \
+    for (size_t r = 0; r < 3; ++r) { \
+        const type *row[] = {a + (2 - r) * 600, b}; type expected; \
+        assert(ts_kernel_sum_##suffix(code, sizeof(code), NULL, row, &expected, 600, 1) == 0); \
+        assert(out[r] == expected); \
+    } \
+    size_t before = allocations; \
+    assert(ts_kernel_sum_rows_##suffix(NULL, 0, NULL, NULL, 0, NULL, NULL, 0, SIZE_MAX, SIZE_MAX) == 0); \
+    assert(ts_kernel_sum_rows_##suffix(NULL, 0, NULL, NULL, 0, NULL, out, 3, 0, SIZE_MAX) == 0); \
+    assert(allocations == before); \
+    uint8_t plain[] = {TS_OP_MULTIPLY, TS_KERNEL_OUTPUT, 8, 9}; \
+    assert(ts_kernel_sum_rows_##suffix(plain, sizeof(plain), NULL, inputs, 2, strides, out, 3, 3, 0) == 0); \
+    assert(allocations == before); \
+    fail_allocation = 1; \
+    assert(ts_kernel_sum_rows_##suffix(code, sizeof(code), NULL, inputs, 2, strides, out, 3, 3, 1) == -1); \
+    fail_allocation = 0; \
+    --allocations; \
+    assert(allocations == releases); \
+    before = allocations; \
+    assert(ts_kernel_sum_rows_##suffix(code, sizeof(code), NULL, inputs, 2, strides, out, 3, 3, SIZE_MAX) == -1); \
+    strides[0] = INT64_MIN; \
+    assert(ts_kernel_sum_rows_##suffix(code, sizeof(code), NULL, inputs, 2, strides, out, 3, 3, 1) == -1); \
+    assert(allocations == before); \
+    strides[0] = 600; inputs[0] = a; a[600] = -1; a[0] = 1; \
+    uint8_t root[] = {TS_OP_SQRT, 0, 8, 8, TS_OP_SPILL, 0, 0, 0, \
+                      TS_OP_RELOAD, 1, 0, 0, TS_OP_COPY, TS_KERNEL_OUTPUT, 1, 0}; \
+    assert(ts_kernel_sum_rows_##suffix(root, sizeof(root), NULL, inputs, 2, strides, out, 3, 1, 1) == -2); \
+    assert(allocations == releases); \
+    a[600] = 1; a[1200] = 1; \
+    assert(ts_kernel_sum_rows_##suffix(root, sizeof(root), NULL, inputs, 2, strides, out, 3, 1, 1) == 0); \
+    assert(allocations == releases); \
+}
+
+CHECK_ROWS(f32, float)
+CHECK_ROWS(f64, double)
+
 int main(void) {
+    check_rows_f32();
+    check_rows_f64();
     check_swap_and_fill();
     check_reductions_f32();
     check_reductions_f64();

@@ -1,0 +1,173 @@
+(in-package #:trivial-simd/tests)
+
+(in-suite :trivial-simd)
+
+(simd:define-kernel rows-dot (a b) (simd:sum (* a b)))
+(simd:define-kernel rows-root (a) (simd:sum (sqrt a)))
+(simd:define-kernel rows-fma (a b) (simd:sum (simd:fma a b 1)))
+(simd:define-kernel rows-selected (a b) (simd:sum (simd:select (> a b) a b)))
+(macrolet ((define-spill ()
+             `(simd:define-kernel rows-spill (a) (simd:sum ,(balanced-expression 9)))))
+  (define-spill))
+
+(test kernel-rows-layouts
+  (dolist (backend (available-backends))
+    (dolist (type '(single-float double-float))
+      (dolist (width '(0 1 3 4 5 255 256 257 600))
+        (dolist (rows '(0 1 7))
+          (let* ((pitch (+ width 3))
+                 (a (values-for (+ 5 (* (max 1 rows) pitch)) type 1))
+                 (b (values-for (+ 5 (* (max 1 rows) pitch)) type 2))
+                 (out (make-array (+ rows 2) :element-type type :initial-element (coerce -99 type))))
+            (with-backend (backend)
+              (dolist (stride (list 0 pitch (- pitch)))
+                (let ((origin (+ 2 (if (minusp stride) (* (max 0 (1- rows)) pitch) 0))))
+                  (is (eq out (rows-dot a b :rows rows :row-length width
+                                       :a-start origin :a-row-stride stride :b-start 1 :b-row-stride 0
+                                       :destination out :destination-start 1)))
+                  (dotimes (row rows)
+                    (is (eql (rows-dot a b :end width :a-start (+ origin (* row stride)) :b-start 1)
+                             (aref out (1+ row)))))
+                  (is (= -99 (aref out 0)))
+                  (is (= -99 (aref out (1+ rows)))))))))))))
+
+(test kernel-rows-expressions
+  (dolist (backend (available-backends))
+    (dolist (type '(single-float double-float))
+      (let* ((a (make-array 771 :element-type type :initial-element (coerce 4 type)))
+             (b (make-array 257 :element-type type :initial-element (coerce 2 type)))
+             (out (make-array 3 :element-type type)))
+        (with-backend (backend)
+          (dolist (kernel (list #'rows-dot #'rows-fma #'rows-selected))
+            (funcall kernel a b :rows 3 :row-length 257 :b-row-stride 0 :destination out)
+            (dotimes (row 3)
+              (is (eql (funcall kernel a b :end 257 :a-start (* row 257)) (aref out row)))))
+          (dolist (kernel (list #'rows-root #'rows-spill))
+            (funcall kernel a :rows 3 :row-length 257 :destination out)
+            (dotimes (row 3)
+              (is (eql (funcall kernel a :end 257 :a-start (* row 257)) (aref out row)))))
+          (setf (aref a 300) (coerce -1 type))
+          (signals error (rows-root a :rows 3 :row-length 257 :destination out))
+          (setf (aref a 300) (coerce 4 type))
+          (rows-root a :rows 3 :row-length 257 :destination out)
+          (is (every (lambda (value) (= value 514)) out)))))))
+
+(defun rows-call-errors-p (arguments)
+  (handler-case (progn (apply #'rows-dot arguments) nil)
+    (error () t)))
+
+(test kernel-rows-errors
+  (let ((a (make-array 12 :element-type 'single-float :initial-element 2f0))
+        (out (make-array 4 :element-type 'single-float :initial-element -99f0)))
+    (dolist (keys '((:rows 2 :row-length 3 :start 0)
+                    (:rows 2 :row-length 3 :end 3)
+                    (:rows -1 :row-length 3) (:rows 2 :row-length -1)
+                    (:rows 2.0 :row-length 3) (:rows 2 :row-length 3.0)
+                    (:rows 5 :row-length 1) (:rows 2 :row-length 8)
+                    (:rows 2 :row-length 3 :a-start 0 :a-row-stride -3)
+                    (:rows 2 :row-length 3 :a-row-stride 9223372036854775808)
+                    (:rows 2 :row-length 3 :a-row-stride nil)
+                    (:rows 2 :row-length 3 :destination-start -1)
+                    (:rows 2 :row-length 3 :destination-start 3)
+                    (:rows 2) (:row-length 3) (:a-row-stride 0)))
+      (is-true (rows-call-errors-p (append (list a a :destination out) keys)))
+      (is (every (lambda (value) (= value -99)) out)))
+    (signals error (rows-dot a a :rows 2 :row-length 3))
+    (signals error (rows-dot a a :rows 2 :row-length 3 :destination a))
+    (signals error (rows-dot a a :rows 2 :row-length 2 :a-row-stride 6 :b-row-stride 6
+                            :destination a :destination-start 3))
+    (signals error (reducer-min-of a :rows 2 :row-length 3 :destination out))
+    (signals error (rows-dot a (make-array 12 :element-type 'double-float)
+                            :rows 2 :row-length 3 :destination out))
+    (signals error (rows-dot a a :rows 2 :row-length 3
+                            :destination (make-array 4 :element-type 'double-float)))
+    (let ((integers (make-array 12 :element-type '(signed-byte 32) :initial-element 1)))
+      (signals error (rows-dot integers integers :rows 2 :row-length 3
+                              :destination (make-array 2 :element-type '(signed-byte 32)))))
+    (rows-dot a a :rows 2 :row-length 3 :a-start 4 :b-start 4 :destination a)
+    (is (= 12 (aref a 0)))
+    (is (= 12 (aref a 1)))))
+
+(test kernel-rows-native-call-count-and-fallback
+  (when simd::*native-kernel-rows-available-p*
+    (let ((original (symbol-function 'simd::call-native-kernel-rows)) (calls 0)
+          (a (make-array 12 :element-type 'single-float :initial-element 2f0))
+          (out (make-array 4 :element-type 'single-float)))
+      (unwind-protect
+           (progn
+             (setf (symbol-function 'simd::call-native-kernel-rows)
+                   (lambda (&rest args) (incf calls) (apply original args)))
+             (with-backend (:native)
+               (rows-dot a a :rows 4 :row-length 3 :destination out)
+               (is (= 1 calls))
+               (rows-dot a a :rows 0 :row-length 3 :destination out)
+               (rows-dot a a :rows 4 :row-length 0 :destination out)
+               (is (= 1 calls))
+               (is (every #'zerop out))
+               (let ((simd::*native-kernel-rows-available-p* nil))
+                 (rows-dot a a :rows 4 :row-length 3 :destination out))
+               (is (= 1 calls))
+               (is (every (lambda (value) (= value 12)) out))))
+        (setf (symbol-function 'simd::call-native-kernel-rows) original)))))
+
+(test kernel-rows-foreign-views
+  (dolist (type '(:f32 :f64))
+    (let ((foreign (third (simd::numeric-type type))))
+      (cffi:with-foreign-object (memory foreign 30)
+        (let ((a (simd:make-vector-view memory type 12))
+              (out (simd:make-vector-view memory type 3 :offset 20))
+              (alias (simd:make-vector-view memory type 3 :offset 4)))
+          (dotimes (i 12) (setf (simd::vector-ref a i) (coerce (1+ i) (second (simd::numeric-type type)))))
+          (dolist (backend (available-backends))
+            (with-backend (backend)
+              (rows-dot a a :rows 3 :row-length 4 :destination out)
+              (dotimes (row 3)
+                (is (eql (rows-dot a a :end 4 :a-start (* row 4) :b-start (* row 4))
+                         (simd::vector-ref out row))))
+              (signals error (rows-dot a a :rows 3 :row-length 4 :destination alias)))))))))
+
+#+(or sbcl ccl ecl)
+(test kernel-rows-mixed-memory-overlap
+  (let ((a (make-array 12 :element-type 'single-float :initial-element 2f0)))
+    (simd::with-vector-pointer (pointer a)
+      (let ((alias (simd:make-vector-view pointer :f32 3 :offset 4)))
+        (dolist (backend (available-backends))
+          (with-backend (backend)
+            (signals error (rows-dot a a :rows 3 :row-length 4 :destination alias))))))))
+
+(test kernel-rows-redefinition-and-concurrency
+  (let* ((name (gensym "ROWS-REDEFINED"))
+         (a (make-array 12 :element-type 'single-float :initial-element 2f0)))
+    (eval `(simd:define-kernel ,name (a b) (simd:sum (* a b))))
+    (let ((retained (symbol-function name)))
+      (eval `(simd:define-kernel ,name (a b) (simd:sum (+ a b 1))))
+      (dolist (backend (available-backends))
+        (with-backend (backend)
+          (let ((out (make-array 4 :element-type 'single-float)))
+            (funcall retained a a :rows 4 :row-length 3 :destination out)
+            (is (every (lambda (value) (= value 12)) out))
+            (funcall (symbol-function name) a a :rows 4 :row-length 3 :destination out)
+            (is (every (lambda (value) (= value 15)) out))))))
+    (let ((threads
+            (loop repeat 4 collect
+              (bordeaux-threads:make-thread
+               (lambda ()
+                 (let ((out (make-array 4 :element-type 'single-float)))
+                   (dotimes (i 20)
+                     (funcall (symbol-function name) a a :rows 4 :row-length 3 :destination out)
+                     (unless (every (lambda (value) (= value 15)) out)
+                       (error "Concurrent batch result mismatch")))
+                   t))))))
+      (dolist (thread threads) (is (bordeaux-threads:join-thread thread))))))
+
+(test native-row-program-redefinition
+  (when simd::*native-kernel-rows-available-p*
+    (let ((released (list 0)))
+      (with-function-replaced
+          (define-native-lifetime-kernel
+           (lambda (constant)
+             (eval `(simd:define-kernel lifetime-kernel (a) (simd:sum (+ a ,constant))))
+             (let ((kernel (symbol-function 'lifetime-kernel)))
+               (lambda (output input)
+                 (funcall kernel input :rows (length input) :row-length 1 :destination output)))))
+        (finishes (exercise-native-redefinitions released))))))

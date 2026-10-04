@@ -751,13 +751,13 @@ block results are compared by. DECLARATIONS apply to BODY's variables."
           (destination `(progn ,staged ,destination))
           (t staged))))
 
-(defmacro define-kernel (name (&rest arguments) expression)
+(defmacro define-single-row-kernel (name (&rest arguments) expression)
   "Define an elementwise destination kernel or a scalar reduction kernel such as
 (SUM expression), (ASUM expression), (NRM2 expression), (MINIMUM expression),
 (MAXIMUM expression), (ARGMIN expression) or (ARGMAX expression). Both accept START,
 END, and per-input start keywords. Experimental."
   (when (mask-kernel-expression-p expression)
-    (return-from define-kernel (mask-kernel-expansion name arguments expression)))
+    (return-from define-single-row-kernel (mask-kernel-expansion name arguments expression)))
   (when (> (length arguments) +kernel-max-arguments+)
     (error "A kernel takes at most ~D arguments" +kernel-max-arguments+))
   (let* ((reducer (and (consp expression) (find (first expression) *kernel-reducers*)))

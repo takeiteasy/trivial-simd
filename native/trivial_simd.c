@@ -526,6 +526,44 @@ TS_KERNEL(f64, double, TS_F64_VECTOR, TS_F64_WIDTH, TS_F64_LOAD, TS_F64_STORE, T
 
 #include "integer.h"
 
+#define TS_KERNEL_ROWS(suffix, type) \
+int ts_kernel_sum_rows_##suffix(const uint8_t *code, size_t code_length, \
+                               const type *constants, const type *const *inputs, \
+                               size_t input_count, const int64_t *row_strides, \
+                               type *out, size_t rows, size_t n, size_t scratch_count) { \
+    if (!rows) return 0; \
+    if (!out || rows > PTRDIFF_MAX / sizeof(type)) return -1; \
+    if (!n) { for (size_t r = 0; r < rows; ++r) out[r] = 0; return 0; } \
+    if (input_count > 248 || n > PTRDIFF_MAX / sizeof(type)) return -1; \
+    if (input_count && (!inputs || !row_strides)) return -1; \
+    for (size_t i = 0; i < input_count; ++i) { \
+        uint64_t stride = row_strides[i] < 0 \
+            ? (uint64_t)(-(row_strides[i] + 1)) + 1 : (uint64_t)row_strides[i]; \
+        if (!inputs[i] || (stride && rows - 1 > (PTRDIFF_MAX / sizeof(type) - n) / stride)) return -1; \
+    } \
+    if (scratch_count > SIZE_MAX / TS_KERNEL_BLOCK / sizeof(type)) return -1; \
+    type *scratch = scratch_count ? malloc(scratch_count * TS_KERNEL_BLOCK * sizeof(type)) : NULL; \
+    if (scratch_count && !scratch) return -1; \
+    const type *shifted[248]; \
+    int status = 0; \
+    for (size_t r = 0; r < rows; ++r) { \
+        for (size_t i = 0; i < input_count; ++i) { \
+            uint64_t stride = row_strides[i] < 0 \
+                ? (uint64_t)(-(row_strides[i] + 1)) + 1 : (uint64_t)row_strides[i]; \
+            ptrdiff_t offset = (ptrdiff_t)(r * stride); \
+            shifted[i] = inputs[i] + (row_strides[i] < 0 ? -offset : offset); \
+        } \
+        status = ts_kernel_run_sum_##suffix(code, code_length, constants, shifted, \
+                                             out + r, n, scratch_count, scratch); \
+        if (status) break; \
+    } \
+    free(scratch); \
+    return status; \
+}
+
+TS_KERNEL_ROWS(f32, float)
+TS_KERNEL_ROWS(f64, double)
+
 #define TS_KERNEL_MASK(suffix, type) \
 int ts_kernel_mask_##suffix(const uint8_t *code, size_t code_length, const type *constants, \
                             const type *const *inputs, size_t input_count, uint8_t *mask, \
