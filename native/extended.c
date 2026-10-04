@@ -3,9 +3,9 @@
 #include <stdint.h>
 #include <string.h>
 
-#if defined(__aarch64__) || defined(_M_ARM64)
+#if !defined(TS_SCALAR) && (defined(__aarch64__) || defined(_M_ARM64))
 #include <arm_neon.h>
-#elif defined(__x86_64__) || defined(_M_X64)
+#elif !defined(TS_SCALAR) && (defined(__x86_64__) || defined(_M_X64))
 #include <emmintrin.h>
 #include <xmmintrin.h>
 #endif
@@ -117,7 +117,7 @@ int ts_extended_select_##suffix(type *out, const uint8_t *mask, const type *on_t
     return 0; \
 }
 
-#if defined(__aarch64__) || defined(_M_ARM64)
+#if !defined(TS_SCALAR) && (defined(__aarch64__) || defined(_M_ARM64))
 static size_t ts_extended_unary_packed_f32(unsigned op, float *out, const float *input, size_t n) {
     size_t i = 0;
     switch (op) {
@@ -171,7 +171,7 @@ void ts_extended_f64_to_f32(float *out, const double *input, size_t n) {
         vst1_f32(out + i, vcvt_f32_f64(vld1q_f64(input + i)));
     for (; i < n; ++i) out[i] = (float)input[i];
 }
-#elif defined(__x86_64__) || defined(_M_X64)
+#elif !defined(TS_SCALAR) && (defined(__x86_64__) || defined(_M_X64))
 static size_t ts_extended_unary_packed_f32(unsigned op, float *out, const float *input, size_t n) {
     size_t i = 0;
     switch (op) {
@@ -246,11 +246,23 @@ void ts_extended_f64_to_f32(float *out, const double *input, size_t n) {
 }
 #endif
 
-/* bf16 and f16 vectors are stored as uint16_t bit patterns. The scalar helpers
-   work on bits, so results do not depend on the FPU rounding mode, flush-to-zero
-   or trap settings. Narrowing rounds to nearest even and overflows to infinity,
-   or with TRUNCATE rounds toward zero and overflows to the largest finite value;
-   NaN keeps its sign and leading payload bits and becomes quiet. */
+/* Integer narrowing preserves the caller's floating-point environment.
+   NaNs keep their sign and leading payload bits and become quiet. */
+enum { TS_ROUND_NEAREST_EVEN, TS_ROUND_TRUNCATE, TS_ROUND_FLOOR, TS_ROUND_CEILING };
+
+unsigned ts_extended_float_encoding_rounding_modes(void) { return 0xfu; }
+
+static int ts_round_away(uint32_t bits, int rounding) {
+    return rounding == TS_ROUND_FLOOR ? (int)(bits >> 31) :
+           rounding == TS_ROUND_CEILING && !(bits >> 31);
+}
+
+static uint32_t ts_round_bias(uint32_t bits, int rounding, unsigned shift) {
+    if (rounding == TS_ROUND_NEAREST_EVEN)
+        return (1u << (shift - 1)) - 1u + ((bits >> shift) & 1u);
+    return ts_round_away(bits, rounding) ? (1u << shift) - 1u : 0u;
+}
+
 static uint32_t ts_float_bits(float x) { uint32_t b; memcpy(&b, &x, sizeof b); return b; }
 static float ts_bits_float(uint32_t b) { float x; memcpy(&x, &b, sizeof x); return x; }
 
@@ -259,10 +271,10 @@ static float ts_bf16_to_f32_scalar(uint16_t h) {
     return ts_bits_float((b & 0x7fffffffu) > 0x7f800000u ? b | 0x400000u : b);
 }
 
-static uint16_t ts_f32_to_bf16_scalar(float x, int truncate) {
+static uint16_t ts_f32_to_bf16_scalar(float x, int rounding) {
     uint32_t b = ts_float_bits(x);
     if ((b & 0x7fffffffu) > 0x7f800000u) return (uint16_t)((b >> 16) | 0x40u);
-    return (uint16_t)((b + (truncate ? 0u : 0x7fffu + ((b >> 16) & 1u))) >> 16);
+    return (uint16_t)((b + ts_round_bias(b, rounding, 16)) >> 16);
 }
 
 static float ts_f16_to_f32_scalar(uint16_t h) {
@@ -278,25 +290,29 @@ static float ts_f16_to_f32_scalar(uint16_t h) {
     return ts_bits_float(sign | ((uint32_t)(exponent + 112) << 23) | (mantissa << 13));
 }
 
-static uint16_t ts_f32_to_f16_scalar(float x, int truncate) {
+static uint16_t ts_f32_to_f16_scalar(float x, int rounding) {
     uint32_t b = ts_float_bits(x), sign = (b >> 16) & 0x8000u, a = b & 0x7fffffffu;
     if (a > 0x7f800000u) return (uint16_t)(sign | 0x7e00u | ((a >> 13) & 0x3ffu));
-    if (a >= 0x477ff000u)                                       /* 65520 and above */
-        return (uint16_t)(sign | (truncate && a < 0x7f800000u ? 0x7bffu : 0x7c00u));
+    if (a >= 0x477ff000u) {                                    /* 65520 and above */
+        int toward = rounding != TS_ROUND_NEAREST_EVEN && !ts_round_away(b, rounding);
+        return (uint16_t)(sign | (toward && a < 0x7f800000u ? 0x7bffu : 0x7c00u));
+    }
     if (a >= 0x38800000u) {                                     /* f16 normal range */
         a -= 112u << 23;
-        return (uint16_t)(sign | ((a + (truncate ? 0u : 0xfffu + ((a >> 13) & 1u))) >> 13));
+        return (uint16_t)(sign | ((a + ts_round_bias(b, rounding, 13)) >> 13));
     }
     int exponent = (int)(a >> 23);
-    if (exponent < 102) return (uint16_t)sign;                  /* at most 2^-25 */
+    if (exponent < 102) return (uint16_t)(sign | (a != 0 && ts_round_away(b, rounding)));
     uint32_t mantissa = (a & 0x7fffffu) | 0x800000u, shift = (uint32_t)(126 - exponent);
     uint32_t quotient = mantissa >> shift, remainder = mantissa & ((1u << shift) - 1u);
     uint32_t half = 1u << (shift - 1u);
-    quotient += !truncate && (remainder > half || (remainder == half && (quotient & 1u)));
+    quotient += rounding == TS_ROUND_NEAREST_EVEN
+        ? remainder > half || (remainder == half && (quotient & 1u))
+        : remainder != 0 && ts_round_away(b, rounding);
     return (uint16_t)(sign | quotient);
 }
 
-#if defined(__aarch64__) || defined(_M_ARM64)
+#if !defined(TS_SCALAR) && (defined(__aarch64__) || defined(_M_ARM64))
 static float32x4_t ts_bf16_to_f32_neon(uint16x4_t h) {
     uint32x4_t b = vshll_n_u16(h, 16);
     uint32x4_t nan = vcgtq_u32(vandq_u32(b, vdupq_n_u32(0x7fffffff)), vdupq_n_u32(0x7f800000));
@@ -311,29 +327,32 @@ void ts_extended_bf16_to_f32(float *out, const uint16_t *input, size_t n) {
     }
     for (; i < n; ++i) out[i] = ts_bf16_to_f32_scalar(input[i]);
 }
-/* ROUND is all ones to round to nearest even and zero to truncate. */
-static uint16x4_t ts_f32_to_bf16_neon(float32x4_t x, uint32x4_t round) {
+static uint16x4_t ts_f32_to_bf16_neon(float32x4_t x, int rounding) {
     uint32x4_t b = vreinterpretq_u32_f32(x);
     uint32x4_t lsb = vandq_u32(vshrq_n_u32(b, 16), vdupq_n_u32(1));
-    uint32x4_t bias = vandq_u32(vaddq_u32(vdupq_n_u32(0x7fff), lsb), round);
+    uint32x4_t negative = vceqq_u32(vshrq_n_u32(b, 31), vdupq_n_u32(1));
+    uint32x4_t away = rounding == TS_ROUND_FLOOR ? negative :
+                     rounding == TS_ROUND_CEILING ? vmvnq_u32(negative) : vdupq_n_u32(0);
+    uint32x4_t bias = rounding == TS_ROUND_NEAREST_EVEN
+        ? vaddq_u32(vdupq_n_u32(0x7fff), lsb)
+        : vandq_u32(away, vdupq_n_u32(0xffff));
     uint32x4_t rounded = vaddq_u32(b, bias);
     uint32x4_t nan = vcgtq_u32(vandq_u32(b, vdupq_n_u32(0x7fffffff)), vdupq_n_u32(0x7f800000));
     return vshrn_n_u32(vbslq_u32(nan, vorrq_u32(b, vdupq_n_u32(0x400000)), rounded), 16);
 }
-void ts_extended_f32_to_bf16(uint16_t *out, const float *input, size_t n, int truncate) {
+void ts_extended_f32_to_bf16(uint16_t *out, const float *input, size_t n, int rounding) {
     size_t i = 0;
-    const uint32x4_t round = vdupq_n_u32(truncate ? 0u : ~0u);
     for (; i + 8 <= n; i += 8)
-        vst1q_u16(out + i, vcombine_u16(ts_f32_to_bf16_neon(vld1q_f32(input + i), round),
-                                        ts_f32_to_bf16_neon(vld1q_f32(input + i + 4), round)));
-    for (; i < n; ++i) out[i] = ts_f32_to_bf16_scalar(input[i], truncate);
+        vst1q_u16(out + i, vcombine_u16(ts_f32_to_bf16_neon(vld1q_f32(input + i), rounding),
+                                        ts_f32_to_bf16_neon(vld1q_f32(input + i + 4), rounding)));
+    for (; i < n; ++i) out[i] = ts_f32_to_bf16_scalar(input[i], rounding);
 }
 #if defined(__aarch64__)
-/* FCVTL and FCVTN match the scalar helpers when FPCR is all zero (round to
-   nearest even, no flush-to-zero, no traps) or has RMode set to round toward
-   zero. They also set FPSR flags, which trap under a caller's enabled
-   exceptions, so the loops run with a known FPCR and restore both registers. */
-#define TS_FPCR_ROUND_TOWARD_ZERO (3ull << 22)
+/* Conversion instructions set FPSR flags; isolate them from caller traps. */
+static uint64_t ts_round_fpcr(int rounding) {
+    static const uint64_t modes[] = {0, 3ull << 22, 2ull << 22, 1ull << 22};
+    return modes[rounding];
+}
 typedef struct { uint64_t fpcr, fpsr; } ts_fp_env;
 static ts_fp_env ts_fp_enter(uint64_t fpcr) {
     ts_fp_env saved;
@@ -354,23 +373,23 @@ void ts_extended_f16_to_f32(float *out, const uint16_t *input, size_t n) {
     ts_fp_leave(saved);
     for (; i < n; ++i) out[i] = ts_f16_to_f32_scalar(input[i]);
 }
-void ts_extended_f32_to_f16(uint16_t *out, const float *input, size_t n, int truncate) {
+void ts_extended_f32_to_f16(uint16_t *out, const float *input, size_t n, int rounding) {
     size_t i = 0;
-    ts_fp_env saved = ts_fp_enter(truncate ? TS_FPCR_ROUND_TOWARD_ZERO : 0);
+    ts_fp_env saved = ts_fp_enter(ts_round_fpcr(rounding));
     for (; i + 4 <= n; i += 4)
         vst1_u16(out + i, vreinterpret_u16_f16(vcvt_f16_f32(vld1q_f32(input + i))));
     ts_fp_leave(saved);
-    for (; i < n; ++i) out[i] = ts_f32_to_f16_scalar(input[i], truncate);
+    for (; i < n; ++i) out[i] = ts_f32_to_f16_scalar(input[i], rounding);
 }
 #else
 void ts_extended_f16_to_f32(float *out, const uint16_t *input, size_t n) {
     for (size_t i = 0; i < n; ++i) out[i] = ts_f16_to_f32_scalar(input[i]);
 }
-void ts_extended_f32_to_f16(uint16_t *out, const float *input, size_t n, int truncate) {
-    for (size_t i = 0; i < n; ++i) out[i] = ts_f32_to_f16_scalar(input[i], truncate);
+void ts_extended_f32_to_f16(uint16_t *out, const float *input, size_t n, int rounding) {
+    for (size_t i = 0; i < n; ++i) out[i] = ts_f32_to_f16_scalar(input[i], rounding);
 }
 #endif
-#elif defined(__x86_64__) || defined(_M_X64)
+#elif !defined(TS_SCALAR) && (defined(__x86_64__) || defined(_M_X64))
 /* B holds one bf16 in the high half of each lane. */
 static __m128 ts_bf16_to_f32_sse2(__m128i b) {
     __m128i nan = _mm_cmpgt_epi32(_mm_and_si128(b, _mm_set1_epi32(0x7fffffff)),
@@ -387,13 +406,25 @@ void ts_extended_bf16_to_f32(float *out, const uint16_t *input, size_t n) {
     }
     for (; i < n; ++i) out[i] = ts_bf16_to_f32_scalar(input[i]);
 }
-/* Both narrowing helpers return each result sign-extended in its 32-bit lane,
-   ready for _mm_packs_epi32. ROUND is all ones to round to nearest even and
-   zero to truncate. */
-static __m128i ts_f32_to_bf16_sse2(__m128 x, __m128i round) {
+static __m128i ts_round_away_sse2(__m128i bits, int rounding) {
+    __m128i negative = _mm_srai_epi32(bits, 31);
+    return rounding == TS_ROUND_FLOOR ? negative :
+           rounding == TS_ROUND_CEILING ? _mm_xor_si128(negative, _mm_set1_epi32(-1)) :
+           _mm_setzero_si128();
+}
+
+static __m128i ts_round_bias_sse2(__m128i bits, int rounding, unsigned shift) {
+    if (rounding == TS_ROUND_NEAREST_EVEN)
+        return _mm_add_epi32(_mm_set1_epi32((1u << (shift - 1)) - 1u),
+                            _mm_and_si128(_mm_srl_epi32(bits, _mm_cvtsi32_si128(shift)),
+                                          _mm_set1_epi32(1)));
+    return _mm_and_si128(ts_round_away_sse2(bits, rounding), _mm_set1_epi32((1u << shift) - 1u));
+}
+
+/* Sign-extend each result for _mm_packs_epi32. */
+static __m128i ts_f32_to_bf16_sse2(__m128 x, int rounding) {
     __m128i b = _mm_castps_si128(x);
-    __m128i lsb = _mm_and_si128(_mm_srli_epi32(b, 16), _mm_set1_epi32(1));
-    __m128i bias = _mm_and_si128(_mm_add_epi32(_mm_set1_epi32(0x7fff), lsb), round);
+    __m128i bias = ts_round_bias_sse2(b, rounding, 16);
     __m128i rounded = _mm_add_epi32(b, bias);
     __m128i nan = _mm_cmpgt_epi32(_mm_and_si128(b, _mm_set1_epi32(0x7fffffff)),
                                   _mm_set1_epi32(0x7f800000));
@@ -401,14 +432,13 @@ static __m128i ts_f32_to_bf16_sse2(__m128 x, __m128i round) {
     return _mm_srai_epi32(_mm_or_si128(_mm_and_si128(nan, quiet),
                                        _mm_andnot_si128(nan, rounded)), 16);
 }
-void ts_extended_f32_to_bf16(uint16_t *out, const float *input, size_t n, int truncate) {
+void ts_extended_f32_to_bf16(uint16_t *out, const float *input, size_t n, int rounding) {
     size_t i = 0;
-    const __m128i round = _mm_set1_epi32(truncate ? 0 : -1);
     for (; i + 8 <= n; i += 8)
         _mm_storeu_si128((__m128i *)(out + i),
-                         _mm_packs_epi32(ts_f32_to_bf16_sse2(_mm_loadu_ps(input + i), round),
-                                         ts_f32_to_bf16_sse2(_mm_loadu_ps(input + i + 4), round)));
-    for (; i < n; ++i) out[i] = ts_f32_to_bf16_scalar(input[i], truncate);
+                         _mm_packs_epi32(ts_f32_to_bf16_sse2(_mm_loadu_ps(input + i), rounding),
+                                         ts_f32_to_bf16_sse2(_mm_loadu_ps(input + i + 4), rounding)));
+    for (; i < n; ++i) out[i] = ts_f32_to_bf16_scalar(input[i], rounding);
 }
 /* H holds one zero-extended f16 per lane. Subnormals become normal floats
    through an exact subtraction of 2^-14, so DAZ and FTZ cannot affect them. */
@@ -443,57 +473,57 @@ void ts_extended_f16_to_f32(float *out, const uint16_t *input, size_t n) {
 }
 /* Lanes that round to an f16 subnormal need a per-lane shift, which SSE2 lacks;
    *SLOW reports them so the caller converts that block with the scalar helper. */
-static __m128i ts_f32_to_f16_sse2(__m128 x, __m128i round, int *slow) {
+static __m128i ts_f32_to_f16_sse2(__m128 x, int rounding, int *slow) {
     __m128i b = _mm_castps_si128(x);
     __m128i a = _mm_and_si128(b, _mm_set1_epi32(0x7fffffff));
     __m128i normal = _mm_sub_epi32(a, _mm_set1_epi32(112 << 23));
-    __m128i bias = _mm_and_si128(_mm_add_epi32(_mm_set1_epi32(0xfff),
-                                               _mm_and_si128(_mm_srli_epi32(normal, 13),
-                                                             _mm_set1_epi32(1))), round);
+    __m128i bias = ts_round_bias_sse2(b, rounding, 13);
     __m128i r = _mm_srli_epi32(_mm_add_epi32(normal, bias), 13);
     __m128i overflow = _mm_cmpgt_epi32(a, _mm_set1_epi32(0x477fefff));
-    /* Truncation overflows to the largest finite value, but not an infinity. */
     __m128i finite = _mm_cmplt_epi32(a, _mm_set1_epi32(0x7f800000));
+    __m128i toward = rounding == TS_ROUND_NEAREST_EVEN ? _mm_setzero_si128() :
+                     _mm_andnot_si128(ts_round_away_sse2(b, rounding), finite);
     __m128i limit = _mm_sub_epi32(_mm_set1_epi32(0x7c00),
-                                  _mm_and_si128(_mm_andnot_si128(round, finite), _mm_set1_epi32(1)));
+                                  _mm_and_si128(toward, _mm_set1_epi32(1)));
     r = _mm_or_si128(_mm_and_si128(overflow, limit), _mm_andnot_si128(overflow, r));
     __m128i nan = _mm_cmpgt_epi32(a, _mm_set1_epi32(0x7f800000));
     __m128i payload = _mm_or_si128(_mm_set1_epi32(0x7e00),
                                    _mm_and_si128(_mm_srli_epi32(a, 13), _mm_set1_epi32(0x3ff)));
     r = _mm_or_si128(_mm_and_si128(nan, payload), _mm_andnot_si128(nan, r));
     __m128i small = _mm_cmplt_epi32(a, _mm_set1_epi32(0x38800000));
-    __m128i zero = _mm_cmplt_epi32(a, _mm_set1_epi32(0x33000001));
+    __m128i zero = rounding >= TS_ROUND_FLOOR
+        ? _mm_cmpeq_epi32(a, _mm_setzero_si128())
+        : _mm_cmplt_epi32(a, _mm_set1_epi32(0x33000001));
     *slow |= _mm_movemask_epi8(_mm_andnot_si128(zero, small));
     r = _mm_andnot_si128(small, r);
     r = _mm_or_si128(r, _mm_and_si128(_mm_srli_epi32(b, 16), _mm_set1_epi32(0x8000)));
     return _mm_srai_epi32(_mm_slli_epi32(r, 16), 16);
 }
-void ts_extended_f32_to_f16(uint16_t *out, const float *input, size_t n, int truncate) {
+void ts_extended_f32_to_f16(uint16_t *out, const float *input, size_t n, int rounding) {
     size_t i = 0;
-    const __m128i round = _mm_set1_epi32(truncate ? 0 : -1);
     for (; i + 8 <= n; i += 8) {
         int slow = 0;
-        __m128i low = ts_f32_to_f16_sse2(_mm_loadu_ps(input + i), round, &slow);
-        __m128i high = ts_f32_to_f16_sse2(_mm_loadu_ps(input + i + 4), round, &slow);
+        __m128i low = ts_f32_to_f16_sse2(_mm_loadu_ps(input + i), rounding, &slow);
+        __m128i high = ts_f32_to_f16_sse2(_mm_loadu_ps(input + i + 4), rounding, &slow);
         if (slow)
-            for (size_t j = i; j < i + 8; ++j) out[j] = ts_f32_to_f16_scalar(input[j], truncate);
+            for (size_t j = i; j < i + 8; ++j) out[j] = ts_f32_to_f16_scalar(input[j], rounding);
         else
             _mm_storeu_si128((__m128i *)(out + i), _mm_packs_epi32(low, high));
     }
-    for (; i < n; ++i) out[i] = ts_f32_to_f16_scalar(input[i], truncate);
+    for (; i < n; ++i) out[i] = ts_f32_to_f16_scalar(input[i], rounding);
 }
 #else
 void ts_extended_bf16_to_f32(float *out, const uint16_t *input, size_t n) {
     for (size_t i = 0; i < n; ++i) out[i] = ts_bf16_to_f32_scalar(input[i]);
 }
-void ts_extended_f32_to_bf16(uint16_t *out, const float *input, size_t n, int truncate) {
-    for (size_t i = 0; i < n; ++i) out[i] = ts_f32_to_bf16_scalar(input[i], truncate);
+void ts_extended_f32_to_bf16(uint16_t *out, const float *input, size_t n, int rounding) {
+    for (size_t i = 0; i < n; ++i) out[i] = ts_f32_to_bf16_scalar(input[i], rounding);
 }
 void ts_extended_f16_to_f32(float *out, const uint16_t *input, size_t n) {
     for (size_t i = 0; i < n; ++i) out[i] = ts_f16_to_f32_scalar(input[i]);
 }
-void ts_extended_f32_to_f16(uint16_t *out, const float *input, size_t n, int truncate) {
-    for (size_t i = 0; i < n; ++i) out[i] = ts_f32_to_f16_scalar(input[i], truncate);
+void ts_extended_f32_to_f16(uint16_t *out, const float *input, size_t n, int rounding) {
+    for (size_t i = 0; i < n; ++i) out[i] = ts_f32_to_f16_scalar(input[i], rounding);
 }
 #endif
 

@@ -82,7 +82,8 @@ views.
     and bounded operations, `compare!`, `select!`, mask reductions, `fill!` and
     `swap!` above their native size thresholds, and `convert!` between
     `:f32` and `:f64` or bf16/f16 storage (also on the `:sbcl` backend when the
-    native library is loaded), and single-float `nrm2`. Complex operations
+    native library supports the requested encoding and rounding mode), and
+    single-float `nrm2`. Complex operations
     other than BLAS, other conversions, `copy!`, double-float `nrm2` and
     numeric reductions of mask kernels use buffers.
 [^block]: A buffered call allocates one buffer per view or strided operand.

@@ -446,7 +446,7 @@ strides of DESTINATION then every operand, with NIL for scalars."
     (vector-type input)
     (multiple-value-bind (encoding encode)
         (when (or destination-encoding input-encoding)
-          (check-float-encodings destination input destination-encoding input-encoding rounding))
+          (check-float-encodings destination input destination-encoding input-encoding))
       (multiple-value-bind (count offsets strides)
           (resolve-mixed-slice (list destination input)
                                (list destination-start input-start) start end
@@ -455,7 +455,7 @@ strides of DESTINATION then every operand, with NIL for scalars."
           (with-staged ((destination d-offset (first strides) :out)
                         (input i-offset (second strides)))
               (count :direct (if encoding
-                                 (native-encoded-conversion-p)
+                                 (native-encoded-conversion-p encode rounding)
                                  (native-float-conversion-p destination-type (vector-type input))))
             ;; TODO: scalar paths for other type pairs; add packed conversions where safe (#72).
             (cond (encoding

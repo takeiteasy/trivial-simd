@@ -9,9 +9,11 @@ type pairs and rounding modes, byte masks, selection, and mask kernels.
 bf16 and f16 tests widen all 65536 bit patterns of each encoding on every
 backend, and narrow every encoded value, the midpoints between neighbours and
 one unit either side, and pseudo-random single-floats. They compare the results
-with a rational round-to-nearest-even reference and cover subnormals,
-infinities, overflow, signed zeros, NaN payloads, slices, strides, tails and
-errors. Signaling NaN inputs are skipped on Lisps that cannot hold one (ECL).
+with an independent rational reference for nearest-even, truncate, floor and
+ceiling, and cover subnormals, infinities, overflow, signed zeros, NaN payloads,
+slices, strides, tails and errors. Capability tests check native dispatch and the Lisp fallback for
+rounding modes unsupported by an older native library, including foreign-memory
+views. Signaling NaN inputs are skipped on Lisps that cannot hold one (ECL).
 A test fails when the native library is loaded but lacks the bf16/f16 symbols,
 which loading also reports with a warning; rebuild with CMake to fix it.
 The suite disables the [inline small-array path](small-arrays.md) so that small
@@ -55,7 +57,11 @@ memory with the same call on Lisp vectors, and cover slices, strides, ties
 across blocks, overlapping copies within one buffer, matrix overlap by address,
 errors, direct native pointer use, and (on SBCL) that a large view is read
 without a full-length copy.
-`ctest` also checks the C kernels, including the scalar build and allocation
+`ctest` checks bf16/f16 narrowing against an independent representable-value
+reference in SIMD and scalar builds, including mixed-sign lanes, boundaries,
+tails, random single-floats and preservation of caller floating-point settings
+and exception flags under available rounding, flush-to-zero and trap controls.
+It also checks the C kernels, including the scalar build and allocation
 failure. On x86-64 it checks the SSE2 BLAS kernels directly and the AVX+FMA
 kernels where the CPU supports them; the software-FMA target forces SSE2.
 Direct copy tests check both precisions, round trips, empty ranges, and partial

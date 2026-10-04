@@ -13,3 +13,10 @@
 
 (trivial-simd:define-kernel larger-value (a b)
   (trivial-simd:select (> a b) a b))
+
+(let ((floats (make-array 2 :element-type 'single-float
+                           :initial-contents '(1.0001 -1.0001)))
+      (halves (make-array 2 :element-type '(unsigned-byte 16))))
+  (dolist (rounding '(:nearest-even :truncate :floor :ceiling))
+    (trivial-simd:convert! halves floats :destination-encoding :f16 :rounding rounding)
+    (format t "~S f16 bits: ~{~4,'0X~^ ~}~%" rounding (coerce halves 'list))))

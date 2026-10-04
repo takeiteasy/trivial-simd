@@ -3,7 +3,7 @@
 (in-suite :trivial-simd)
 
 ;; The reference decodes bf16 and f16 from the format definition with rational
-;; arithmetic and rounds to nearest even by searching the table of encoded
+;; arithmetic and rounds by searching the table of encoded
 ;; values, so it shares no bit tricks with the conversions under test.
 
 (defun encoding-format (encoding)
@@ -67,8 +67,7 @@
                 values)))))
 
 (defun reference-encode (encoding f32-bits &optional (rounding :nearest-even))
-  "Expected encoded bits for single-float F32-BITS, rounding to nearest even or
-toward zero, where finite overflow gives the largest finite value."
+  "Expected encoded bits for single-float F32-BITS under ROUNDING."
   (multiple-value-bind (exponent-bits mantissa-bits) (encoding-format encoding)
     (let* ((sign (if (logbitp 31 f32-bits) #x8000 0))
            (magnitude (ldb (byte 31 0) f32-bits))
@@ -90,7 +89,12 @@ toward zero, where finite overflow gives the largest finite value."
                                (setf low middle)
                                (setf high (1- middle)))))
                 (cond
-                  ((eq rounding :truncate) (min low (1- infinity)))
+                  ((or (eq rounding :truncate)
+                       (and (eq rounding :floor) (zerop sign))
+                       (and (eq rounding :ceiling) (plusp sign)))
+                   (min low (1- infinity)))
+                  ((member rounding '(:floor :ceiling))
+                   (if (and (< low infinity) (/= (aref table low) value)) (1+ low) low))
                   ((or (= low infinity) (= (aref table low) value)) low)
                   (t
                     (let ((midpoint (/ (+ (aref table low) (aref table (1+ low))) 2)))
@@ -168,7 +172,7 @@ fixed pseudo-random sample."
   (dolist (encoding '(:bf16 :f16))
     (let* ((bits (encode-inputs encoding))
            (input (f32-vector-from-bits bits)))
-      (dolist (rounding '(:nearest-even :truncate))
+      (dolist (rounding '(:nearest-even :truncate :floor :ceiling))
         (let ((expected (map 'vector (lambda (x) (reference-encode encoding x rounding)) bits)))
           (dolist (backend (available-backends))
             (with-backend (backend)
@@ -262,28 +266,74 @@ fixed pseudo-random sample."
       (is (= #xbf81 (encode-bits :bf16 #xbf81ffff :truncate)))   ; toward zero, not floor
       (is (= #x7f80 (encode-bits :bf16 #x7f800000 :truncate))))))
 
+(test float-encoding-native-rounding-fallback
+  (let ((bits '(#x3f800001 #xbf800001 #x00000001 #x80000001 #x7f7fffff #xff7fffff)))
+    (dolist (backend (available-backends))
+      (with-backend (backend)
+        (dolist (modes (remove-duplicates
+                       (list 0 (logand #b0011 simd::*native-float-encoding-rounding-modes*)
+                             simd::*native-float-encoding-rounding-modes*)))
+          (let ((simd::*native-float-encoding-rounding-modes* modes))
+            (dolist (rounding '(:nearest-even :truncate :floor :ceiling))
+              (is (eq (not (null (simd::native-encoded-conversion-p t rounding)))
+                      (and (not (null (member backend '(:native :native-copy :sbcl))))
+                           simd::*native-float-encoding-available-p*
+                           (logbitp (simd::encoding-rounding-code rounding) modes))))
+              (dolist (encoding '(:bf16 :f16))
+                (let ((destination (make-array (length bits) :element-type '(unsigned-byte 16))))
+                  (simd:convert! destination (f32-vector-from-bits bits)
+                                 :destination-encoding encoding :rounding rounding)
+                  (is (equalp destination (map 'vector (lambda (x) (reference-encode encoding x rounding))
+                                              bits))))))))))))
+
+(test float-encoding-directed-boundaries
+  (dolist (backend (available-backends))
+    (with-backend (backend)
+      (dolist (encoding '(:bf16 :f16))
+        (dolist (rounding '(:floor :ceiling))
+          (is (= 0 (encode-bits encoding 0 rounding)))
+          (is (= #x8000 (encode-bits encoding #x80000000 rounding)))
+          (is (= (if (eq rounding :ceiling) 1 0) (encode-bits encoding 1 rounding)))
+          (is (= (if (eq rounding :floor) #x8001 #x8000)
+                 (encode-bits encoding #x80000001 rounding)))
+          (is (= (if (eq encoding :f16) #x7c00 #x7f80)
+                 (encode-bits encoding #x7f800000 rounding)))
+          (is (= (if (eq encoding :f16) #xfc00 #xff80)
+                 (encode-bits encoding #xff800000 rounding)))))
+      (is (= #x7bff (encode-bits :f16 #x477fe001 :floor)))
+      (is (= #x7c00 (encode-bits :f16 #x477fe001 :ceiling)))
+      (is (= #xfc00 (encode-bits :f16 #xc77fe001 :floor)))
+      (is (= #xfbff (encode-bits :f16 #xc77fe001 :ceiling)))
+      (is (= #x03ff (encode-bits :f16 #x387fffff :floor)))
+      (is (= #x0400 (encode-bits :f16 #x387fffff :ceiling)))
+      (is (= #x8400 (encode-bits :f16 #xb87fffff :floor)))
+      (is (= #x83ff (encode-bits :f16 #xb87fffff :ceiling))))))
+
 (test float-encoding-slices-and-tails
   (dolist (backend (available-backends))
     (with-backend (backend)
       (dolist (encoding '(:bf16 :f16))
-        (let* ((bits (loop for i below 40 collect (reference-decode :f16 (* 811 (1+ i)))))
-               (input (f32-vector-from-bits bits))
-               (expected (map 'vector (lambda (x) (reference-encode encoding x)) bits)))
-          (loop for count from 0 to 19 do
-            (let ((destination (make-array 45 :element-type '(unsigned-byte 16)
-                                              :initial-element 7)))
-              (simd:convert! destination input :destination-encoding encoding
-                                               :start 3 :end (+ 3 count) :destination-start 5)
-              (is (equalp (subseq destination 5 (+ 5 count)) (subseq expected 3 (+ 3 count))))
-              (is (every (lambda (x) (= x 7)) (subseq destination 0 5)))
-              (is (every (lambda (x) (= x 7)) (subseq destination (+ 5 count))))
-              (let ((round-trip (make-array 45 :element-type 'single-float :initial-element 9.0)))
-                (simd:convert! round-trip destination :input-encoding encoding
-                                                      :start 5 :end (+ 5 count))
-                (is (equalp (map 'vector #'f32-bits (subseq round-trip 5 (+ 5 count)))
-                            (map 'vector (lambda (x) (reference-decode encoding x))
-                                 (subseq expected 3 (+ 3 count)))))
-                (is (= 9.0 (aref round-trip 4)))))))))))
+        (dolist (rounding '(:nearest-even :truncate :floor :ceiling))
+          (let* ((bits (loop for i below 40 collect
+                            (logior (if (oddp i) #x80000000 0)
+                                    (1+ (reference-decode :f16 (* 811 (1+ i)))))))
+                 (input (f32-vector-from-bits bits))
+                 (expected (map 'vector (lambda (x) (reference-encode encoding x rounding)) bits)))
+            (loop for count from 0 to 19 do
+              (let ((destination (make-array 45 :element-type '(unsigned-byte 16)
+                                                :initial-element 7)))
+                (simd:convert! destination input :destination-encoding encoding :rounding rounding
+                                                 :start 3 :end (+ 3 count) :destination-start 5)
+                (is (equalp (subseq destination 5 (+ 5 count)) (subseq expected 3 (+ 3 count))))
+                (is (every (lambda (x) (= x 7)) (subseq destination 0 5)))
+                (is (every (lambda (x) (= x 7)) (subseq destination (+ 5 count))))
+                (let ((round-trip (make-array 45 :element-type 'single-float :initial-element 9.0)))
+                  (simd:convert! round-trip destination :input-encoding encoding
+                                                        :start 5 :end (+ 5 count))
+                  (is (equalp (map 'vector #'f32-bits (subseq round-trip 5 (+ 5 count)))
+                              (map 'vector (lambda (x) (reference-decode encoding x))
+                                   (subseq expected 3 (+ 3 count)))))
+                  (is (= 9.0 (aref round-trip 4))))))))))))
 
 (test float-encoding-errors
   (let ((halves (make-array 4 :element-type '(unsigned-byte 16)))
@@ -296,8 +346,8 @@ fixed pseudo-random sample."
         (signals error (simd:convert! singles halves :input-encoding :bfloat16))
         (signals error (simd:convert! bytes singles :destination-encoding :f16))
         (signals error (simd:convert! singles bytes :input-encoding :bf16))
-        (signals error (simd:convert! halves singles :destination-encoding :bf16 :rounding :floor))
-        (signals error (simd:convert! halves singles :destination-encoding :f16 :rounding :ceiling))
+        (signals error (simd:convert! halves singles :destination-encoding :bf16 :rounding :unknown))
+        (signals error (simd:convert! singles halves :input-encoding :f16 :rounding :unknown))
         (simd:convert! singles halves :input-encoding :f16 :rounding :floor)
         (signals error (simd:convert! halves doubles :destination-encoding :bf16))
         (signals error (simd:convert! doubles halves :input-encoding :f16))

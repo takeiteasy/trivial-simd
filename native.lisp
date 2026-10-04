@@ -163,7 +163,7 @@
                '(("ts_extended_f32_to_bf16" %native-extended-f32-to-bf16)
                  ("ts_extended_f32_to_f16" %native-extended-f32-to-f16))
              collect `(define-native (,c-name ,lisp-name) :void
-                        (output :pointer) (input :pointer) (count :size) (truncate :int)))))
+                        (output :pointer) (input :pointer) (count :size) (rounding :int)))))
 
 (define-native-extended-calls)
 
@@ -177,6 +177,15 @@
 (defvar *native-float-encoding-available-p*
   (and *native-available-p*
        (null (missing-native-symbols *native-float-encoding-symbols*))))
+
+(define-native ("ts_extended_float_encoding_rounding_modes" %native-float-encoding-rounding-modes) :uint)
+
+(defvar *native-float-encoding-rounding-modes*
+  (if *native-float-encoding-available-p*
+      (if (null (missing-native-symbols '("ts_extended_float_encoding_rounding_modes")))
+          (%native-float-encoding-rounding-modes)
+          #b0011)
+      0))
 
 (when (and *native-available-p* (not *native-float-encoding-available-p*))
   (warn "The native library lacks ~{~A~^, ~}, so bf16/f16 CONVERT! uses the slower ~

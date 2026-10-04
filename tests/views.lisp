@@ -249,10 +249,12 @@ subnormal difference, which traps on Lisps that enable underflow traps."
             (*view-case* (list 'convert-encoded length)))
         (dotimes (i length) (setf (aref floats i) (/ (aref floats i) 3)))
         (dolist (encoding '(:bf16 :f16))
-          (dolist (rounding '(:nearest-even :truncate))
-            (check-views (lambda (d i) (simd:convert! d i :destination-encoding encoding
-                                                          :rounding rounding))
-                         (list (blank '(unsigned-byte 16) length) floats)))
+          (dolist (modes (remove-duplicates (list simd::*native-float-encoding-rounding-modes* #b0011)))
+            (let ((simd::*native-float-encoding-rounding-modes* modes))
+              (dolist (rounding '(:nearest-even :truncate :floor :ceiling))
+                (check-views (lambda (d i) (simd:convert! d i :destination-encoding encoding
+                                                              :rounding rounding))
+                             (list (blank '(unsigned-byte 16) length) floats)))))
           (let ((encoded (blank '(unsigned-byte 16) length)))
             (simd:convert! encoded floats :destination-encoding encoding)
             (check-views (lambda (d i) (simd:convert! d i :input-encoding encoding))
