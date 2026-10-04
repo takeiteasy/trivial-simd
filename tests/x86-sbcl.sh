@@ -31,5 +31,5 @@ rsync -a --delete --exclude build --exclude .git "$root/" "$work/"
 cd "$work"
 # Contrib fasls (asdf, sb-simd) sit under obj/sbcl-home in this tarball.
 SBCL_HOME=$sbcl_dir/obj/sbcl-home exec arch -x86_64 "$sbcl_dir/src/runtime/sbcl" \
-    --core "$sbcl_dir/output/sbcl.core" --noinform --no-sysinit --no-userinit \
+    --dynamic-space-size 4096 --core "$sbcl_dir/output/sbcl.core" --noinform --no-sysinit --no-userinit \
     --non-interactive --load tests/run.lisp "$@"

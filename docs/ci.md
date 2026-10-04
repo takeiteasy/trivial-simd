@@ -3,7 +3,8 @@
 CI runs a small set of jobs automatically and the full Linux and Windows matrix on
 request. macOS runs locally; see
 [local platform runs](testing.md#local-platform-runs). Lisp errors return a
-failing process status in Roswell test steps.
+failing process status in Roswell test steps. SBCL jobs reserve a 4 GiB heap
+for [cold test compilation](testing.md).
 
 ## When jobs run
 

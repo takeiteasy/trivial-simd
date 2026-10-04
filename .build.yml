@@ -19,4 +19,4 @@ tasks:
   - test: |
       cd trivial-simd
       ctest --test-dir build --output-on-failure
-      sbcl --script tests/run.lisp
+      sbcl --dynamic-space-size 4096 --script tests/run.lisp

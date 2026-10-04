@@ -74,8 +74,10 @@ and collection with populated helper caches. Kernel tests cover register spillin
 scalar-returning sums with slices and spilling. ECL also exercises interpreted
 spilling and reduction definitions.
 
+SBCL test runs reserve a 4 GiB heap for cold compilation.[^sbcl-heap]
+
 ```sh
-sbcl --script tests/run.lisp
+sbcl --dynamic-space-size 4096 --script tests/run.lisp
 ccl --no-init --load tests/run.lisp --eval '(quit)'
 ecl --load tests/run.lisp --eval '(quit)'
 ```
@@ -89,7 +91,7 @@ Most jobs run on request; see [CI](ci.md).
 For a local ARM64 native check, build the library first, then run:
 
 ```sh
-TRIVIAL_SIMD_BACKEND=native sbcl --script tests/run.lisp
+TRIVIAL_SIMD_BACKEND=native sbcl --dynamic-space-size 4096 --script tests/run.lisp
 ```
 
 ## Local platform runs
@@ -389,5 +391,7 @@ for each Lisp. See [ARM64 FMA measurements](arm64-fma.md#performance-gate).
     library cannot share the ARM64 `build/`. The SBCL tarball keeps its contrib
     fasls under `obj/sbcl-home`, which the script sets as `SBCL_HOME`.
 
-[^sbcl-heap]: The ARM64 SBCL script and the SBCL CI jobs reserve a 4 GiB dynamic
-    heap for compiling the suite; the default 1 GiB heap is close to its limit.
+[^sbcl-heap]: Compiling the suite's expanded kernel definitions in the same
+    image as the library can exceed SBCL's default 1 GiB heap. SBCL CI jobs
+    and both local architecture scripts reserve 4 GiB. For direct runs, pass
+    `--dynamic-space-size 4096` before `--script` or other Lisp options.

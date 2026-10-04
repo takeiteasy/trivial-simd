@@ -219,5 +219,5 @@ jobs:
         shell: pwsh
         run: |
           if (-not (Test-Path build/trivial_simd.dll)) { throw 'Native DLL is missing' }
-          & $env:SBCL_EXE --script tests/run.lisp
+          & $env:SBCL_EXE --dynamic-space-size 4096 --script tests/run.lisp
           if ($LASTEXITCODE -ne 0) { throw "Tests exited $LASTEXITCODE" }
