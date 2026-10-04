@@ -22,16 +22,21 @@ static double encoded_value(unsigned bits, unsigned fraction_bits, unsigned expo
 }
 
 /* Search representable values rather than reproducing the bit-rounding algorithm. */
-static uint16_t reference_encode(uint32_t bits, int f16, int rounding) {
+static uint16_t reference_encode_wide(uint64_t bits, int f64, int f16, int rounding) {
     unsigned fraction_bits = f16 ? 10 : 7, exponent_bits = f16 ? 5 : 8;
     int bias = f16 ? 15 : 127;
     unsigned infinity = ((1u << exponent_bits) - 1u) << fraction_bits;
-    unsigned sign = (bits >> 16) & 0x8000u, magnitude = bits & 0x7fffffffu;
-    if (magnitude >= 0x7f800000u)
-        return (uint16_t)(sign | infinity | (magnitude > 0x7f800000u
-            ? (1u << (fraction_bits - 1)) | ((magnitude >> (23 - fraction_bits)) & ((1u << fraction_bits) - 1u))
+    unsigned sign_shift = f64 ? 48 : 16, precision = f64 ? 52 : 23;
+    uint64_t magnitude = bits & (f64 ? UINT64_C(0x7fffffffffffffff) : UINT64_C(0x7fffffff));
+    uint64_t input_infinity = f64 ? UINT64_C(0x7ff0000000000000) : UINT64_C(0x7f800000);
+    unsigned sign = (unsigned)(bits >> sign_shift) & 0x8000u;
+    if (magnitude >= input_infinity)
+        return (uint16_t)(sign | infinity | (magnitude > input_infinity
+            ? (1u << (fraction_bits - 1)) | (unsigned)((magnitude >> (precision - fraction_bits)) & ((1u << fraction_bits) - 1u))
             : 0u));
-    double value = (double)ts_bits_float(magnitude);
+    double value;
+    if (f64) memcpy(&value, &magnitude, sizeof value);
+    else value = (double)ts_bits_float((uint32_t)magnitude);
     unsigned low = 0, high = infinity;
     while (low < high) {
         unsigned middle = (low + high + 1) / 2;
@@ -52,6 +57,78 @@ static uint16_t reference_encode(uint32_t bits, int f16, int rounding) {
         }
     }
     return (uint16_t)(sign | result);
+}
+
+static uint16_t reference_encode(uint32_t bits, int f16, int rounding) {
+    return reference_encode_wide(bits, 0, f16, rounding);
+}
+
+static uint64_t double_bits(double value) {
+    uint64_t bits; memcpy(&bits, &value, sizeof bits); return bits;
+}
+
+static void check_f64_block(const double *input, size_t n, int f16, int rounding) {
+    uint16_t output[1026];
+    for (size_t i = 0; i < n + 2; ++i) output[i] = 0x1234;
+    ts_extended_convert_encoded(output + 1, input, n, f16 ? 3 : 2, 1, rounding);
+    assert(output[0] == 0x1234 && output[n + 1] == 0x1234);
+    for (size_t i = 0; i < n; ++i)
+        assert(output[i + 1] == reference_encode_wide(double_bits(input[i]), 1, f16, rounding));
+}
+
+static void check_extended(void) {
+    assert(ts_extended_encoded_conversion_rounding_modes() == 0xfu);
+    uint16_t input[1024], output[1024];
+    double wide[1024];
+    for (int f16 = 0; f16 <= 1; ++f16) {
+        unsigned precision = f16 ? 10 : 7, exponent_bits = f16 ? 5 : 8;
+        int bias = f16 ? 15 : 127;
+        unsigned infinity = ((1u << exponent_bits) - 1) << precision;
+        for (unsigned base = 0; base < 65536; base += 1024) {
+            for (unsigned i = 0; i < 1024; ++i) input[i] = (uint16_t)(base + i);
+            ts_extended_convert_encoded(wide, input, 1024, 1, f16 ? 3 : 2, 0);
+            for (unsigned i = 0; i < 1024; ++i) {
+                unsigned magnitude = input[i] & 0x7fff, fraction = magnitude & ((1u << precision) - 1);
+                uint64_t sign = (uint64_t)(input[i] & 0x8000) << 48;
+                uint64_t expected = sign | (magnitude >= infinity ?
+                    UINT64_C(0x7ff0000000000000) | ((uint64_t)fraction << (52 - precision)) |
+                    (fraction ? UINT64_C(0x8000000000000) : 0) :
+                    double_bits(encoded_value(magnitude, precision, exponent_bits, bias)));
+                assert(double_bits(wide[i]) == expected);
+            }
+            for (int rounding = 0; rounding < 4; ++rounding) {
+                ts_extended_convert_encoded(output, input, 1024, f16 ? 2 : 3, f16 ? 3 : 2, rounding);
+                for (unsigned i = 0; i < 1024; ++i)
+                    assert(output[i] == reference_encode_wide(double_bits(wide[i]), 1, !f16, rounding));
+                ts_extended_convert_encoded(output, input, 1024, f16 ? 3 : 2, f16 ? 3 : 2, rounding);
+                assert(memcmp(input, output, sizeof input) == 0);
+            }
+        }
+        for (unsigned base = 0; base < infinity; base += 128) {
+            size_t n = 0;
+            for (unsigned index = base; index < infinity && index < base + 128; ++index) {
+                double midpoint = (encoded_value(index, precision, exponent_bits, bias) +
+                                   encoded_value(index + 1, precision, exponent_bits, bias)) / 2;
+                uint64_t middle = double_bits(midpoint);
+                for (int delta = -1; delta <= 1; ++delta) {
+                    uint64_t bits = middle + delta;
+                    memcpy(wide + n++, &bits, sizeof bits);
+                    bits |= UINT64_C(0x8000000000000000);
+                    memcpy(wide + n++, &bits, sizeof bits);
+                }
+            }
+            for (int rounding = 0; rounding < 4; ++rounding) check_f64_block(wide, n, f16, rounding);
+        }
+        const uint64_t edges[] = {0, UINT64_C(0x8000000000000000), 1, UINT64_C(0x8000000000000001),
+            UINT64_C(0x7fefffffffffffff), UINT64_C(0xffefffffffffffff),
+            UINT64_C(0x7ff0000000000000), UINT64_C(0xfff0000000000000),
+            UINT64_C(0x7ff0000000000001), UINT64_C(0xfff923456789abcd)};
+        for (size_t i = 0; i < 1024; ++i) memcpy(wide + i, edges + i % (sizeof edges / sizeof *edges), sizeof(double));
+        for (int rounding = 0; rounding < 4; ++rounding) {
+            for (size_t n = 0; n <= 19; ++n) check_f64_block(wide + 1, n, f16, rounding);
+            check_f64_block(wide, 513, f16, rounding);
+        }
+    }
 }
 
 static void check_results(const float *input, const uint16_t *expected, size_t n, int f16, int rounding) {
@@ -99,15 +176,25 @@ static uint64_t read_fpsr(void) {
 #endif
 
 static void check_environment(const float *input, size_t n) {
-    uint16_t expected[1024];
+    uint16_t expected[1024], encoded[1024], cross[1024], cross_expected[1024];
+    double wide[1024], decoded[1024];
+    float decoded32[1024];
+    uint32_t decoded32_expected[1024];
     fenv_t saved;
     assert(fegetenv(&saved) == 0);
     const int caller_modes[] = {FE_TONEAREST, FE_TOWARDZERO, FE_DOWNWARD, FE_UPWARD};
     for (int f16 = 0; f16 <= 1; ++f16) {
         for (int rounding = 0; rounding < 4; ++rounding) {
             assert(fesetenv(&saved) == 0);
-            for (size_t i = 0; i < n; ++i)
+            for (size_t i = 0; i < n; ++i) {
+                uint64_t bits = ts_f32_bits_to_f64_bits(ts_float_bits(input[i]));
+                memcpy(wide + i, &bits, sizeof bits);
                 expected[i] = reference_encode(ts_float_bits(input[i]), f16, rounding);
+                encoded[i] = expected[i];
+                float value = f16 ? ts_f16_to_f32_scalar(encoded[i]) : ts_bf16_to_f32_scalar(encoded[i]);
+                decoded32_expected[i] = ts_float_bits(value);
+                cross_expected[i] = reference_encode(decoded32_expected[i], !f16, rounding);
+            }
             for (size_t mode = 0; mode < 4; ++mode) {
                 assert(fesetenv(&saved) == 0);
                 assert(fesetround(caller_modes[mode]) == 0);
@@ -125,6 +212,20 @@ static void check_environment(const float *input, size_t n) {
 #endif
                 int flags = fetestexcept(FE_ALL_EXCEPT);
                 check_results(input, expected, n, f16, rounding);
+                ts_extended_convert_encoded(encoded, wide, n, f16 ? 3 : 2, 1, rounding);
+                assert(memcmp(encoded, expected, n * sizeof(uint16_t)) == 0);
+                ts_extended_convert_encoded(decoded, encoded, n, 1, f16 ? 3 : 2, rounding);
+                if (f16) ts_extended_f16_to_f32(decoded32, encoded, n);
+                else ts_extended_bf16_to_f32(decoded32, encoded, n);
+                for (size_t i = 0; i < n; ++i) assert(ts_float_bits(decoded32[i]) == decoded32_expected[i]);
+                ts_extended_convert_encoded(cross, encoded, n, f16 ? 2 : 3, f16 ? 3 : 2, rounding);
+                for (size_t i = 0; i < n; ++i) {
+                    if (cross[i] != cross_expected[i]) {
+                        fprintf(stderr, "cross source=%s rounding=%d caller=%zu lane=%zu bits=%04x got=%04x expected=%04x\n",
+                                f16 ? "f16" : "bf16", rounding, mode, i, encoded[i], cross[i], cross_expected[i]);
+                        abort();
+                    }
+                }
 #if defined(__aarch64__)
                 assert(read_fpcr() == fpcr && read_fpsr() == fpsr);
 #elif defined(__x86_64__) || defined(_M_X64)
@@ -161,6 +262,7 @@ int main(void) {
         }
         check_block(input, 1024);
     }
+    check_extended();
     puts("Float encoding rounding and environment checks passed.");
     return 0;
 }

@@ -20,3 +20,13 @@
   (dolist (rounding '(:nearest-even :truncate :floor :ceiling))
     (trivial-simd:convert! halves floats :destination-encoding :f16 :rounding rounding)
     (format t "~S f16 bits: ~{~4,'0X~^ ~}~%" rounding (coerce halves 'list))))
+
+(let ((doubles (make-array 3 :element-type 'double-float
+                            :initial-contents '(1.0d0 1.0004882812500002d0 -2.0d0)))
+      (halves (make-array 3 :element-type '(unsigned-byte 16)))
+      (bfloat (make-array 3 :element-type '(unsigned-byte 16))))
+  (trivial-simd:convert! halves doubles :destination-encoding :f16)
+  (trivial-simd:convert! bfloat halves :input-encoding :f16 :destination-encoding :bf16)
+  (trivial-simd:convert! doubles halves :input-encoding :f16)
+  (format t "Direct f64/f16: ~S~%bf16 bits: ~{~4,'0X~^ ~}~%"
+          doubles (coerce bfloat 'list)))

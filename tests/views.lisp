@@ -738,3 +738,23 @@ subnormal difference, which traps on Lisps that enable underflow traps."
         (setf (trivial-simd/blas:matrix-ref view 1 1) 42.0)
         (is (= 42.0 (trivial-simd/blas:matrix-ref view 1 1)))
         (is (= 42.0 (simd::view-ref f32 5)))))))
+
+(test vector-view-extended-encoded-conversions
+  (do-view-backends
+    (dolist (length '(0 1 7 255 256 257))
+      (dolist (encoding '(:bf16 :f16))
+        (let* ((input (sample-vector :f64 length :seed 9))
+               (encoded (blank '(unsigned-byte 16) length))
+               (*view-case* (list 'extended-encoded encoding length)))
+          (simd:convert! encoded input :destination-encoding encoding)
+          (dolist (modes (list #xf #x3 0))
+            (let ((simd::*native-encoded-conversion-rounding-modes* modes))
+              (dolist (rounding '(:nearest-even :truncate :floor :ceiling))
+                (check-views (lambda (d i) (simd:convert! d i :destination-encoding encoding :rounding rounding))
+                             (list (blank '(unsigned-byte 16) length) input))
+                (check-views (lambda (d i) (simd:convert! d i :input-encoding encoding :rounding rounding))
+                             (list (blank 'double-float length) encoded))
+                (check-views (lambda (d i)
+                               (simd:convert! d i :input-encoding encoding :rounding rounding
+                                                 :destination-encoding (if (eq encoding :bf16) :f16 :bf16)))
+                             (list (blank '(unsigned-byte 16) length) encoded))))))))))

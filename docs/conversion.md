@@ -36,8 +36,9 @@ library is present. Other pairs use typed scalar conversion.
 
 Lisp has no 16-bit float type, so bf16 (bfloat16) and f16 (IEEE binary16)
 values are stored as their bit patterns in `(unsigned-byte 16)` vectors.
-`:input-encoding` or `:destination-encoding` names the encoding of that
-vector, `:bf16` or `:f16`, and the other vector must be `single-float`:
+`:input-encoding` and `:destination-encoding` name the encoding of each
+unsigned-byte-16 vector, `:bf16` or `:f16`. The other operand may be
+`single-float`, `double-float`, or another encoded vector:
 
 ```lisp
 (let ((weights (make-array n :element-type '(unsigned-byte 16)))
@@ -48,14 +49,24 @@ vector, `:bf16` or `:f16`, and the other vector must be `single-float`:
 ```
 
 Without an encoding keyword an `(unsigned-byte 16)` vector holds integers, as
-for any other conversion. Only one side may be encoded; to convert between bf16
-and f16, or to or from double-float, convert through a single-float vector.
+for any other conversion. Both encoding keywords convert between encoded
+formats. Identical encodings copy raw bits, including NaN payloads, and accept
+in-place use. Shifted overlap follows the [bulk overlap limitation](api.md#limitations).
+
+```lisp
+(trivial-simd:convert! halves doubles :destination-encoding :f16)
+(trivial-simd:convert! doubles halves :input-encoding :f16)
+(trivial-simd:convert! bfloat halves :input-encoding :f16 :destination-encoding :bf16)
+```
+
+Double-float narrowing rounds once from the original value to the destination
+encoding. Cross-format conversions need no full-vector intermediate.[^extended]
 
 | Direction | Behavior |
 |---|---|
-| bf16 or f16 to single-float | Exact, including subnormals, infinities and signed zeros |
-| single-float to bf16 or f16 | Apply the requested rounding mode, including at subnormal and overflow boundaries |
-| NaN in either direction | Quiet NaN with the same sign and the leading payload bits that fit |
+| bf16 or f16 to single-float or double-float | Exact, including subnormals, infinities and signed zeros |
+| single-float or double-float to bf16 or f16 | Apply the requested rounding mode, including at subnormal and overflow boundaries |
+| NaN when formats differ | Quiet NaN with the same sign and the leading payload bits that fit |
 
 Narrowing accepts all four rounding modes. Exact values and signed zeros are
 unchanged. Widening is exact, so it accepts any valid `:rounding`. Infinities
@@ -100,8 +111,10 @@ Shifted overlap follows the [bulk overlap limitation](api.md#limitations).
 Floating-point exceptional behavior outside the float-to-integer rules is
 covered by the [IEEE consistency limitation](kernels.md#limitations).
 
-[^fpcr]: The bf16 paths and the x86-64 paths use integer instructions. The ARM64
-    f16 loops use `FCVTL`/`FCVTN`, so they save FPCR and FPSR, run with FPCR set
+[^fpcr]: The bf16 paths and x86-64 narrowing use integer instructions. SSE2
+    f16 widening uses an exact subtraction for subnormals and clears its sign
+    before restoring the source sign, preserving signed zeros in every caller
+    rounding mode. The ARM64 f16 loops use `FCVTL`/`FCVTN`, so they save FPCR and FPSR, run with FPCR set
     to the requested rounding mode, no flush-to-zero and no traps, and restore
     both on return. Widening uses round to nearest even.
 
@@ -118,3 +131,10 @@ covered by the [IEEE consistency limitation](kernels.md#limitations).
     vector tails. Directed rounding also sends nonzero inputs below the f16
     normal range through that scalar path. Windows ARM64 uses scalar f16
     conversion. The Lisp backend uses typed integer loops.
+
+[^extended]: The native encoded cross-format path reuses a 256-element f32 stack
+    buffer; both source formats widen exactly to f32. f64 narrowing and widening
+    use scalar integer bit conversion. The Lisp paths convert one element at a
+    time. Stride staging and native copy mode retain their existing allocation
+    rules. The extended native entry point reports rounding support separately;
+    missing symbols or modes select Lisp without disabling the existing f32 paths.

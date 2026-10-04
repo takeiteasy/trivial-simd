@@ -11,7 +11,11 @@ backend, and narrow every encoded value, the midpoints between neighbours and
 one unit either side, and pseudo-random single-floats. They compare the results
 with an independent rational reference for nearest-even, truncate, floor and
 ceiling, and cover subnormals, infinities, overflow, signed zeros, NaN payloads,
-slices, strides, tails and errors. Capability tests check native dispatch and the Lisp fallback for
+slices, strides, tails and errors. Extended conversions widen every encoded bit
+pattern to f64 and check both encoded cross-format directions in all rounding
+modes. f64 narrowing checks every destination midpoint and its adjacent f64
+values against the rational reference, plus random values and extreme magnitudes.
+Capability tests check native dispatch and the Lisp fallback for
 rounding modes unsupported by an older native library, including foreign-memory
 views. Signaling NaN inputs are skipped on Lisps that cannot hold one (ECL).
 A test fails when the native library is loaded but lacks the bf16/f16 symbols,

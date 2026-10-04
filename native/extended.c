@@ -457,6 +457,8 @@ static __m128 ts_f16_to_f32_sse2(__m128i h) {
                                   _mm_andnot_si128(subnormal, magic));
     __m128i small = _mm_castps_si128(_mm_sub_ps(_mm_castsi128_ps(scaled),
                                                 _mm_castsi128_ps(magic)));
+    /* Equal operands subtract to -0 under downward rounding. */
+    small = _mm_and_si128(small, _mm_set1_epi32(0x7fffffff));
     bits = _mm_or_si128(_mm_and_si128(subnormal, small), _mm_andnot_si128(subnormal, bits));
     __m128i sign = _mm_slli_epi32(_mm_and_si128(h, _mm_set1_epi32(0x8000)), 16);
     return _mm_castsi128_ps(_mm_or_si128(bits, sign));
@@ -535,4 +537,88 @@ int ts_extended_mask_reduce(unsigned op, const uint8_t *mask, size_t n, size_t *
     for (size_t i = 0; i < n; ++i) total += mask[i] != 0;
     *result = op == 0 ? total : op == 1 ? total != 0 : total == n;
     return 0;
+}
+
+unsigned ts_extended_encoded_conversion_rounding_modes(void) { return 0xfu; }
+
+/* Scalar f64 bit conversion; packed shifts and rounding are tracked in #72. */
+static uint16_t ts_f64_bits_to_encoded(uint64_t bits, int f16, int rounding) {
+    unsigned precision = f16 ? 10 : 7, bias = f16 ? 15 : 127;
+    unsigned infinity = (f16 ? 31u : 255u) << precision;
+    unsigned sign = (unsigned)(bits >> 48) & 0x8000u;
+    unsigned exponent = (unsigned)(bits >> 52) & 0x7ffu;
+    uint64_t fraction = bits & UINT64_C(0xfffffffffffff);
+    int away = (rounding == TS_ROUND_FLOOR && sign) ||
+               (rounding == TS_ROUND_CEILING && !sign);
+    if (exponent == 0x7ffu)
+        return (uint16_t)(sign | infinity | (fraction ?
+            (1u << (precision - 1)) | (unsigned)(fraction >> (52 - precision)) : 0));
+    int power = exponent ? (int)exponent - 1023 : -1022;
+    uint64_t mantissa = fraction | (exponent ? UINT64_C(1) << 52 : 0);
+    if (power > (int)bias)
+        return (uint16_t)(sign | (rounding == TS_ROUND_NEAREST_EVEN || away ? infinity : infinity - 1));
+    unsigned shift = 52 - precision;
+    unsigned base = 0;
+    if (power >= 1 - (int)bias) base = (unsigned)(power + (int)bias - 1) << precision;
+    else shift += (unsigned)(1 - (int)bias - power);
+    uint64_t quotient = shift < 64 ? mantissa >> shift : 0;
+    uint64_t remainder = shift < 64 ? mantissa & ((UINT64_C(1) << shift) - 1) : mantissa;
+    if (rounding == TS_ROUND_NEAREST_EVEN && shift < 64) {
+        uint64_t half = UINT64_C(1) << (shift - 1);
+        quotient += remainder > half || (remainder == half && (quotient & 1));
+    } else if (rounding != TS_ROUND_NEAREST_EVEN) quotient += away && remainder != 0;
+    unsigned result = base + (unsigned)quotient;
+    if (result >= infinity && rounding != TS_ROUND_NEAREST_EVEN && !away) result = infinity - 1;
+    return (uint16_t)(sign | result);
+}
+
+static uint64_t ts_f32_bits_to_f64_bits(uint32_t bits) {
+    uint64_t sign = (uint64_t)(bits & 0x80000000u) << 32;
+    unsigned exponent = (bits >> 23) & 0xffu;
+    uint32_t fraction = bits & 0x7fffffu;
+    if (exponent == 0xffu) return sign | UINT64_C(0x7ff0000000000000) | ((uint64_t)fraction << 29);
+    if (!exponent) {
+        if (!fraction) return sign;
+        int power = -126;
+        while (!(fraction & 0x800000u)) { fraction <<= 1; --power; }
+        return sign | ((uint64_t)(power + 1023) << 52) | ((uint64_t)(fraction & 0x7fffffu) << 29);
+    }
+    return sign | ((uint64_t)(exponent + 896) << 52) | ((uint64_t)fraction << 29);
+}
+
+/* Types: 0=f32, 1=f64, 2=bf16, 3=f16. */
+void ts_extended_convert_encoded(void *out, const void *input, size_t n,
+                                unsigned destination_type, unsigned input_type, int rounding) {
+    if (destination_type == input_type) {
+        size_t size = input_type == 0 ? sizeof(float) : input_type == 1 ? sizeof(double) : sizeof(uint16_t);
+        memmove(out, input, n * size);
+    } else if (input_type == 0) {
+        if (destination_type == 2) ts_extended_f32_to_bf16(out, input, n, rounding);
+        else ts_extended_f32_to_f16(out, input, n, rounding);
+    } else if (destination_type == 0) {
+        if (input_type == 2) ts_extended_bf16_to_f32(out, input, n);
+        else ts_extended_f16_to_f32(out, input, n);
+    } else if (input_type >= 2 && destination_type >= 2) {
+        float scratch[256];
+        for (size_t i = 0; i < n; i += 256) {
+            size_t count = n - i < 256 ? n - i : 256;
+            if (input_type == 2) ts_extended_bf16_to_f32(scratch, (const uint16_t *)input + i, count);
+            else ts_extended_f16_to_f32(scratch, (const uint16_t *)input + i, count);
+            if (destination_type == 2) ts_extended_f32_to_bf16((uint16_t *)out + i, scratch, count, rounding);
+            else ts_extended_f32_to_f16((uint16_t *)out + i, scratch, count, rounding);
+        }
+    } else if (input_type == 1) {
+        for (size_t i = 0; i < n; ++i) {
+            uint64_t bits;
+            memcpy(&bits, (const double *)input + i, sizeof bits);
+            ((uint16_t *)out)[i] = ts_f64_bits_to_encoded(bits, destination_type == 3, rounding);
+        }
+    } else {
+        for (size_t i = 0; i < n; ++i) {
+            uint16_t half = ((const uint16_t *)input)[i];
+            float value = input_type == 2 ? ts_bf16_to_f32_scalar(half) : ts_f16_to_f32_scalar(half);
+            uint64_t bits = ts_f32_bits_to_f64_bits(ts_float_bits(value));
+            memcpy((double *)out + i, &bits, sizeof bits);
+        }
+    }
 }

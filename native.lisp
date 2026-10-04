@@ -187,6 +187,18 @@
           #b0011)
       0))
 
+(define-native ("ts_extended_convert_encoded" %native-convert-encoded) :void
+  (output :pointer) (input :pointer) (count :size)
+  (destination-type :uint) (input-type :uint) (rounding :int))
+(define-native ("ts_extended_encoded_conversion_rounding_modes" %native-encoded-rounding-modes) :uint)
+
+(defvar *native-encoded-conversion-rounding-modes*
+  (if (and *native-available-p*
+           (null (missing-native-symbols '("ts_extended_convert_encoded"
+                                           "ts_extended_encoded_conversion_rounding_modes"))))
+      (%native-encoded-rounding-modes)
+      0))
+
 (when (and *native-available-p* (not *native-float-encoding-available-p*))
   (warn "The native library lacks ~{~A~^, ~}, so bf16/f16 CONVERT! uses the slower ~
          Lisp path. Rebuild it with cmake."

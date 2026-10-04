@@ -321,3 +321,25 @@ a contiguous call on plainly gathered temporaries. An item is a scalar or
     (is (= 10 (length (rest expansion))))
     (dolist (per-type (rest expansion))
       (is (equal '(defun defun defun) (mapcar #'first (rest per-type)))))))
+
+(test strided-convert-extended-encoded
+  (with-stride-cases (type '(double-float) strides)
+    (dolist (encoding '(:bf16 :f16))
+      (dolist (rounding '(:nearest-even :truncate :floor :ceiling))
+        (check-strided 'simd:convert!
+                       (list (list :out (copy-vector '(unsigned-byte 16) 40 300) :destination)
+                             (list :in (scrambled-vector type 40 1) :input))
+                       (subseq strides 0 2)
+                       :extra-keys (list :destination-encoding encoding :rounding rounding))
+        (check-strided 'simd:convert!
+                       (list (list :out (copy-vector type 40 300) :destination)
+                             (list :in (scrambled-vector '(unsigned-byte 16) 40 1) :input))
+                       (subseq strides 0 2)
+                       :extra-keys (list :input-encoding encoding :rounding rounding))
+        (check-strided 'simd:convert!
+                       (list (list :out (copy-vector '(unsigned-byte 16) 40 300) :destination)
+                             (list :in (scrambled-vector '(unsigned-byte 16) 40 1) :input))
+                       (subseq strides 0 2)
+                       :extra-keys (list :input-encoding encoding
+                                         :destination-encoding (if (eq encoding :bf16) :f16 :bf16)
+                                         :rounding rounding))))))

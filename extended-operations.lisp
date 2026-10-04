@@ -455,11 +455,14 @@ strides of DESTINATION then every operand, with NIL for scalars."
           (with-staged ((destination d-offset (first strides) :out)
                         (input i-offset (second strides)))
               (count :direct (if encoding
-                                 (native-encoded-conversion-p encode rounding)
+                                 (native-encoded-conversion-p
+                                  encode rounding
+                                  (extended-encoded-conversion-p destination input destination-encoding input-encoding))
                                  (native-float-conversion-p destination-type (vector-type input))))
             ;; TODO: scalar paths for other type pairs; add packed conversions where safe (#72).
             (cond (encoding
-                   (convert-encoded encoding encode rounding destination input count d-offset i-offset))
+                   (convert-encoded encoding encode rounding destination input count d-offset i-offset
+                                    destination-encoding input-encoding))
                   ((native-float-conversion-p destination-type (vector-type input))
                    (native-extended-float-convert destination input count d-offset i-offset))
                   (t
