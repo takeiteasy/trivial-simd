@@ -735,6 +735,16 @@ strides of DESTINATION then every operand, with NIL for scalars."
            (and ,result (+ (or start 0) ,result)))
         form))
 
+  (defun unshifted-kernel-inputs-forms (destination d-offset arguments offsets count)
+    "Forms replacing each of ARGUMENTS whose slice is shifted against DESTINATION's
+by a copy; see UNSHIFTED-KERNEL-INPUT."
+    (when destination
+      (loop for argument in arguments for offset in offsets
+            collect `(when (or (eq ,argument ,destination)
+                               (and (vector-view-p ,argument) (vector-view-p ,destination)))
+                       (multiple-value-setq (,argument ,offset)
+                         (unshifted-kernel-input ,destination ,d-offset ,argument ,offset ,count))))))
+
   (defun mask-kernel-expansion (name arguments expression)
     ;; TODO: SBCL mask kernels still use scalar loops; add packed expressions (#72).
     (unless arguments (error "A mask kernel needs input vectors"))
@@ -777,6 +787,7 @@ strides of DESTINATION then every operand, with NIL for scalars."
                 (list ,@(when destination '(destination-start)) ,@starts) start end)
              (destructuring-bind (,@(when destination (list d-offset)) ,@input-offsets)
                  ,offsets
+              ,@(unshifted-kernel-inputs-forms destination d-offset arguments input-offsets count)
               ,(staged-kernel-form
                 name reduction type destination d-offset arguments input-offsets
                 (if destination (cons 'destination-start starts) starts) count

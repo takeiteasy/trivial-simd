@@ -16,6 +16,26 @@ An elementwise kernel takes `destination`, one vector per argument, and the
 [slice keywords](api.md#slices), plus one `<argument>-start` keyword per argument.
 It returns `destination`. Any vector may be a [vector view](vector-views.md).
 
+### Overlap
+
+An elementwise kernel reads every input element before it writes any
+destination element, on every backend. The destination may share memory with
+any input, at the same slice position or shifted:
+
+```lisp
+(trivial-simd:define-kernel k (a b) (+ (* a b) 3))
+
+(k a a b :end 19 :destination-start 1) ; a[i+1] = old a[i]*b[i] + 3
+```
+
+Results match a call on a copy of each input. When an input's slice overlaps
+the destination's at another position, the call copies that input's slice
+first; this applies to Lisp vectors and to distinct views of the same memory.
+In-place calls at the same position and inputs that do not touch the
+destination are not copied.[^overlap] Reduction kernels write nothing, and
+[row batches](kernel-rows.md#output-and-errors) and
+[converted or repeated inputs](kernel-inputs.md) reject destination overlap.
+
 ## Expressions
 
 | Form | Meaning |
@@ -195,6 +215,9 @@ for measurements and [FMA fallback limitations](#limitations).
   [concurrent compilation ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/65).
 - SBCL kernels are generated only on x86-64 with `sb-simd`.
 
+[^overlap]: Each shifted, overlapping input costs one Lisp copy of its slice per
+    call. Without it, results would depend on write order: the Lisp and SBCL
+    backends write as they compute, and the native VM writes 256-element blocks.
 [^constants]: Float constants must be representable as `single-float`.
     Integer constants must be in range for the vector's element type.
 [^vm]: Instructions are four bytes: opcode, destination, and two operands. An

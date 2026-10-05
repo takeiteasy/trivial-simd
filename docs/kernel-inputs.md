@@ -64,8 +64,9 @@ inputs' individual starts.
 
 Types, bounds and prohibited overlap are checked before output writes.
 Destination overlap with converted or repeated inputs is rejected, including
-distinct views of overlapping memory. Ordinary elementwise inputs retain
-in-place aliasing. Row batches reject output overlap with every input span.
+distinct views of overlapping memory. Ordinary elementwise inputs may overlap
+the destination at any position and are read first; see
+[kernel overlap](kernels.md#overlap). Row batches reject output overlap with every input span.
 Empty slices read no input values and retain the existing reducer results.
 
 ## Row batching

@@ -37,6 +37,10 @@ indexes, overflow, wrapping and error cases.
 Kernel reducer tests compare `minimum`, `maximum`, `argmin`, `argmax`, `asum`
 and `nrm2` kernels with the bulk reducers on every backend, covering slices,
 block boundaries, ties, selections, spilling, complex vectors and overflow.
+Kernel overlap tests write into a slice shifted by one element in both
+directions on every backend, at 19 elements and across the 257-element native
+block boundary, for every integer type, masks, declared inputs, multi-pass
+kernels, float FMA and distinct views of one memory block.
 Declared-input tests cover all eight integer sources, both float precisions,
 conversion rounding, repeated scales, sliced block alignment, masks, reducers,
 row strides, views with small staging buffers, overlap rejection, native-symbol

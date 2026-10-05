@@ -66,7 +66,7 @@ individual staging blocks. Native copy access retains its existing input-copy
 costs.[^copy]
 
 Types, bounds, and prohibited overlap are checked before writes. Slice calls
-retain ordinary in-place operation. An arithmetic error in an output pass may
+follow the [kernel overlap rule](kernels.md#overlap). An arithmetic error in an output pass may
 leave partial output. Redefined kernels and retained older functions have
 separate pass closures and program lifetimes.
 

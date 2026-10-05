@@ -86,9 +86,9 @@ per call, measured with three calibrated batches; values are the median of three
 The SBCL ARM64 backend is tracked separately; ARM64 currently uses native C
 or Lisp. See [the ARM64 SBCL ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/31).
 
-Shifted overlap between an integer kernel's destination and input can produce
-backend-dependent results; see the
-[overlap semantics ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/67).
+Integer kernels read every input before writing; see
+[kernel overlap](kernels.md#overlap). Shifted overlap in bulk integer operations
+follows the [bulk overlap limitation](api.md#limitations).
 
 [^dispatch]: A kernel can serve floats and integers. Type-dependent validation
     happens at call time, including for empty vectors. An integer type rejects

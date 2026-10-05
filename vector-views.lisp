@@ -137,6 +137,26 @@ from OFFSET at STRIDE."
 
 (define-staging-transfers)
 
+(defun unshifted-kernel-input (destination d-offset input offset count)
+  "Return INPUT and OFFSET, or a Lisp copy of INPUT's COUNT-element slice and 0
+when that slice shares memory with DESTINATION's slice other than element for
+element, so a kernel reads every input element before writing any output (#67)."
+  (declare (type fixnum d-offset offset count))
+  (let ((input-size (vector-element-size (vector-type input)))
+        (output-size (vector-element-size (vector-type destination))))
+    (multiple-value-bind (input-low output-low)
+        (cond ((eq input destination) (values (* offset input-size) (* d-offset output-size)))
+              ((and (vector-view-p input) (vector-view-p destination))
+               (values (view-address input offset) (view-address destination d-offset)))
+              (t (return-from unshifted-kernel-input (values input offset))))
+      (if (and (or (/= input-low output-low) (/= input-size output-size))
+               (< input-low (+ output-low (* count output-size)))
+               (< output-low (+ input-low (* count input-size))))
+          (let ((copy (staging-buffer input count)))
+            (stage-in input offset 1 count copy)
+            (values copy 0))
+          (values input offset)))))
+
 (defvar *view-block-size* 4096
   "Elements per block when a backend reads a vector view through a Lisp buffer.")
 

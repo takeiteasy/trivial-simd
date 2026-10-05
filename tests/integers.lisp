@@ -299,3 +299,43 @@
                      (every #'zerop out))))))))
       (dolist (thread threads)
         (is (bordeaux-threads:join-thread thread))))))
+
+(simd:define-kernel integer-shifted (a b) (+ (* a b) 3))
+(simd:define-kernel integer-shifted-mask (a b) (> a b))
+
+(defun shifted-overlap-expected (function vector destination-start input-start count)
+  "VECTOR after writing (FUNCTION i) to COUNT elements from DESTINATION-START,
+where i indexes the inputs from INPUT-START: every input is read before any write."
+  (let ((expected (copy-seq vector)))
+    (dotimes (i count expected)
+      (setf (aref expected (+ destination-start i)) (funcall function (+ input-start i))))))
+
+(test integer-kernel-shifted-overlap-reads-inputs-first
+  ;; 257 elements cross the native 256-element block boundary.
+  (dolist (type *integer-elements*)
+    (multiple-value-bind (a b) (integer-samples type)
+      (dolist (count '(19 257))
+        (loop for (destination-start input-start) in '((1 0) (0 1) (2 2))
+              do (let ((expected (shifted-overlap-expected
+                                  (lambda (i) (integer-reference (+ (* (aref a i) (aref b i)) 3) type))
+                                  a destination-start input-start count)))
+                   (dolist (backend (available-backends))
+                     (let ((vector (copy-seq a)))
+                       (with-backend (backend)
+                         (integer-shifted vector vector b :end count :a-start input-start
+                                                          :b-start input-start
+                                                          :destination-start destination-start))
+                       (is (equalp expected vector)
+                           "~A ~A count ~D destination ~D input ~D" type backend count
+                           destination-start input-start))))))))
+  (let* ((source (make-array 259 :element-type '(unsigned-byte 8)
+                             :initial-contents (loop for i below 259 collect (mod (* 5 i) 7))))
+         (limit (make-array 259 :element-type '(unsigned-byte 8) :initial-element 0)))
+    (dolist (count '(19 257))
+      (let ((expected (shifted-overlap-expected
+                       (lambda (i) (if (> (aref source i) 0) 1 0)) source 1 0 count)))
+        (dolist (backend (available-backends))
+          (let ((vector (copy-seq source)))
+            (with-backend (backend)
+              (integer-shifted-mask vector vector limit :end count :destination-start 1))
+            (is (equalp expected vector) "mask ~A count ~D" backend count)))))))
