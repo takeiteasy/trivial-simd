@@ -92,7 +92,7 @@ row-batch rules. Zero rows write nothing; zero-length rows write typed zeros.
 
 | Backend | Declared-input execution |
 |---|---|
-| `:native` | Source-type descriptors; bounded load buffers; existing float VM |
+| `:native` | Source-type descriptors; packed ARM64 loaders; bounded buffers; float VM |
 | `:lisp` | Typed scalar loads and arithmetic |
 | `:sbcl` | Typed Lisp path |
 | Native library missing descriptor symbols | Typed Lisp fallback |
@@ -100,6 +100,12 @@ row-batch rules. Zero rows write nothing; zero-length rows write typed zeros.
 The native path prepares converted and repeated inputs once per 256-element
 block and uses one foreign call for an ordinary kernel or sum batch.[^norm] Preparation and
 spill storage are private to the invocation and reused across blocks and rows.
+Source-type dispatch occurs once per input and block. ARM64 uses NEON integer
+conversion and repeated-value broadcasts. Repeated inputs load and convert each
+stored value once per run. Other native targets use typed scalar conversion
+and SIMD broadcasts where available. The 64-bit-to-f32 path uses direct scalar
+conversion to preserve rounding.[^rounding]
+
 Copy access transfers stored source spans in their original types, rather than
 full-length float expansions. Lisp view staging preserves repetition phase
 across buffer boundaries.[^staging]
@@ -109,9 +115,11 @@ across buffer boundaries.[^staging]
 - Computation is f32/f64 only. Integer and complex kernels use bare arguments.
 - Packed quantization formats require decoding before the kernel call.
 - Float inputs do not convert between precisions.
-- Native source preparation uses scalar lanes and declared-input kernels use
-  scalar Lisp loops under `:sbcl`; packed loaders are tracked in
-  [#128](https://todo.sr.ht/~takeiteasy/trivial-simd/128).
+- Declared-input kernels use scalar Lisp loops under `:sbcl`; compiler
+  integration is tracked in [#129](https://todo.sr.ht/~takeiteasy/trivial-simd/129).
+- Native x86-64 integer preparation uses typed source loops. Additional packed
+  conversion primitives are tracked in
+  [#72](https://todo.sr.ht/~takeiteasy/trivial-simd/72).
 - On implementations without pinned array access, overlap checks compare array
   identity and foreign addresses; they cannot detect a foreign view into array
   storage.
@@ -123,3 +131,7 @@ across buffer boundaries.[^staging]
 
 [^norm]: Native `nrm2` can evaluate the expression in additional passes to rescale
     extreme double-float magnitudes, as with ordinary kernel inputs.
+
+[^rounding]: ARM64 widens s8/u8/s16/u16/s32/u32 directly to f32 or f64, and
+    s64/u64 directly to f64. Converting s64/u64 through f64 before f32 can round
+    twice; volatile scalar reads prevent Clang from introducing that intermediate.
