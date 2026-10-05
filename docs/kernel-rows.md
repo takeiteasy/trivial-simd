@@ -17,7 +17,8 @@ order as a separate invocation on that backend.
 `matrix` holds 1,000 contiguous rows of 32 elements. The zero stride reuses
 `weights` for every row. `results` receives 1,000 dot products. All operands are
 simple single-float or double-float vectors, or [foreign-memory views](vector-views.md)
-of the same precision. The call returns `results`.
+of the same precision. [Input declarations](kernel-inputs.md) also accept
+integer sources and block-repeated scales. The call returns `results`.
 
 ## Arguments
 
@@ -40,6 +41,10 @@ broadcasting are valid. A negative row stride reads rows in reverse order:
 ```
 
 The input row starts are 8, 4, and 0. Output stays in forward order.
+
+For [repeated inputs](kernel-inputs.md#row-batching), starts and strides count
+stored entries, the default stride is `ceiling(row-length/repeat)`, and every
+row restarts its block position.
 
 Dimensions and starts are nonnegative integers. Strides are signed 64-bit
 integers; the complete accessed spans must fit the vectors and native address

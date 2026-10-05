@@ -178,7 +178,9 @@ scaled to avoid overflow and underflow."
           (let ((sum 0d0))
             (dotimes (i count)
               (dolist (part (components (funcall element i)))
-                (incf sum (expt (/ part largest) 2))))
+                ;; A scaled square that underflows cannot affect a sum containing 1.
+                (incf sum (handler-case (expt (/ part largest) 2)
+                            (floating-point-underflow () 0d0)))))
             (* largest (sqrt sum)))))))
 
 (defun scaled-norm (input count offset)

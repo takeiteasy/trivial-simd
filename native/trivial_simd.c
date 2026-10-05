@@ -720,6 +720,8 @@ TS_REDUCE_FLOAT_OPERATIONS(f32, float, fabsf)
 TS_REDUCE_FLOAT_OPERATIONS(f64, double, fabs)
 TS_KERNEL_REDUCTION(f32, float, 0)
 TS_KERNEL_REDUCTION(f64, double, 0)
+
+#include "kernel-inputs.h"
 #define TS_REDUCE_INTEGER(suffix, type) \
     TS_REDUCE_INTEGER_OPERATIONS(suffix, type) \
     TS_KERNEL_REDUCTION(suffix, type, 1)

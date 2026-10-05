@@ -156,6 +156,8 @@
 (defmacro define-kernel (name (&rest arguments) expression)
   "Define an elementwise or reduction kernel. Float SUM kernels also accept
 ROWS, ROW-LENGTH, DESTINATION, DESTINATION-START and per-input ROW-STRIDE."
+  (when (some #'consp arguments)
+    (return-from define-kernel (declared-kernel-expansion name arguments expression)))
   (let* ((batch-p (and (consp expression) (eq (first expression) 'sum)))
          (scalar-name (if batch-p (gensym "SCALAR-KERNEL") name))
          (expansion (macroexpand-1 `(define-single-row-kernel ,scalar-name ,arguments ,expression))))

@@ -36,7 +36,8 @@ It returns `destination`. Any vector may be a [vector view](vector-views.md).
 
 `+`, `*`, `min`, and `max` with one operand return it unchanged. Empty operand
 lists and unsupported forms signal an error when the kernel is defined. Vectors
-share one numeric element type, chosen per call. Integer expressions use
+share one numeric element type, chosen per call, unless they use
+[typed or repeated input declarations](kernel-inputs.md). Integer expressions use
 [wrapping arithmetic](integers.md); `sqrt` and `fma` remain float-only.
 Comparisons use `=`, `/=`, `<`, `<=`, `>`, and `>=` with two operands. A
 comparison-only kernel writes a [byte mask](masks.md). Mask reductions return
@@ -110,19 +111,23 @@ the native library.
 | `:sbcl` | `sb-simd` pack loop with a scalar tail[^sbcl] |
 | `:native` | Register bytecode run by a C interpreter over 256-element blocks[^vm] |
 
+[Declared inputs](kernel-inputs.md#execution) use converted/repeated load buffers
+on `:native` and typed scalar loops on `:lisp` and `:sbcl`.
+
 Elementwise mask kernels and mask reductions use the native register VM on
 `:native`. Its comparison and selection opcodes process scalar lanes;
-arithmetic opcodes retain their SIMD paths. A `sum` over a selection uses a
+arithmetic opcodes retain their SIMD paths. With bare arguments, a `sum` over a selection uses a
 typed scalar loop, as do mask expressions on `:sbcl` and `:lisp`.
 On `:native`, `asum`, `nrm2`, `minimum`, `maximum`, `argmin` and `argmax` evaluate
 each 256-element block, then reduce it. `:sbcl` accumulates float `asum` and
 double-float `nrm2` with SIMD packs; its other reducers, and integer `asum`, use typed scalar loops.
 
-The native backend makes one foreign call per kernel call and needs no
-full-length intermediate arrays. Expressions that exceed eight registers spill
+The native backend makes one foreign call for arithmetic elementwise and sum
+kernels and needs no full-length intermediate result arrays. `nrm2` may evaluate
+additional passes to rescale extreme double-float magnitudes. Expressions that exceed eight registers spill
 intermediate values into scratch blocks. Scratch slots are reused, and their
 storage is allocated per call and freed before returning. Kernels that fit in
-eight registers and empty calls allocate no scratch storage.[^scratch]
+eight registers and empty calls allocate no spill scratch storage.[^scratch]
 
 Native code and constant buffers are allocated lazily and reclaimed when their
 kernel function becomes unreachable. Retained references to an older function

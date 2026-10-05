@@ -7,11 +7,12 @@
 #include <assert.h>
 
 static int fail_allocation;
+static size_t fail_allocation_at;
 static size_t allocations, releases;
 
 static void *test_malloc(size_t size) {
     ++allocations;
-    return fail_allocation ? NULL : malloc(size);
+    return fail_allocation || allocations == fail_allocation_at ? NULL : malloc(size);
 }
 
 static void test_free(void *pointer) {
@@ -709,7 +710,83 @@ static void check_rows_##suffix(void) { \
 CHECK_ROWS(f32, float)
 CHECK_ROWS(f64, double)
 
+#define CHECK_INPUTS(suffix, type, precision) \
+static void check_inputs_##suffix(void) { \
+    type x[600], scale[20], out[600], value; \
+    int8_t q[600]; \
+    for (size_t i = 0; i < 600; ++i) { x[i] = 0.5; q[i] = (int8_t)((int)(i % 17) - 8); } \
+    for (size_t i = 0; i < 20; ++i) scale[i] = (type)(i + 1); \
+    ts_kernel_input inputs[] = {{x, 600, 0, precision, 1, 0, 0}, \
+                                {q, 600, 0, 2, 1, 0, 0}, \
+                                {scale, 20, 0, precision, 32, 0, 0}}; \
+    uint8_t code[] = {TS_OP_MULTIPLY, 0, 8, 9, TS_OP_MULTIPLY, TS_KERNEL_OUTPUT, 0, 10}; \
+    size_t lengths[] = {0, 1, 3, 4, 5, 31, 32, 33, 255, 256, 257, 600}; \
+    size_t index; double wide; \
+    for (size_t l = 0; l < sizeof(lengths) / sizeof(lengths[0]); ++l) { \
+        size_t n = lengths[l], before = allocations; \
+        assert(ts_kernel_inputs_##suffix(code, sizeof(code), NULL, inputs, 3, out, 1, n, \
+                                         0, TS_INPUT_OUTPUT, 1, &wide, &index) == 0); \
+        assert(allocations == before + (n != 0) && allocations == releases); \
+        type expected = 0; \
+        for (size_t i = 0; i < n; ++i) { \
+            type term = (x[i] * (type)q[i]) * scale[i / 32]; \
+            assert(out[i] == term); expected += term; \
+        } \
+        assert(ts_kernel_inputs_##suffix(code, sizeof(code), NULL, inputs, 3, &value, 1, n, \
+                                         0, TS_INPUT_SUM, 1, &wide, &index) == 0); \
+        assert(value == expected && allocations == releases); \
+    } \
+    inputs[0].start = 5; inputs[1].start = 5; inputs[2].phase = 5; \
+    assert(ts_kernel_inputs_##suffix(code, sizeof(code), NULL, inputs, 3, out, 1, 285, \
+                                     0, TS_INPUT_OUTPUT, 1, &wide, &index) == 0); \
+    for (size_t i = 0; i < 285; ++i) assert(out[i] == (x[5+i] * (type)q[5+i]) * scale[(5+i)/32]); \
+    inputs[0].start = 0; inputs[1].start = 0; inputs[2].phase = 0; \
+    inputs[0].stride = 257; inputs[1].stride = 257; inputs[2].stride = 9; \
+    size_t before = allocations; \
+    assert(ts_kernel_inputs_##suffix(code, sizeof(code), NULL, inputs, 3, out, 2, 257, \
+                                     1, TS_INPUT_SUM, 1, &wide, &index) == 0); \
+    assert(allocations == before + 2 && allocations == releases); \
+    for (size_t row = 0; row < 2; ++row) { \
+        type expected = 0; \
+        for (size_t i = 0; i < 257; ++i) expected += x[row*257+i] * (type)q[row*257+i] * scale[row*9+i/32]; \
+        assert(out[row] == expected); \
+    } \
+    inputs[0].start = 257; inputs[1].start = 257; inputs[2].start = 9; \
+    inputs[0].stride = -257; inputs[1].stride = -257; inputs[2].stride = -9; \
+    assert(ts_kernel_inputs_##suffix(code, sizeof(code), NULL, inputs, 3, out, 2, 257, \
+                                     0, TS_INPUT_SUM, 1, &wide, &index) == 0); \
+    before = allocations; inputs[2].repeat = 0; \
+    assert(ts_kernel_inputs_##suffix(code, sizeof(code), NULL, inputs, 3, out, 2, 257, \
+                                     0, TS_INPUT_SUM, 1, &wide, &index) == -1); \
+    assert(allocations == before); inputs[2].repeat = 32; \
+    inputs[2].length = 1; \
+    assert(ts_kernel_inputs_##suffix(code, sizeof(code), NULL, inputs, 3, out, 2, 257, \
+                                     0, TS_INPUT_SUM, 1, &wide, &index) == -1); \
+    inputs[2].length = 20; inputs[2].stride = INT64_MIN; \
+    assert(ts_kernel_inputs_##suffix(code, sizeof(code), NULL, inputs, 3, out, 2, 257, \
+                                     0, TS_INPUT_SUM, 1, &wide, &index) == -1); \
+    inputs[2].stride = -9; \
+    before = releases; fail_allocation = 1; \
+    assert(ts_kernel_inputs_##suffix(code, sizeof(code), NULL, inputs, 3, out, 2, 257, \
+                                     1, TS_INPUT_SUM, 1, &wide, &index) == -1); \
+    assert(releases == before); allocations -= 2; fail_allocation = 0; \
+    fail_allocation_at = allocations + 2; before = releases; \
+    assert(ts_kernel_inputs_##suffix(code, sizeof(code), NULL, inputs, 3, out, 2, 257, \
+                                     1, TS_INPUT_SUM, 1, &wide, &index) == -1); \
+    assert(releases == before + 1); --allocations; fail_allocation_at = 0; \
+    type negative = -1; ts_kernel_input bad = {&negative, 1, 0, precision, 1, 0, 0}; \
+    uint8_t root[] = {TS_OP_SQRT, TS_KERNEL_OUTPUT, 8, 8}; \
+    assert(ts_kernel_inputs_##suffix(root, sizeof(root), NULL, &bad, 1, out, 1, 1, \
+                                     1, TS_INPUT_OUTPUT, 1, &wide, &index) == -2); \
+    assert(allocations == releases); \
+}
+
+CHECK_INPUTS(f32, float, 0)
+CHECK_INPUTS(f64, double, 1)
+
 int main(void) {
+    check_inputs_f32();
+    check_inputs_f64();
     check_rows_f32();
     check_rows_f64();
     check_swap_and_fill();

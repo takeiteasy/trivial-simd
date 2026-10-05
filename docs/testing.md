@@ -37,6 +37,11 @@ indexes, overflow, wrapping and error cases.
 Kernel reducer tests compare `minimum`, `maximum`, `argmin`, `argmax`, `asum`
 and `nrm2` kernels with the bulk reducers on every backend, covering slices,
 block boundaries, ties, selections, spilling, complex vectors and overflow.
+Declared-input tests cover all eight integer sources, both float precisions,
+conversion rounding, repeated scales, sliced block alignment, masks, reducers,
+row strides, views with small staging buffers, overlap rejection, native-symbol
+fallback, spilling, redefinition and concurrent calls. C tests also check
+descriptor bounds, empty calls, allocation failure and scratch cleanup.
 BLAS Level 1 tests cover real and complex precisions, offsets, increments,
 errors, rotations, and convenience wrappers. They compare against an available
 system CBLAS (Accelerate on macOS, or OpenBLAS/BLAS on other platforms); only

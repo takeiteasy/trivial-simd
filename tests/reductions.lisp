@@ -143,6 +143,13 @@
         (is (zerop (simd:nrm2 (make-array 5 :element-type 'double-float :initial-element 0d0))))
         (is (zerop (simd:nrm2 (make-array 0 :element-type 'single-float))))))))
 
+(test nrm2-mixed-magnitudes
+  (let ((vector (make-array 3 :element-type 'double-float
+                             :initial-contents '(1d200 1d-200 0d0))))
+    (dolist (backend (available-backends))
+      (with-backend (backend)
+        (is (= 1d200 (simd:nrm2 vector)))))))
+
 (test complex-nrm2-matches-reference
   (dolist (type '((complex single-float) (complex double-float)))
     (let* ((real (second type))

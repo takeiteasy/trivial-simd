@@ -41,6 +41,18 @@
   (assert (every (lambda (value) (= value 12.0)) out)))
 
 (trivial-simd:define-kernel kernel-dot (a b) (trivial-simd:sum (* a b)))
+(trivial-simd:define-kernel quantized-dot (x (q :type :s8) (scale :repeat 32))
+  (trivial-simd:sum (* x q scale)))
+
+(let ((x (make-array 66 :element-type 'single-float :initial-element 1f0))
+      (q (make-array 66 :element-type '(signed-byte 8) :initial-element 2))
+      (scales (make-array 4 :element-type 'single-float
+                            :initial-contents '(0.25f0 0.5f0 1f0 2f0)))
+      (results (make-array 2 :element-type 'single-float)))
+  (assert (= 17f0 (quantized-dot x q scales :end 33)))
+  (quantized-dot x q scales :rows 2 :row-length 33 :destination results)
+  (assert (equalp results #(17f0 68f0))))
+
 (trivial-simd:define-kernel root-sum (a) (trivial-simd:sum (sqrt (abs a))))
 
 (let ((matrix (make-array 6 :element-type 'single-float
