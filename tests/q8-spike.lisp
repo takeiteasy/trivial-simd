@@ -4,13 +4,19 @@
     (load (merge-pathnames "quicklisp/setup.lisp" (user-homedir-pathname)))))
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
-  (asdf:load-asd #.(merge-pathnames "../trivial-simd.asd"
-                                (uiop:pathname-directory-pathname
-                                 (or *compile-file-truename* *load-truename*))))
-  (asdf:load-system "trivial-simd/blas")
-  (load #.(merge-pathnames "benchmark-timing.lisp"
-                          (uiop:pathname-directory-pathname
-                           (or *compile-file-truename* *load-truename*)))))
+  (let ((root #.(merge-pathnames "../"
+                               (uiop:pathname-directory-pathname
+                                (or *compile-file-truename* *load-truename*)))))
+    (asdf:initialize-source-registry
+     `(:source-registry (:directory ,root) :inherit-configuration))
+    (asdf:load-asd (merge-pathnames "trivial-simd.asd" root))
+    (asdf:load-system "trivial-simd/blas")
+    (unless (equal (truename root) (truename (asdf:system-source-directory "trivial-simd")))
+      (error "Q8_0 spike resolved a different checkout"))
+    (format t "CHECKOUT ~A~%NATIVE-LIBRARY ~A~%"
+            (asdf:system-source-directory "trivial-simd")
+            (uiop:symbol-call "TRIVIAL-SIMD" "NATIVE-LIBRARY-PATH"))
+    (load (merge-pathnames "tests/benchmark-timing.lisp" root))))
 
 (defpackage #:trivial-simd/q8-spike (:use #:cl))
 (in-package #:trivial-simd/q8-spike)
