@@ -110,6 +110,9 @@ Copy access transfers stored source spans in their original types, rather than
 full-length float expansions. Lisp view staging preserves repetition phase
 across buffer boundaries.[^staging]
 
+See [loader measurements](kernel-input-performance.md) for preparation and VM
+costs.
+
 ## Limitations
 
 - Computation is f32/f64 only. Integer and complex kernels use bare arguments.
