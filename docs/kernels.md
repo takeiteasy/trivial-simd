@@ -155,6 +155,9 @@ for measurements and [FMA fallback limitations](#limitations).
 
 ## Limitations
 
+- `exp`, `sin`, and `cos` are unsupported. Softmax, SiLU, and RoPE angle
+  preparation use separate Lisp code for these operations. See the
+  [transcendental operations ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/131).
 - Mask expressions use scalar comparison and selection lanes in the native VM
   and scalar loops on SBCL. Spilling mask reductions allocate scratch per
   256-element block. Packed execution and scratch reuse are tracked in
