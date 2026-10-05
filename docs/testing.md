@@ -283,6 +283,28 @@ access, foreign views, overlap errors, one-call execution, symbol fallback,
 spilling, redefinition and concurrent calls. Native tests check one scratch
 allocation per batch, allocation failure, overflow, domain errors and cleanup.
 
+## Q8_0 matvec spike
+
+The isolated spike compares a mixed-input row kernel, direct ARM64 NEON Q8_0,
+native repo `sgemv` and Apple Accelerate. It checks arrays and foreign views,
+records five fresh SBCL processes, and reports repacking separately.
+See [results and limitations](q8-matvec.md).
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_Q8_SPIKE=ON
+cmake --build build -j 4
+python3 tests/q8-spike-run.py --output /tmp/q8-matvec.txt
+```
+
+The driver requests `VECLIB_MAXIMUM_THREADS=1`. Correctness-only runs use the
+same harness and check both native and Lisp kernels:
+
+```sh
+Q8_CHECK_ONLY=1 VECLIB_MAXIMUM_THREADS=1 sbcl --dynamic-space-size 4096 --script tests/q8-spike.lisp
+Q8_CHECK_ONLY=1 VECLIB_MAXIMUM_THREADS=1 ccl --no-init --batch --eval '(load (compile-file "tests/q8-spike.lisp" :output-file "/tmp/q8-spike-ccl.fasl"))' --eval '(quit)'
+Q8_CHECK_ONLY=1 VECLIB_MAXIMUM_THREADS=1 ecl --eval '(load (compile-file "tests/q8-spike.lisp" :output-file "/tmp/q8-spike-ecl.fas"))' --eval '(quit)'
+```
+
 ## Kernel profiling
 
 The optional profile measures identical native bytecode with per-call allocation
