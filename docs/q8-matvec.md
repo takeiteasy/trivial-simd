@@ -53,6 +53,30 @@ helps substantially; generic VM arithmetic and materialized load buffers remain
 costs. The component profile uses CPU time and the spike uses wall time, so their
 timings are not an additive decomposition.
 
+## Inference integration boundary
+
+The recommendation confines specialised C to quantized numerical operations.
+The model and executor remain Lisp, with a dtype-dispatched call such as
+`(matvec weights activation output)` selecting the numerical implementation.
+
+| Layer | Recommended responsibility |
+|---|---|
+| Lisp | GGUF parsing, tokenizer, model layers, attention orchestration, KV cache, scratch management, sampling, generation and thread scheduling |
+| Specialised C | Packed Q8_0 matrix-vector arithmetic over validated buffers |
+| BLAS | Float matrix-vector and matrix-matrix arithmetic |
+| trivial-simd | Elementwise arithmetic, reductions, conversions, copies and foreign-memory views |
+
+Concrete trivial-simd uses include RMSNorm sum-of-squares and scaling, residual
+addition, feed-forward gating, and attention dot products and reductions.
+Quantized matvec bypasses `define-kernel`; the other vector operations remain
+part of the Lisp model implementation. The first demo uses flat arrays; tensor
+abstractions are extracted after the demo works.
+
+These measurements establish a Q8_0 matvec boundary. They do not establish a
+whole-model Lisp/C runtime split or a source-code percentage. Additional native
+operations need separate profiling evidence. See [limitations](#limitations)
+for the remaining operator and packaging questions.
+
 ## Layout and kernel
 
 A packed Q8_0 block stores one little-endian f16 scale and 32 signed bytes,
@@ -119,6 +143,12 @@ process prints and checks its resolved checkout and native-library path.
   [inference project](https://todo.sr.ht/~takeiteasy/trivial-simd/107).
   It exports no supported Q8_0 API and includes no GGUF reader, model, Q4_0
   implementation or production integration.
+- `define-kernel` has no `exp`, `sin` or `cos` operators. Complete softmax,
+  SiLU and rotary-position calculations therefore need code beyond the current
+  DSL. The recommended demo implements those pieces in typed Lisp and profiles
+  them before adding native primitives.
+- BLAS packaging remains an integration decision: the inference ticket names
+  CLBLAS, while this repository supplies `trivial-simd/blas`.
 - Measurements use deterministic synthetic weights, one repeatedly accessed
   matrix and one calling thread on Apple M1. They do not measure model-wide
   streaming, cold caches, quantization quality or multi-threaded inference.
