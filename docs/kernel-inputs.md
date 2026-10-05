@@ -39,9 +39,9 @@ At least one non-repeated input establishes the logical length. Other ordinary
 float inputs match the precision. Arrays and [foreign views](vector-views.md)
 may be mixed.
 
-All existing float expressions, numeric reducers, comparisons, selection,
-mask outputs and mask reducers accept declarations. Float `sum` kernels also
-support [row batching](kernel-rows.md).
+All float expressions, nested numeric reducers, comparisons, selection,
+mask outputs and mask reducers accept declarations. Float elementwise and
+`sum` kernels also support [row batching](kernel-rows.md).
 
 ## Slices and block alignment
 
@@ -70,6 +70,10 @@ Empty slices read no input values and retain the existing reducer results.
 
 ## Row batching
 
+Numeric elementwise batches write each row into the positional destination;
+`sum` batches take `:destination`. Nested reductions are local to each row. See
+[output layout and strides](kernel-rows.md#arguments).
+
 Each input start and row stride counts stored elements of that input.
 The default repeated-input stride is `ceiling(row-length/B)`; ordinary inputs
 use `row-length`. Each row starts a new repetition block.
@@ -86,7 +90,8 @@ use `row-length`. Each row starts a new repetition block.
 ```
 
 Padding, zero-stride reuse and negative row strides follow the ordinary
-row-batch rules. Zero rows write nothing; zero-length rows write typed zeros.
+row-batch rules. Zero rows and zero-length vector rows write nothing;
+zero-length sum rows write typed zeros.
 
 ## Execution
 
@@ -98,8 +103,9 @@ row-batch rules. Zero rows write nothing; zero-length rows write typed zeros.
 | Native library missing descriptor symbols | Typed Lisp fallback |
 
 The native path prepares converted and repeated inputs once per 256-element
-block and uses one foreign call for an ordinary kernel or sum batch.[^norm] Preparation and
-spill storage are private to the invocation and reused across blocks and rows.
+block and uses one foreign call per ordinary kernel pass or single-pass sum
+batch without transcendental operators.[^norm] Preparation and spill storage
+are private to the invocation and reused across blocks and eligible batched rows.
 Source-type dispatch occurs once per input and block. ARM64 uses NEON integer
 conversion and repeated-value broadcasts. Repeated inputs load and convert each
 stored value once per run. Other native targets use typed scalar conversion

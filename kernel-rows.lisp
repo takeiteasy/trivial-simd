@@ -19,16 +19,17 @@
 
 (declaim (notinline call-native-kernel-rows))
 (defun call-native-kernel-rows (program type inputs input-count strides output rows row-length)
-  (unwind-protect
-       (check-native-kernel-status
-        (funcall (ecase type
-                   (:f32 #'%native-kernel-sum-rows-f32)
-                   (:f64 #'%native-kernel-sum-rows-f64))
-                 (native-program-code program) (native-program-code-length program)
-                 (native-program-constants program)
-                 inputs input-count strides output rows row-length
-                 (native-program-scratch-count program)))
-    (keep-native-program-alive program)))
+  (with-kernel-program (program type)
+    (unwind-protect
+         (check-native-kernel-status
+          (funcall (ecase type
+                     (:f32 #'%native-kernel-sum-rows-f32)
+                     (:f64 #'%native-kernel-sum-rows-f64))
+                   (native-program-code program) (native-program-code-length program)
+                   (native-program-constants program)
+                   inputs input-count strides output rows row-length
+                   (native-program-scratch-count program)))
+      (keep-native-program-alive program))))
 
 (defun call-with-row-pointers (vectors function &optional pointers)
   (if vectors
@@ -153,16 +154,16 @@
       (run (mapcar (lambda (vector) (when (vector-view-p vector) (vector-view-pointer vector)))
                    (append inputs (list destination)))))))
 
-(defmacro define-kernel (name (&rest arguments) expression)
+(defmacro define-basic-kernel (name (&rest arguments) expression)
   "Define an elementwise or reduction kernel. Float SUM kernels also accept
 ROWS, ROW-LENGTH, DESTINATION, DESTINATION-START and per-input ROW-STRIDE."
   (when (some #'consp arguments)
-    (return-from define-kernel (declared-kernel-expansion name arguments expression)))
+    (return-from define-basic-kernel (declared-kernel-expansion name arguments expression)))
   (let* ((batch-p (and (consp expression) (eq (first expression) 'sum)))
          (scalar-name (if batch-p (gensym "SCALAR-KERNEL") name))
          (expansion (macroexpand-1 `(define-single-row-kernel ,scalar-name ,arguments ,expression))))
     (unless batch-p
-      (return-from define-kernel expansion))
+      (return-from define-basic-kernel expansion))
     (let* ((scalar (gensym "SCALAR")) (programs (gensym "PROGRAMS"))
            (start-names (mapcar (lambda (arg) (intern (format nil "~A-START" arg))) arguments))
            (stride-names (mapcar (lambda (arg) (intern (format nil "~A-ROW-STRIDE" arg))) arguments))

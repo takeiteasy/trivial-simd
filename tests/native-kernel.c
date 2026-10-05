@@ -850,6 +850,49 @@ static void check_float_loader_##suffix(void) { \
 CHECK_FLOAT_LOADER(f32, float, 0)
 CHECK_FLOAT_LOADER(f64, double, 1)
 
+#define CHECK_TRANSCENDENTALS(suffix, type, precision, exps, sins, coss) \
+static void check_transcendentals_##suffix(void) { \
+    type x[513], out[513], sum; \
+    const type *inputs[] = {x}; \
+    const uint8_t ops[] = {TS_OP_EXP, TS_OP_SIN, TS_OP_COS}; \
+    size_t lengths[] = {0, 1, 3, 5, 255, 256, 257, 513}; \
+    for (size_t i = 0; i < 513; ++i) x[i] = (type)((int)(i % 17) - 8) / 4; \
+    for (size_t op = 0; op < 3; ++op) { \
+        uint8_t code[] = {ops[op], TS_KERNEL_OUTPUT, 8, 0}; \
+        for (size_t l = 0; l < sizeof(lengths) / sizeof(lengths[0]); ++l) { \
+            size_t n = lengths[l]; type expected_sum = 0; \
+            assert(ts_kernel_##suffix(code, sizeof(code), NULL, inputs, out, n, 0) == 0); \
+            for (size_t i = 0; i < n; ++i) { \
+                type expected = op == 0 ? exps(x[i]) : op == 1 ? sins(x[i]) : coss(x[i]); \
+                assert(out[i] == expected); expected_sum += expected; \
+            } \
+            assert(ts_kernel_sum_##suffix(code, sizeof(code), NULL, inputs, &sum, n, 0) == 0); \
+            assert(fabs((double)sum - expected_sum) <= (precision ? 1e-12 : 1e-5) * fmax(1, fabs(expected_sum))); \
+            ts_kernel_input descriptor = {x, 513, 0, precision, 1, 0, 0}; \
+            double wide; size_t index; \
+            assert(ts_kernel_inputs_##suffix(code, sizeof(code), NULL, &descriptor, 1, out, 1, n, \
+                                             0, TS_INPUT_OUTPUT, 1, &wide, &index) == 0); \
+            for (size_t i = 0; i < n; ++i) \
+                assert(out[i] == (op == 0 ? exps(x[i]) : op == 1 ? sins(x[i]) : coss(x[i]))); \
+        } \
+    } \
+    x[0] = -(type)0; x[1] = (type)1; x[2] = (type)INFINITY; x[3] = (type)NAN; \
+    uint8_t sine[] = {TS_OP_SIN, TS_KERNEL_OUTPUT, 8, 0}; \
+    assert(ts_kernel_##suffix(sine, sizeof(sine), NULL, inputs, out, 4, 0) == 0); \
+    assert(signbit(out[0]) && isnan(out[2]) && isnan(out[3])); \
+    assert(fabs((double)out[1] - 0.84147098480789650665) < (precision ? 1e-15 : 1e-7)); \
+    uint8_t cosine[] = {TS_OP_COS, TS_KERNEL_OUTPUT, 8, 0}; \
+    assert(ts_kernel_##suffix(cosine, sizeof(cosine), NULL, inputs, out, 4, 0) == 0); \
+    assert(out[0] == 1 && isnan(out[2]) && isnan(out[3])); \
+    uint8_t exponential[] = {TS_OP_EXP, TS_KERNEL_OUTPUT, 8, 0}; \
+    assert(ts_kernel_##suffix(exponential, sizeof(exponential), NULL, inputs, out, 4, 0) == 0); \
+    assert(out[0] == 1 && isinf(out[2]) && isnan(out[3])); \
+    assert(fabs((double)out[1] - 2.71828182845904523536) < (precision ? 1e-15 : 1e-7)); \
+    assert(allocations == releases); \
+}
+CHECK_TRANSCENDENTALS(f32, float, 0, expf, sinf, cosf)
+CHECK_TRANSCENDENTALS(f64, double, 1, exp, sin, cos)
+
 int main(void) {
     check_loader_2_f32();
     check_loader_3_f32();
@@ -869,6 +912,8 @@ int main(void) {
     check_loader_9_f64();
     check_float_loader_f32();
     check_float_loader_f64();
+    check_transcendentals_f32();
+    check_transcendentals_f64();
     check_inputs_f32();
     check_inputs_f64();
     check_rows_f32();

@@ -79,7 +79,7 @@
         `(+ ,(balanced-expression (1- depth)) ,(balanced-expression (1- depth))))))
 
 (test kernel-definition-errors
-  (signals error (macroexpand-1 '(simd:define-kernel bad (a) (sin a))))
+  (signals error (macroexpand-1 '(simd:define-kernel bad (a) (atan a))))
   (signals error (macroexpand-1 '(simd:define-kernel bad (a) (+ a z))))
   (signals error (macroexpand-1 '(simd:define-kernel bad (a) (+))))
   (finishes (macroexpand-1 `(simd:define-kernel fits (a) ,(balanced-expression 8))))
@@ -341,8 +341,6 @@
   (dolist (definition '((simd:define-kernel bad (a) (simd:sum))
                         (simd:define-kernel bad (a) (simd:sum a a))
                         (simd:define-kernel bad () (simd:sum 3))
-                        (simd:define-kernel bad (a) (simd:sum (simd:sum a)))
-                        (simd:define-kernel bad (a) (+ a (simd:sum a)))
                         (simd:define-kernel bad (a) (product a))))
     (signals error (macroexpand-1 definition)))
   (dolist (backend (available-backends))

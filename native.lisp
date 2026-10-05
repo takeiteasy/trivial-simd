@@ -611,8 +611,38 @@ back for the POINTERs in OUTPUTS. A vector view binds its own memory instead."
   (with-native-vectors (:float ((a left left-offset) (b right right-offset)) :count count)
     (%native-dot-acc-f32 a b count)))
 
+(defvar *kernel-scalars* #())
+
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defun kernel-scalar-p (value)
+    (and (consp value) (eq (first value) 'kernel-scalar)
+         (= (length value) 2) (typep (second value) '(integer 0 *))))
+
+  (defun kernel-special-constants-p (tree)
+    (and (consp tree) (or (kernel-scalar-p tree)
+                          (some #'kernel-special-constants-p tree))))
+
+  (defun kernel-transcendental-p (tree)
+    (if (consp tree) (some #'kernel-transcendental-p tree)
+        (member tree '(exp sin cos :exp :sin :cos)))))
+
+(defun kernel-constant-value (value type)
+  (let ((value (if (kernel-scalar-p value) (aref *kernel-scalars* (second value)) value)))
+    (if (integer-type-p type)
+        (funcall (integer-operation-symbol :wrap type) value)
+        (coerce value (second (numeric-type type))))))
+
+(defun kernel-constant-form (value type)
+  (if (kernel-scalar-p value)
+      `(the ,(second (numeric-type type)) (aref *kernel-scalars* ,(second value)))
+      (coerce value (second (numeric-type type)))))
+
+(defvar *native-kernel-transcendentals-p*
+  (and *native-available-p*
+       (not (null (ignore-errors (cffi:foreign-symbol-pointer "ts_kernel_transcendentals"))))))
+
 (defstruct (native-program (:constructor %make-native-program))
-  code code-length f32-constants f64-constants constants constant-type scratch-count
+  code code-length f32-constants f64-constants constants constant-type scratch-count scalar-constants
   #+ecl runner)
 
 (declaim (notinline foreign-copy free-native-program-buffers))
@@ -645,10 +675,27 @@ back for the POINTERs in OUTPUTS. A vector view binds its own memory instead."
              (error "Unable to allocate native kernel program storage"))
            (loop for value in values
                  for index from 0
-                 do (setf (cffi:mem-aref pointer type index) (coerce value coerce-type)))
+                 do (setf (cffi:mem-aref pointer type index) (coerce (if (kernel-scalar-p value) 0 value) coerce-type)))
            (setf complete t)
            pointer)
       (unless complete (free-native-program-buffers buffers)))))
+
+(defmacro with-kernel-program ((program type) &body body)
+  (let ((owner (gensym "OWNER")) (pointer (gensym "CONSTANTS")) (key (gensym "TYPE")))
+    `(let ((,owner ,program))
+       (if (native-program-scalar-constants ,owner)
+           (let* ((,key (if (assoc ,type *numeric-types*) ,type
+                           (first (find ,type *numeric-types* :key #'third))))
+                  (,pointer (foreign-copy
+                             (mapcar (lambda (value) (kernel-constant-value value ,key))
+                                     (native-program-scalar-constants ,owner))
+                             (third (numeric-type ,key)) (second (numeric-type ,key))))
+                  (,program (copy-native-program ,owner)))
+             (unwind-protect
+                  (progn (setf (native-program-constants ,program) ,pointer) ,@body)
+               (cffi:foreign-free ,pointer)
+               (keep-native-program-alive ,owner)))
+           (progn ,@body)))))
 
 (defun make-native-program (code constants scratch-count &optional type)
   (declare (notinline register-native-program-finalizer))
@@ -663,6 +710,7 @@ back for the POINTERs in OUTPUTS. A vector view binds its own memory instead."
                            :code-length (length code)
                            :scratch-count scratch-count
                            :constant-type type
+                           :scalar-constants (when (kernel-special-constants-p constants) constants)
                            :constants (when type
                                         (let ((info (numeric-type type)))
                                           (copy constants (third info) (second info))))
@@ -687,22 +735,23 @@ back for the POINTERs in OUTPUTS. A vector view binds its own memory instead."
 
 (defmacro define-native-kernel-dispatch ()
   `(defun call-native-kernel (program type inputs output count &key sum-p)
-     (unwind-protect
-          (let ((status
-                  (funcall
-                   (ecase type
-                     ,@(loop for (key element foreign) in *numeric-types*
-                             collect
-                             `(,foreign (if sum-p
-                                            #',(intern (format nil "%NATIVE-KERNEL-SUM-~A" key))
-                                            #',(intern (format nil "%NATIVE-KERNEL-~A" key))))))
-                   (native-program-code program) (native-program-code-length program)
-                   (or (native-program-constants program)
-                       (if (eq type :float) (native-program-f32-constants program)
-                           (native-program-f64-constants program)))
-                   inputs output count (native-program-scratch-count program))))
-            (check-native-kernel-status status))
-       (keep-native-program-alive program))))
+     (with-kernel-program (program type)
+       (unwind-protect
+            (let ((status
+                    (funcall
+                     (ecase type
+                       ,@(loop for (key element foreign) in *numeric-types*
+                               collect
+                               `(,foreign (if sum-p
+                                              #',(intern (format nil "%NATIVE-KERNEL-SUM-~A" key))
+                                              #',(intern (format nil "%NATIVE-KERNEL-~A" key))))))
+                     (native-program-code program) (native-program-code-length program)
+                     (or (native-program-constants program)
+                         (if (eq type :float) (native-program-f32-constants program)
+                             (native-program-f64-constants program)))
+                     inputs output count (native-program-scratch-count program))))
+              (check-native-kernel-status status))
+         (keep-native-program-alive program)))))
 
 (define-native-kernel-dispatch)
 
@@ -719,19 +768,20 @@ back for the POINTERs in OUTPUTS. A vector view binds its own memory instead."
 (define-native-mask-kernel-calls)
 
 (defun call-native-mask-kernel (program type inputs input-count mask count reduction result)
-  (unwind-protect
-       (let ((status
-               (funcall
-                (native-bulk-function "%NATIVE-KERNEL-MASK-"
-                                      (first (find type *numeric-types* :key #'third)))
-                (native-program-code program) (native-program-code-length program)
-                (or (native-program-constants program)
-                    (if (eq type :float) (native-program-f32-constants program)
-                        (native-program-f64-constants program)))
-                inputs input-count mask count (native-program-scratch-count program)
-                reduction result)))
-         (check-native-kernel-status status))
-    (keep-native-program-alive program)))
+  (with-kernel-program (program type)
+    (unwind-protect
+         (let ((status
+                 (funcall
+                  (native-bulk-function "%NATIVE-KERNEL-MASK-"
+                                        (first (find type *numeric-types* :key #'third)))
+                  (native-program-code program) (native-program-code-length program)
+                  (or (native-program-constants program)
+                      (if (eq type :float) (native-program-f32-constants program)
+                          (native-program-f64-constants program)))
+                  inputs input-count mask count (native-program-scratch-count program)
+                  reduction result)))
+           (check-native-kernel-status status))
+      (keep-native-program-alive program))))
 
 (defmacro define-native-kernel-reduction-calls ()
   `(progn
@@ -750,15 +800,16 @@ back for the POINTERs in OUTPUTS. A vector view binds its own memory instead."
                                      value wide index)
   "Run REDUCER (1 argmin, 2 argmax, 3 asum, 4 sum of squares, 5 largest magnitude,
 6 sum of squares divided by SCALE) over the program's values."
-  (unwind-protect
-       (check-native-kernel-status
-        (funcall
-         (native-bulk-function "%NATIVE-KERNEL-REDUCTION-"
-                               (first (find type *numeric-types* :key #'third)))
-         (native-program-code program) (native-program-code-length program)
-         (or (native-program-constants program)
-             (if (eq type :float) (native-program-f32-constants program)
-                 (native-program-f64-constants program)))
-         inputs input-count count (native-program-scratch-count program)
-         reducer scale value wide index))
-    (keep-native-program-alive program)))
+  (with-kernel-program (program type)
+    (unwind-protect
+         (check-native-kernel-status
+          (funcall
+           (native-bulk-function "%NATIVE-KERNEL-REDUCTION-"
+                                 (first (find type *numeric-types* :key #'third)))
+           (native-program-code program) (native-program-code-length program)
+           (or (native-program-constants program)
+               (if (eq type :float) (native-program-f32-constants program)
+                   (native-program-f64-constants program)))
+           inputs input-count count (native-program-scratch-count program)
+           reducer scale value wide index))
+      (keep-native-program-alive program))))

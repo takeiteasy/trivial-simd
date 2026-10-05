@@ -290,13 +290,14 @@
 (declaim (notinline call-declared-native))
 (defun call-declared-native (program type descriptors input-count output rows count mode wide index
                               &optional (scale 1d0))
-  (unwind-protect
-       (check-native-kernel-status
-        (funcall (ecase type (:f32 #'%native-kernel-inputs-f32) (:f64 #'%native-kernel-inputs-f64))
-                 (native-program-code program) (native-program-code-length program)
-                 (native-program-constants program) descriptors input-count output rows count
-                 (native-program-scratch-count program) mode scale wide index))
-    (keep-native-program-alive program)))
+  (with-kernel-program (program type)
+    (unwind-protect
+         (check-native-kernel-status
+          (funcall (ecase type (:f32 #'%native-kernel-inputs-f32) (:f64 #'%native-kernel-inputs-f64))
+                   (native-program-code program) (native-program-code-length program)
+                   (native-program-constants program) descriptors input-count output rows count
+                   (native-program-scratch-count program) mode scale wide index))
+      (keep-native-program-alive program))))
 
 (defun call-with-declared-native-storage (inputs spans destination output-start output-count function)
   (let ((vectors (append inputs (when destination (list destination)))))

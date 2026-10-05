@@ -23,7 +23,8 @@
                (:file "copy-operations")
                (:file "kernel")
                (:file "kernel-rows")
-               (:file "kernel-inputs"))
+               (:file "kernel-inputs")
+               (:file "kernel-plan"))
   :in-order-to ((asdf:test-op (asdf:test-op "trivial-simd/tests"))))
 
 (asdf:defsystem "trivial-simd/tests"
@@ -51,7 +52,8 @@
                (:file "tests/blas-random")
                (:file "tests/blas-native")
                (:file "tests/views")
-               (:file "tests/kernel-inputs"))
+               (:file "tests/kernel-inputs")
+               (:file "tests/kernel-plans"))
   :perform (asdf:test-op (operation component)
              (declare (ignore operation component))
              (unless (uiop:symbol-call :trivial-simd/tests :run-tests)

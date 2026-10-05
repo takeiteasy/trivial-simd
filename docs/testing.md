@@ -457,3 +457,25 @@ Rosetta measurements describe emulation, not native Intel hardware.
     image as the library can exceed SBCL's default 1 GiB heap. SBCL CI jobs
     and both local architecture scripts reserve 4 GiB. For direct runs, pass
     `--dynamic-space-size 4096` before `--script` or other Lisp options.
+
+## Inference-stage kernels
+
+Nested-reduction tests cover all numeric reducers, dependencies, shared passes,
+empty slices, integer wrapping, complex normalization, index coordinates,
+declared inputs, spilling, views, concurrent calls, and retained redefinitions.
+Transcendental tests cover independent numerical fixtures, large finite angles,
+exponentiation boundaries, signed zeros, tails, slices, and native fallback.
+Vector row tests check padding, reverse output, overlap rejection, and empty rows.
+The native scalar and SIMD tests also characterize NaNs and infinities.
+
+```sh
+sbcl --dynamic-space-size 4096 --script tests/kernel-stages-bench.lisp
+ccl --no-init --load tests/kernel-stages-bench.lisp --eval '(quit)'
+ecl --load tests/kernel-stages-bench.lisp --eval '(quit)'
+```
+
+The benchmark times complete softmax, SiLU, and RoPE table preparation, including
+both RoPE output tables. It compares typed Lisp loops with each available kernel
+backend for f32/f64 vectors and softmax row batches. Lisp allocation counters
+exclude C buffers and are unavailable on ECL. See
+[results and measurement limits](kernel-stage-performance.md).

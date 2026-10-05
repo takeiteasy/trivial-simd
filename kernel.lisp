@@ -7,7 +7,7 @@
     (:multiply . 4) (:divide . 5) (:negate . 6) (:spill . 7) (:reload . 8)
     (:sqrt . 9) (:abs . 10) (:min . 11) (:max . 12) (:fma . 13)
     (:eq . 14) (:ne . 15) (:lt . 16) (:le . 17) (:gt . 18) (:ge . 19)
-    (:select . 20)))
+    (:select . 20) (:exp . 21) (:sin . 22) (:cos . 23)))
 
 (defconstant +kernel-output+ #xFF)
 (defconstant +kernel-input-base+ +kernel-registers+)
@@ -15,13 +15,14 @@
 
 (defparameter *kernel-operators*
   '((+ . :add) (- . :subtract) (* . :multiply) (/ . :divide)
-    (sqrt . :sqrt) (abs . :abs) (min . :min) (max . :max) (fma . :fma)))
+    (sqrt . :sqrt) (abs . :abs) (min . :min) (max . :max) (fma . :fma)
+    (exp . :exp) (sin . :sin) (cos . :cos)))
 
 (defun parse-kernel-expression (expression arguments)
   "Parse an elementwise expression into a typed operator tree."
   (cond ((and (symbolp expression) (position expression arguments))
          (list :argument (position expression arguments)))
-        ((realp expression) (list :constant expression))
+        ((or (realp expression) (kernel-scalar-p expression)) (list :constant expression))
         ((and (consp expression) (assoc (first expression) *kernel-operators*))
          (let ((kind (cdr (assoc (first expression) *kernel-operators*)))
                (operands (mapcar (lambda (operand)
@@ -29,7 +30,7 @@
                                  (rest expression))))
            (cond ((null operands)
                   (error "Kernel operator ~S needs an operand" (first expression)))
-                 ((member kind '(:sqrt :abs))
+                 ((member kind '(:sqrt :abs :exp :sin :cos))
                   (unless (= 1 (length operands))
                     (error "Kernel operator ~S needs one operand" (first expression)))
                   (list :unary kind (first operands)))
@@ -221,9 +222,10 @@ SPILL/RELOAD use a register and slot; other operands name registers or inputs."
              (walk (node)
                (ecase (first node)
                  (:argument (nth (second node) inputs))
-                 (:constant (coerce (second node) element))
+                 (:constant (kernel-constant-form (second node) type))
                  (:negate (operation '- (list (walk (second node)))))
-                 (:unary (operation (if (eq (second node) :sqrt) 'kernel-sqrt 'abs)
+                 (:unary (operation (if (eq (second node) :sqrt) 'kernel-sqrt
+                                     (car (rassoc (second node) *kernel-operators*)))
                                     (list (walk (third node)))))
                  (:fma (operation fma-operator (mapcar #'walk (rest node))))
                  (:operation
@@ -234,7 +236,7 @@ SPILL/RELOAD use a register and slot; other operands name registers or inputs."
       (let ((result (walk node)))
         `(let ,(loop for input in inputs for argument in arguments for offset in offsets
                      collect `(,input (aref ,argument (+ ,offset ,index))))
-           ,@(when inputs `((declare (type ,element ,@inputs))))
+           ,@(when inputs `((declare (type ,element ,@inputs) (ignorable ,@inputs))))
            (let ,(loop for temporary in temporaries collect `(,temporary ,(coerce 0 element)))
              ,@(when temporaries `((declare (type ,element ,@temporaries))))
              ,@(nreverse assignments)
@@ -329,7 +331,8 @@ Empty slices give NIL for the extrema and a zero otherwise."
 #+(and sbcl x86-64)
 ;; TODO: min/max/arg reducers use scalar loops (#92); f32 nrm2 too (#95).
 (defun sbcl-kernel-form (tree type destination arguments d-offset offsets count &optional reducer)
-  (when (or (member reducer '(minimum maximum argmin argmax))
+  (when (or (kernel-transcendental-p tree)
+            (member reducer '(minimum maximum argmin argmax))
             (and (eq reducer 'nrm2) (eq type :f32)))
     (return-from sbcl-kernel-form
       (lisp-kernel-form tree type destination arguments d-offset offsets count 'fma reducer)))
@@ -424,7 +427,7 @@ Empty slices give NIL for the extrema and a zero otherwise."
                                   (emit (gensym "INPUT")
                                         `(,aref ,(nth argument arguments)
                                                 (+ ,(nth argument offsets) ,index)))))))
-                     (:constant (coerce (second node) (kernel-element-type type)))
+                     (:constant (kernel-constant-form (second node) type))
                      (:negate (operation (symbol-for "-") (list `(,cast 0) (walk (second node)))))
                      (:unary (pack-math (second node) (list (walk (third node)))))
                      (:fma (pack-math :fma (mapcar #'walk (rest node))))
@@ -612,12 +615,13 @@ Empty slices give NIL for the extrema and a zero otherwise."
     (labels ((walk (node)
                (case (first node)
                  (:constant
-                  (unless (typep (second node) element)
+                  (unless (or (kernel-scalar-p (second node)) (typep (second node) element))
                     (error 'type-error :datum (second node) :expected-type element)))
                  (:argument nil)
                  (:fma (error "FMA requires float vectors"))
                  (:unary
-                  (when (eq (second node) :sqrt) (error "SQRT requires float vectors"))
+                  (when (member (second node) '(:sqrt :exp :sin :cos))
+                    (error "~A requires float vectors" (second node)))
                   (walk (third node)))
                  (:negate (walk (second node)))
                  (:operation (walk (third node)) (walk (fourth node))))))
@@ -631,8 +635,8 @@ Empty slices give NIL for the extrema and a zero otherwise."
                ((:argument :constant) nil)
                (:negate (walk (second node)))
                (:unary
-                (when (eq (second node) :abs)
-                  (error "Complex kernel ABS needs a real destination"))
+                (when (member (second node) '(:abs :exp :sin :cos))
+                  (error "~A requires real float vectors" (second node)))
                 (walk (third node)))
                (:fma (error "FMA requires real float vectors"))
                (:operation
@@ -689,21 +693,21 @@ Empty slices give NIL for the extrema and a zero otherwise."
 TYPE) whose slices start at OFFSETS. It runs the operations of the compiled
 scalar forms, so a call needs no per-type expansion. MASKED selects the MIN and MAX
 of mask kernels."
-  (let ((integerp (integer-type-p type)) (element (kernel-element-type type)))
+  (let ((integerp (integer-type-p type)))
     (labels ((integer-call (kind &rest operands)
                (apply (integer-operation-symbol kind type) operands))
              (walk (node)
                (ecase (first node)
                  (:argument (let ((position (second node)))
                               (aref (nth position vectors) (+ (nth position offsets) index))))
-                 (:constant (coerce (second node) element))
+                 (:constant (kernel-constant-value (second node) type))
                  (:negate (if integerp
                               (integer-call :negate (walk (second node)))
                               (- (walk (second node)))))
                  (:unary (let ((value (walk (third node))))
                            (cond ((eq (second node) :sqrt) (kernel-sqrt value))
                                  (integerp (integer-call :abs value))
-                                 (t (abs value)))))
+                                 (t (funcall (car (rassoc (second node) *kernel-operators*)) value)))))
                  (:fma (apply #'fma (mapcar #'walk (rest node))))
                  (:select (if (walk (second node)) (walk (third node)) (walk (fourth node))))
                  (:operation

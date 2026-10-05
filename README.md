@@ -40,7 +40,7 @@ and `cmake --build build --config Release`. The Lisp fallback loads without it.
 - [BLAS Level 2](docs/blas-level2.md)
 - [BLAS Level 3](docs/blas-level3.md)
 - [BLAS benchmarks](docs/blas-benchmarks.md)
-- [Kernels](docs/kernels.md)
+- [Kernels](docs/kernels.md), including nested reductions and transcendental math
 - [Backends and build](docs/backends.md)
 - [Testing and benchmarks](docs/testing.md)
 - [CI](docs/ci.md)

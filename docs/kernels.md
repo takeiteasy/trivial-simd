@@ -1,7 +1,8 @@
 # Kernels
 
-`define-kernel` compiles an elementwise expression or scalar reduction into one
-backend execution. It is experimental.
+`define-kernel` compiles elementwise expressions and scalar reductions into
+backend execution passes. It supports [nested numeric reductions](kernel-passes.md)
+and remains experimental.
 
 ```lisp
 (trivial-simd:define-kernel multiply-add (a b c) (+ (* a b) c))
@@ -25,23 +26,25 @@ It returns `destination`. Any vector may be a [vector view](vector-views.md).
 | `(- x y ...)`, `(/ x y ...)` | N-ary, folded left |
 | `(- x)`, `(/ x)` | Negation, reciprocal |
 | `(sqrt x)`, `(abs x)` | Square root, absolute value |
+| `(exp x)`, `(sin x)`, `(cos x)` | Scalar system math; f32/f64 only |
 | `(min x ...)`, `(max x ...)` | Minimum, maximum; folded left |
 | `(trivial-simd:fma a b c)` | `a*b+c` with one rounding step |
 | `(> a b)` and other two-operand comparisons | Byte mask expression |
 | `(trivial-simd:select mask a b)` | Choose a numeric value per element |
 | `(trivial-simd:count mask)`, `(trivial-simd:any mask)`, `(trivial-simd:all mask)` | Top-level mask reductions |
-| `(trivial-simd:sum x)`, `(trivial-simd:asum x)`, `(trivial-simd:nrm2 x)` | Top-level sum, sum of absolute values, Euclidean norm |
-| `(trivial-simd:minimum x)`, `(trivial-simd:maximum x)` | Top-level smallest or largest value |
-| `(trivial-simd:argmin x)`, `(trivial-simd:argmax x)` | Top-level index of that value |
+| `(trivial-simd:sum x)`, `(trivial-simd:asum x)`, `(trivial-simd:nrm2 x)` | Sum, sum of absolute values, Euclidean norm |
+| `(trivial-simd:minimum x)`, `(trivial-simd:maximum x)` | Smallest or largest value |
+| `(trivial-simd:argmin x)`, `(trivial-simd:argmax x)` | Index of that value |
 
 `+`, `*`, `min`, and `max` with one operand return it unchanged. Empty operand
 lists and unsupported forms signal an error when the kernel is defined. Vectors
 share one numeric element type, chosen per call, unless they use
 [typed or repeated input declarations](kernel-inputs.md). Integer expressions use
 [wrapping arithmetic](integers.md); `sqrt` and `fma` remain float-only.
+`exp`, `sin`, and `cos` require real float computation.
 Comparisons use `=`, `/=`, `<`, `<=`, `>`, and `>=` with two operands. A
 comparison-only kernel writes a [byte mask](masks.md). Mask reductions return
-an integer count or a boolean; they are top-level forms like the other reductions.
+an integer count or a boolean; they must be top-level forms.
 
 ## Reduction kernels
 
@@ -79,11 +82,16 @@ may differ slightly by backend because the addition order differs.[^sum]
 `nrm2` of single-float inputs accumulates in double precision and rounds once.
 Ties keep the first element, matching the [bulk reductions](reductions.md#ties-and-signed-zeros).
 
-Float `sum` kernels also accept `:rows`, `:row-length`, `:destination`, and
-per-input row strides. [Row batching](kernel-rows.md) applies the expression to
-several rows; native arithmetic sums execute the batch in one foreign call.
+Float elementwise and `sum` kernels accept `:rows`, `:row-length`, and input row
+strides. Elementwise output stays positional; sum output uses `:destination`.
+[Row batching](kernel-rows.md) applies the expression to several rows. Native
+single-pass sums without transcendental operators execute the batch in one
+foreign call. Nested reductions are evaluated separately for each row.
 
 ## Numerical behavior
+
+`exp`, `sin`, and `cos` use [scalar system math](kernel-transcendentals.md),
+without a fixed ULP or cross-backend bit-identity guarantee.
 
 `sqrt` signals an error for a negative operand on every backend; negative zero
 is valid. An arithmetic error may leave part of `destination` updated.
@@ -108,7 +116,7 @@ the native library.
 | Backend | Implementation |
 |---|---|
 | `:lisp` | Typed scalar loop |
-| `:sbcl` | `sb-simd` pack loop with a scalar tail[^sbcl] |
+| `:sbcl` | `sb-simd` pack loop with a scalar tail; transcendental passes use typed scalar loops[^sbcl] |
 | `:native` | Register bytecode run by a C interpreter over 256-element blocks[^vm] |
 
 [Declared inputs](kernel-inputs.md#execution) use converted/repeated load buffers
@@ -122,8 +130,8 @@ On `:native`, `asum`, `nrm2`, `minimum`, `maximum`, `argmin` and `argmax` evalua
 each 256-element block, then reduce it. `:sbcl` accumulates float `asum` and
 double-float `nrm2` with SIMD packs; its other reducers, and integer `asum`, use typed scalar loops.
 
-The native backend makes one foreign call for arithmetic elementwise and sum
-kernels and needs no full-length intermediate result arrays. `nrm2` may evaluate
+The native backend makes one foreign call per arithmetic elementwise or sum
+pass and needs no full-length intermediate result arrays. `nrm2` may evaluate
 additional passes to rescale extreme double-float magnitudes. Expressions that exceed eight registers spill
 intermediate values into scratch blocks. Scratch slots are reused, and their
 storage is allocated per call and freed before returning. Kernels that fit in
@@ -155,9 +163,8 @@ for measurements and [FMA fallback limitations](#limitations).
 
 ## Limitations
 
-- `exp`, `sin`, and `cos` are unsupported. Softmax, SiLU, and RoPE angle
-  preparation use separate Lisp code for these operations. See the
-  [transcendental operations ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/131).
+- Transcendental math uses scalar system routines. See its
+  [numerical and execution limitations](kernel-transcendentals.md#limitations).
 - Mask expressions use scalar comparison and selection lanes in the native VM
   and scalar loops on SBCL. Spilling mask reductions allocate scratch per
   256-element block. Packed execution and scratch reuse are tracked in
@@ -175,8 +182,8 @@ for measurements and [FMA fallback limitations](#limitations).
 - Native call setup dominates short reductions; specialised bulk `dot` may
   be faster for `sum(a*b)`. See the
   [call setup ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/59).
-- Reductions must be top-level. Nested reductions are unsupported. See the
-  [nested reductions ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/94).
+- Nested mask reductions are unsupported. Multi-pass kernels recompute vector
+  intermediates; see [pass execution limitations](kernel-passes.md#limitations).
 - Native reducers other than `sum` evaluate a block before reducing it; see the
   [fused reducers ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/96).
   SBCL `minimum`, `maximum`, `argmin` and `argmax` use scalar loops

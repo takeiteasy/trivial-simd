@@ -173,8 +173,6 @@
   (dolist (definition '((simd:define-kernel bad (a) (simd:minimum))
                         (simd:define-kernel bad (a) (simd:argmax a a))
                         (simd:define-kernel bad () (simd:asum 3))
-                        (simd:define-kernel bad (a) (simd:nrm2 (simd:asum a)))
-                        (simd:define-kernel bad (a) (+ a (simd:argmin a)))
                         (simd:define-kernel bad (a) (simd:maximum (> a a)))))
     (signals error (macroexpand-1 definition)))
   (dolist (backend (available-backends))

@@ -209,3 +209,9 @@ medians of three calibrated batches. The first-call clock resolution is 1 µs.[^
 [^reducers]: From `tests/bench.lisp` on SBCL ARM64 with the `:native` and `:lisp`
     backends, 2026-10-01: [raw output](benchmark-runs/2026-10-01-kernel-reducers-sbcl.txt).
     The Lisp multiply+sum column of the sum table comes from the same run.
+
+## Inference stages
+
+See [complete-stage measurements](kernel-stage-performance.md) for softmax,
+SiLU, and RoPE table preparation, including multi-pass setup, row batches,
+scalar system math, and native copy access.

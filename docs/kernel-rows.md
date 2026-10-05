@@ -1,8 +1,8 @@
 # Row-batched kernels
 
-A float `sum` kernel reduces several rows into a destination vector. Arithmetic
-expressions execute in one native call; each row uses the same VM and addition
-order as a separate invocation on that backend.
+Float numeric elementwise kernels write vector rows; float `sum` kernels write
+one scalar per row. Nested reductions evaluate independently for each row.
+Single-pass sums without transcendental operators execute in one native call.
 
 ```lisp
 (trivial-simd:define-kernel kernel-dot (a b)
@@ -20,14 +20,31 @@ simple single-float or double-float vectors, or [foreign-memory views](vector-vi
 of the same precision. [Input declarations](kernel-inputs.md) also accept
 integer sources and block-repeated scales. The call returns `results`.
 
+## Vector output
+
+An elementwise batch keeps its positional destination:
+
+```lisp
+(trivial-simd:define-kernel softmax (x)
+  (/ (exp (- x (trivial-simd:maximum x)))
+     (trivial-simd:sum (exp (- x (trivial-simd:maximum x))))))
+
+(softmax output logits :rows 3 :row-length 4
+         :x-row-stride 6 :destination-row-stride 5)
+```
+
+Input rows start at 0, 6, and 12; output rows start at 0, 5, and 10. Each output
+row contains four probabilities. Padding stays unchanged.
+
 ## Arguments
 
 | Keyword | Meaning | Default |
 |---|---|---|
 | `:rows` | Number of output rows; activates batching when supplied | Required |
-| `:row-length` | Elements reduced within each row | Required |
-| `:destination` | Vector receiving the sums | Required |
+| `:row-length` | Logical elements within each row | Required |
+| `:destination` | Vector receiving scalar sums; elementwise output is positional | Required for sums |
 | `:destination-start` | First output element | `0` |
+| `:destination-row-stride` | Signed distance between vector output rows | Row length; elementwise only |
 | `<argument>-start` | First element of that input's first row | `0` |
 | `<argument>-row-stride` | Signed distance between row starts, in elements | Row length |
 
@@ -40,7 +57,9 @@ broadcasting are valid. A negative row stride reads rows in reverse order:
             :destination results)
 ```
 
-The input row starts are 8, 4, and 0. Output stays in forward order.
+The input row starts are 8, 4, and 0. Sum output stays in forward order.
+Elementwise output may also use a negative destination row stride, provided
+all rows fit and do not overlap.
 
 For [repeated inputs](kernel-inputs.md#row-batching), starts and strides count
 stored entries, the default stride is `ceiling(row-length/repeat)`, and every
@@ -52,13 +71,18 @@ limits. Batch calls reject `:start` and `:end`; use `:row-length` and individual
 input starts instead. Batch-only keywords require `:rows`.
 
 Calls without batch keywords retain the ordinary [scalar reduction interface](kernels.md#reduction-kernels),
-including its integer and complex support.
+including its integer and complex support. Elementwise slice calls retain their
+ordinary destination and [slice interface](kernels.md).
 
 ## Output and errors
 
-The destination needs space for `:rows` elements at `:destination-start`.
-Elements outside that region stay unchanged. Zero rows write nothing;
-zero-length rows write zeros of the input precision without native execution.
+Sum destinations need `:rows` elements at `:destination-start`. Vector
+destinations need the complete span determined by row length, destination
+start, and destination row stride. Output rows must not overlap.
+
+Elements outside the output rows stay unchanged. Zero rows write nothing.
+Zero-length vector rows write nothing; zero-length sum rows write typed zeros.
+Empty rows skip inner reduction evaluation.
 
 The destination must not overlap any input's bounding span, including padding
 between rows. Bounds, types, and overlap are checked before any output write.
@@ -72,9 +96,10 @@ are unspecified; temporary buffers are released.
 
 | Path | Batch execution |
 |---|---|
-| Native arithmetic sum | One foreign call for all nonempty rows |
-| Native copy access | Copy input spans once, one foreign call, copy results back[^copy] |
-| Lisp or SBCL SIMD | Existing reduction kernel invoked for each row |
+| Native single-pass sum without transcendental operators | One foreign call for all nonempty rows |
+| Native single-pass sum with copy access | Copy input spans once, one foreign call, copy results back[^copy] |
+| Elementwise or multi-pass batch | Compiled passes invoked independently for each row |
+| Lisp or SBCL SIMD sum | Existing reduction kernel invoked for each row |
 | Sum containing comparisons or `select` | Existing scalar path invoked for each row |
 | Native library without batch symbols | Existing reduction kernel invoked for each row |
 
@@ -88,8 +113,12 @@ See [row-batch measurements](kernel-performance.md#row-batching) and
 
 ## Limitations
 
-- Batching supports only single- and double-float `sum` kernels. Other reducers,
-  integer sums, complex sums, and elementwise kernels reject batch keywords.
+- Batching supports f32/f64 numeric elementwise kernels and `sum` results. Other
+  scalar reducers, masks, integer computation, and complex computation reject
+  batch keywords.
+- Multi-pass and elementwise batches set up separate calls for each row/pass.
+  Native graph batching is tracked in
+  [#137](https://todo.sr.ht/~takeiteasy/trivial-simd/137).
 - Destination overlap is rejected conservatively: output inside unused row
   padding is also rejected.
 - A single row can cost more than a scalar invocation. Short native scalar

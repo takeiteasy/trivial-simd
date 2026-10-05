@@ -112,7 +112,8 @@ vector (`:input-start` and `:input-stride`, `:left-start` and `:left-stride`).
 - A call reads every strided input before it writes, so an output that is also
   an input behaves as if the input were copied first.
 - `argmin` and `argmax` return the index into the vector, not the position
-  along the stride. `define-kernel` functions take no strides.
+  along the stride. `define-kernel` functions take no per-element strides; float numeric kernels
+  support [row strides](kernel-rows.md).
 - Strided calls run the contiguous kernels on gathered copies.[^gather]
 
 The [kernel API](kernels.md#reduction-kernels) composes arithmetic inside a scalar

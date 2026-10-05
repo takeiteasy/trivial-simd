@@ -283,8 +283,11 @@ enum {
     TS_OP_COPY, TS_OP_CONSTANT, TS_OP_ADD, TS_OP_SUBTRACT,
     TS_OP_MULTIPLY, TS_OP_DIVIDE, TS_OP_NEGATE, TS_OP_SPILL, TS_OP_RELOAD,
     TS_OP_SQRT, TS_OP_ABS, TS_OP_MIN, TS_OP_MAX, TS_OP_FMA,
-    TS_OP_EQ, TS_OP_NE, TS_OP_LT, TS_OP_LE, TS_OP_GT, TS_OP_GE, TS_OP_SELECT
+    TS_OP_EQ, TS_OP_NE, TS_OP_LT, TS_OP_LE, TS_OP_GT, TS_OP_GE, TS_OP_SELECT,
+    TS_OP_EXP, TS_OP_SIN, TS_OP_COS
 };
+
+int ts_kernel_transcendentals(void) { return 1; }
 
 #define TS_KERNEL_BLOCK 256
 #define TS_KERNEL_REGISTERS 8
@@ -363,6 +366,9 @@ static int ts_kernel_run_##mode##_##suffix(const uint8_t *code, size_t code_leng
             case TS_OP_SUBTRACT: TS_KERNEL_LOOP(width, load, store, sub, -); break; \
             case TS_OP_MULTIPLY: TS_KERNEL_LOOP(width, load, store, mul, *); break; \
             case TS_OP_DIVIDE: TS_KERNEL_LOOP(width, load, store, div, /); break; \
+            case TS_OP_EXP: for (; i < m; ++i) destination[i] = sizeof(type) == sizeof(float) ? expf(left[i]) : exp(left[i]); break; \
+            case TS_OP_SIN: for (; i < m; ++i) destination[i] = sizeof(type) == sizeof(float) ? sinf(left[i]) : sin(left[i]); break; \
+            case TS_OP_COS: for (; i < m; ++i) destination[i] = sizeof(type) == sizeof(float) ? cosf(left[i]) : cos(left[i]); break; \
             case TS_OP_SQRT: \
                 for (size_t j = 0; j < m; ++j) { \
                     if (left[j] < 0) return -2; \
@@ -455,6 +461,15 @@ static int ts_kernel_reduce_##suffix(uint8_t op, const type *left, const type *r
         break; \
     case TS_OP_DIVIDE: \
         TS_KERNEL_REDUCE(type, width, store, add, div(load(left + i), load(right + i)), left[i] / right[i]); \
+        break; \
+    case TS_OP_EXP: \
+        for (; i < m; ++i) result += sizeof(type) == sizeof(float) ? expf(left[i]) : exp(left[i]); \
+        break; \
+    case TS_OP_SIN: \
+        for (; i < m; ++i) result += sizeof(type) == sizeof(float) ? sinf(left[i]) : sin(left[i]); \
+        break; \
+    case TS_OP_COS: \
+        for (; i < m; ++i) result += sizeof(type) == sizeof(float) ? cosf(left[i]) : cos(left[i]); \
         break; \
     case TS_OP_SQRT: \
         for (size_t j = 0; j < m; ++j) if (left[j] < 0) return -2; \
