@@ -143,7 +143,7 @@
         (values type count (nreverse offsets) (nreverse phases) (nreverse spans) output-start)))))
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
-  ;; TODO: declared SBCL inputs use scalar loops; evaluate packed loads (#128).
+  ;; TODO: scalar SBCL declarations; integrate packed mixed-input execution (#129).
   (defun declared-kernel-loop (arguments specs expression kind reducer type)
     (let* ((offsets (loop for nil in arguments collect (gensym "OFFSET")))
            (phases (loop for nil in arguments collect (gensym "PHASE")))

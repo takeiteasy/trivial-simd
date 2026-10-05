@@ -84,7 +84,9 @@
       (eval `(simd:define-kernel ,function (x (q :type ,source)) (+ x q)))
       (dolist (type '(single-float double-float))
         (let* ((samples (remove-if-not (lambda (value) (typep value element))
-                                      (list minimum maximum 0 1 -1 16777217 9007199254740993)))
+                                      (list minimum maximum 0 1 -1 16777217 9007199254740993
+                                            (+ (ash 1 62) (ash 1 38) 1)
+                                            (- (+ (ash 1 62) (ash 1 38) 1)))))
                (q (make-array (length samples) :element-type element :initial-contents samples))
                (x (make-array (length samples) :element-type type :initial-element (coerce 0 type)))
                (out (make-array (length samples) :element-type type)))

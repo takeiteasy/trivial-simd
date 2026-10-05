@@ -784,7 +784,91 @@ static void check_inputs_##suffix(void) { \
 CHECK_INPUTS(f32, float, 0)
 CHECK_INPUTS(f64, double, 1)
 
+#define CHECK_LOADER_SOURCE(suffix, type, id, source) \
+static void check_loader_##id##_##suffix(void) { \
+    source values[2048]; \
+    uint64_t boundaries[] = {0, 1, 127, 128, 255, 32767, 32768, 65535, \
+        UINT64_C(16777217), UINT64_C(4294967295), UINT64_C(9007199254740993), \
+        (UINT64_C(1) << 62) + (UINT64_C(1) << 38) + 1, \
+        (UINT64_C(1) << 63) - 1, UINT64_C(1) << 63, UINT64_MAX}; \
+    for (size_t i = 0; i < 2048; ++i) values[i] = (source)boundaries[i % 15]; \
+    size_t repeats[] = {1, 3, 32, 257}; \
+    size_t lengths[] = {1, 2, 3, 4, 7, 8, 9, 31, 32, 33, 255, 256, 257, 600}; \
+    for (size_t r = 0; r < 4; ++r) { \
+        for (size_t phase = 0; phase < repeats[r]; phase += repeats[r] > 1 ? repeats[r] - 1 : 1) { \
+            for (size_t l = 0; l < sizeof(lengths) / sizeof(lengths[0]); ++l) { \
+                ts_kernel_input input = {values, 2048, 700, id, repeats[r], phase, -650}; \
+                for (size_t row = 0; row < 2; ++row) { \
+                    for (size_t base = 0; base < lengths[l]; base += TS_KERNEL_BLOCK) { \
+                        size_t n = lengths[l] - base; \
+                        if (n > TS_KERNEL_BLOCK) n = TS_KERNEL_BLOCK; \
+                        type storage[TS_KERNEL_BLOCK + 2], *buffer = storage + 1; \
+                        storage[0] = storage[n + 1] = (type)-12345; \
+                        const type *prepared; \
+                        ts_prepare_inputs_##suffix(&input, 1, row, base, n, buffer, &prepared); \
+                        assert(prepared == buffer); \
+                        for (size_t i = 0; i < n; ++i) { \
+                            size_t index = 700 - row * 650 + (phase + base + i) / repeats[r]; \
+                            type expected = (type)*(volatile source *)(values + index); \
+                            assert(memcmp(prepared + i, &expected, sizeof(type)) == 0); \
+                        } \
+                        assert(storage[0] == (type)-12345 && storage[n + 1] == (type)-12345); \
+                    } \
+                } \
+            } \
+        } \
+    } \
+}
+
+#define CHECK_LOADER_TYPES(suffix, type) \
+CHECK_LOADER_SOURCE(suffix, type, 2, int8_t) \
+CHECK_LOADER_SOURCE(suffix, type, 3, uint8_t) \
+CHECK_LOADER_SOURCE(suffix, type, 4, int16_t) \
+CHECK_LOADER_SOURCE(suffix, type, 5, uint16_t) \
+CHECK_LOADER_SOURCE(suffix, type, 6, int32_t) \
+CHECK_LOADER_SOURCE(suffix, type, 7, uint32_t) \
+CHECK_LOADER_SOURCE(suffix, type, 8, int64_t) \
+CHECK_LOADER_SOURCE(suffix, type, 9, uint64_t)
+
+CHECK_LOADER_TYPES(f32, float)
+CHECK_LOADER_TYPES(f64, double)
+
+#define CHECK_FLOAT_LOADER(suffix, type, precision) \
+static void check_float_loader_##suffix(void) { \
+    type values[] = {0.0, -0.0, 1.0, -1.0}; \
+    ts_kernel_input input = {values, 4, 0, precision, 32, 31, 0}; \
+    type buffer[TS_KERNEL_BLOCK]; \
+    const type *prepared; \
+    ts_prepare_inputs_##suffix(&input, 1, 0, 0, 65, buffer, &prepared); \
+    for (size_t i = 0; i < 65; ++i) \
+        assert(memcmp(prepared + i, values + (31 + i) / 32, sizeof(type)) == 0); \
+    input.repeat = 1; input.phase = 0; \
+    ts_prepare_inputs_##suffix(&input, 1, 0, 1, 3, buffer, &prepared); \
+    assert(prepared == values + 1); \
+}
+
+CHECK_FLOAT_LOADER(f32, float, 0)
+CHECK_FLOAT_LOADER(f64, double, 1)
+
 int main(void) {
+    check_loader_2_f32();
+    check_loader_3_f32();
+    check_loader_4_f32();
+    check_loader_5_f32();
+    check_loader_6_f32();
+    check_loader_7_f32();
+    check_loader_8_f32();
+    check_loader_9_f32();
+    check_loader_2_f64();
+    check_loader_3_f64();
+    check_loader_4_f64();
+    check_loader_5_f64();
+    check_loader_6_f64();
+    check_loader_7_f64();
+    check_loader_8_f64();
+    check_loader_9_f64();
+    check_float_loader_f32();
+    check_float_loader_f64();
     check_inputs_f32();
     check_inputs_f64();
     check_rows_f32();

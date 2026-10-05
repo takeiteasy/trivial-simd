@@ -1,0 +1,82 @@
+(require :asdf)
+(require :sb-simd)
+(load (merge-pathnames "quicklisp/setup.lisp" (user-homedir-pathname)))
+(let ((root (merge-pathnames "../" (uiop:pathname-directory-pathname *load-truename*))))
+  (asdf:initialize-source-registry `(:source-registry (:directory ,root) :inherit-configuration)))
+(asdf:load-system "trivial-simd")
+(load (merge-pathnames "benchmark-timing.lisp" (uiop:pathname-directory-pathname *load-truename*)))
+
+(trivial-simd:define-kernel profile-mixed-dot (x (q :type :s8) (scale :repeat 32))
+  (trivial-simd:sum (* x (* q scale))))
+
+;; TODO: benchmark-only scalar conversion; integrate packed compiler loads (#129).
+(defun profile-packed-dot (x q scales rows width out)
+  (declare (type (simple-array single-float (*)) x scales out)
+           (type (simple-array (signed-byte 8) (*)) q)
+           (type fixnum rows width) (optimize (speed 3) (safety 1)))
+  (dotimes (row rows out)
+    (let ((pack (sb-simd-sse:f32.4 0f0)) (base (* row width)) (i 0) (total 0f0)
+          (scale-base (* row (ceiling width 32))))
+      (declare (type sb-simd-sse:f32.4 pack) (type fixnum base i scale-base)
+               (type single-float total))
+      (loop while (<= (+ i 4) width) do
+        (let ((weights (sb-simd-sse:make-f32.4
+                        (float (aref q (+ base i)) 1f0)
+                        (float (aref q (+ base i 1)) 1f0)
+                        (float (aref q (+ base i 2)) 1f0)
+                        (float (aref q (+ base i 3)) 1f0))))
+          (setf pack
+                (sb-simd-sse:f32.4+
+                 pack (sb-simd-sse:f32.4*
+                       (sb-simd-sse:f32.4-aref x i)
+                       (sb-simd-sse:f32.4* weights
+                        (sb-simd-sse:f32.4 (aref scales (+ scale-base (floor i 32)))))))))
+        (incf i 4))
+      (multiple-value-bind (a b c d) (sb-simd-sse:f32.4-values pack)
+        (setf total (+ (+ a b) (+ c d))))
+      (loop while (< i width) do
+        (incf total (* (aref x i) (* (float (aref q (+ base i)) 1f0)
+                                    (aref scales (+ scale-base (floor i 32))))))
+        (incf i))
+      (setf (aref out row) total))))
+
+(defun profile-sbcl-case (rows width &optional timing)
+  (let* ((x (make-array width :element-type 'single-float))
+         (q (make-array (* rows width) :element-type '(signed-byte 8)))
+         (scales (make-array (* rows (ceiling width 32)) :element-type 'single-float))
+         (out (make-array rows :element-type 'single-float))
+         (reference (make-array rows :element-type 'double-float :initial-element 0d0))
+         (bounds (make-array rows :element-type 'double-float :initial-element 0d0)))
+    (dotimes (i width) (setf (aref x i) (/ (- (mod (* i 137) 257) 128) 128f0)))
+    (dotimes (i (length q)) (setf (aref q i) (- (mod (* i 71) 256) 128)))
+    (dotimes (i (length scales)) (setf (aref scales i) (/ (- (mod i 7) 3) 4f0)))
+    (dotimes (row rows)
+      (dotimes (i width)
+        (let ((product (* (coerce (aref x i) 'double-float) (aref q (+ (* row width) i))
+                          (aref scales (+ (* row (ceiling width 32)) (floor i 32))))))
+          (incf (aref reference row) product)
+          (incf (aref bounds row) (abs product)))))
+    (dolist (method (let* ((methods '(:sbcl :native :prototype))
+                          (rotation (mod (parse-integer (or (uiop:getenv "INPUT_PROFILE_TRIAL") "0")) 3)))
+                     (append (nthcdr rotation methods) (subseq methods 0 rotation))))
+      (flet ((call ()
+               (if (eq method :prototype)
+                   (profile-packed-dot x q scales rows width out)
+                   (let ((trivial-simd::*backend* method)
+                         (trivial-simd::*native-array-access* :pointer))
+                     (profile-mixed-dot x q scales :rows rows :row-length width
+                                        :x-row-stride 0 :destination out)))))
+        (fill out -12345f0)
+        (call)
+        (dotimes (row rows)
+          (assert (<= (abs (- (aref out row) (aref reference row)))
+                      (+ 1d-4 (* 1d-4 (aref bounds row))))))
+        (when timing
+          (format t "SBCL-PROFILE ~D ~D ~A ~,6F~%" rows width method (benchmark-time #'call))
+          (finish-output))))))
+
+(format t "~A ~A; machine=~A; Rosetta evaluation, scalar conversion plus SSE arithmetic~%"
+        (lisp-implementation-type) (lisp-implementation-version) (machine-type))
+(dolist (rows '(0 1 3))
+  (dolist (width '(0 1 3 4 5 31 32 33 257)) (profile-sbcl-case rows width)))
+(dolist (rows '(1024 3072)) (profile-sbcl-case rows 1024 t))

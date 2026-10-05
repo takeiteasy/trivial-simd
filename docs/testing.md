@@ -428,3 +428,32 @@ for each Lisp. See [ARM64 FMA measurements](arm64-fma.md#performance-gate).
     image as the library can exceed SBCL's default 1 GiB heap. SBCL CI jobs
     and both local architecture scripts reserve 4 GiB. For direct runs, pass
     `--dynamic-space-size 4096` before `--script` or other Lisp options.
+
+## Declared-input profiling
+
+The optional profiler separates integer/repeated-input preparation, float VM
+arithmetic on expanded inputs, and complete descriptor calls. It checks matching
+VM and complete-call results. Run it on an idle machine.
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_KERNEL_INPUT_PROFILE=ON
+cmake --build build --config Release
+build/native_kernel_input_profile
+```
+
+For five-process before/after measurements, set
+`KERNEL_PROFILE_BASELINE_SOURCE` to an absolute path to the baseline
+`native/trivial_simd.c`. Keep its `kernel-inputs.h`, `integer.h` and `fma.h`
+beside it. Then run:
+
+```sh
+python3 tests/kernel-input-profile-run.py --output /tmp/kernel-input-profile.txt
+```
+
+On SBCL x86-64, `tests/kernel-input-sbcl-profile.lisp` compares declared-input
+scalar execution, native execution and a benchmark-only prototype that packs
+scalar-converted lanes for SSE arithmetic. It checks empty dimensions and tails
+before timing. Run it with a matching x86-64 native build and
+`sbcl --dynamic-space-size 4096 --script tests/kernel-input-sbcl-profile.lisp`.
+`INPUT_PROFILE_TRIAL=0` through `4` rotates method order for five fresh runs.
+Rosetta measurements describe emulation, not native Intel hardware.
