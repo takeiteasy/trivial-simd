@@ -11,6 +11,8 @@ microseconds per call; `single-float` unless a type is listed.[^snapshot]
 Run [the benchmark](testing.md#benchmark) for your workload.
 See [benchmark results](benchmarks.md) for typed scalar comparisons and the
 native reduction baseline.
+See [declared-input profiling](kernel-input-performance.md) for integer
+conversion and repeated-scale preparation costs.
 See [spill profiling](kernel-spilling.md) for register-heavy kernels and scratch
 storage measurements.
 

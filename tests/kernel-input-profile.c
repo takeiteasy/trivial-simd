@@ -9,6 +9,7 @@
 
 static volatile double profile_result;
 
+/* Indirect calls retain preparation stores when only one result is consumed. */
 #define PROFILE_INPUTS(suffix, type, precision) \
 static void (*volatile prepare_##suffix)(const ts_kernel_input *, size_t, size_t, size_t, \
                                         size_t, type *, const type **) = ts_prepare_inputs_##suffix; \

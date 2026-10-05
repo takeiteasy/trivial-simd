@@ -420,15 +420,6 @@ compile and load its scalar helper before profiling. Baseline `:auto` disables
 the new adapter; `:in-process` uses the candidate loop. Run five fresh processes
 for each Lisp. See [ARM64 FMA measurements](arm64-fma.md#performance-gate).
 
-[^x86-copy]: The Lisp loader reads `build/libtrivial_simd.dylib`, so the x86-64
-    library cannot share the ARM64 `build/`. The SBCL tarball keeps its contrib
-    fasls under `obj/sbcl-home`, which the script sets as `SBCL_HOME`.
-
-[^sbcl-heap]: Compiling the suite's expanded kernel definitions in the same
-    image as the library can exceed SBCL's default 1 GiB heap. SBCL CI jobs
-    and both local architecture scripts reserve 4 GiB. For direct runs, pass
-    `--dynamic-space-size 4096` before `--script` or other Lisp options.
-
 ## Declared-input profiling
 
 The optional profiler separates integer/repeated-input preparation, float VM
@@ -457,3 +448,12 @@ before timing. Run it with a matching x86-64 native build and
 `sbcl --dynamic-space-size 4096 --script tests/kernel-input-sbcl-profile.lisp`.
 `INPUT_PROFILE_TRIAL=0` through `4` rotates method order for five fresh runs.
 Rosetta measurements describe emulation, not native Intel hardware.
+
+[^x86-copy]: The Lisp loader reads `build/libtrivial_simd.dylib`, so the x86-64
+    library cannot share the ARM64 `build/`. The SBCL tarball keeps its contrib
+    fasls under `obj/sbcl-home`, which the script sets as `SBCL_HOME`.
+
+[^sbcl-heap]: Compiling the suite's expanded kernel definitions in the same
+    image as the library can exceed SBCL's default 1 GiB heap. SBCL CI jobs
+    and both local architecture scripts reserve 4 GiB. For direct runs, pass
+    `--dynamic-space-size 4096` before `--script` or other Lisp options.
