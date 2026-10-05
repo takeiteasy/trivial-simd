@@ -136,7 +136,7 @@ instead. The available integer operations and backend paths are described in
 | Area | Ticket |
 |---|---|
 | Native strided kernels | [#101](https://todo.sr.ht/~takeiteasy/trivial-simd/101) |
-| Shifted overlap between destination and input slices | [#67](https://todo.sr.ht/~takeiteasy/trivial-simd/67) |
+| Shifted overlap between bulk-operation destination and input slices; [kernels](kernels.md#overlap) read inputs first | [#67](https://todo.sr.ht/~takeiteasy/trivial-simd/67) |
 
 [^gather]: Each strided vector costs one temporary and one extra pass per call.
     At 1,024 elements a strided call takes 3x to 7x a contiguous native call.

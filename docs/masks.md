@@ -49,5 +49,6 @@ conversion, comparison, and mask counting.
 Mask kernels use scalar comparison and selection lanes in the native VM, and
 typed scalar loops on SBCL. Packed execution is tracked in
 [#72](https://todo.sr.ht/~takeiteasy/trivial-simd/72).
-Shifted overlap follows the [bulk overlap limitation](api.md#limitations).
+Mask kernels follow the [kernel overlap rule](kernels.md#overlap); shifted
+overlap in bulk mask operations follows the [bulk overlap limitation](api.md#limitations).
 Floating-point comparisons follow the [IEEE consistency limitation](kernels.md#limitations).

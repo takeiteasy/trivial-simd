@@ -811,6 +811,7 @@ END, and per-input start keywords. Experimental."
                  (when (integer-type-p ,type) (validate-integer-kernel ',tree ,type ',reducer))
                  (destructuring-bind ,all-offsets ,offsets-variable
                    (declare (type fixnum ,@all-offsets))
+                   ,@(unshifted-kernel-inputs-forms destination d-offset arguments offsets count)
                    ,(staged-kernel-form
                      name reducer type destination d-offset arguments offsets all-starts count
                      `(and (eq *backend* :native) (not (complex-type-p ,type)))

@@ -142,6 +142,22 @@
          destination output-start count)
         (values type count (nreverse offsets) (nreverse phases) (nreverse spans) output-start)))))
 
+(defun unshift-declared-inputs (inputs specs offsets spans destination output-start count)
+  "Return INPUTS, OFFSETS and SPANS with each unrepeated input whose slice is
+shifted against the destination's replaced by a copy; see UNSHIFTED-KERNEL-INPUT."
+  (if (null destination)
+      (values inputs offsets spans)
+      (loop for input in inputs for (nil repeat) in specs for offset in offsets for span in spans
+            for (copy copy-offset) = (if (= repeat 1)
+                                         (multiple-value-list
+                                          (unshifted-kernel-input destination output-start
+                                                                  input offset count))
+                                         (list input offset))
+            collect copy into copies
+            collect copy-offset into copy-offsets
+            collect (if (eq copy input) span (list 0 count)) into copy-spans
+            finally (return (values copies copy-offsets copy-spans)))))
+
 (eval-when (:compile-toplevel :load-toplevel :execute)
   ;; TODO: scalar SBCL declarations; integrate packed mixed-input execution (#129).
   (defun declared-kernel-loop (arguments specs expression kind reducer type)
@@ -462,6 +478,7 @@
              (programs (gensym "PROGRAMS")) (runners (gensym "RUNNERS"))
              (type (gensym "TYPE")) (count (gensym "COUNT")) (offsets (gensym "OFFSETS"))
              (phases (gensym "PHASES")) (spans (gensym "SPANS")) (output-start (gensym "OUTPUT-START"))
+             (inputs (gensym "INPUTS"))
              (tree (mask-kernel-tree body arguments))
              (lowered (multiple-value-list (lower-kernel tree)))
              (bytes (kernel-bytes (first lowered)))
@@ -504,6 +521,9 @@
                 `(multiple-value-bind (,type ,count ,offsets ,phases ,spans ,output-start)
                      (resolve-declared-kernel (list ,@arguments) ',specs ,destination ',kind start end
                                               (list ,@starts) ,(when destination 'destination-start))
-                   (execute-declared-kernel ,runners ,programs ',bytes ',constants ,scratch
-                                            ,type (list ,@arguments) ',specs ,offsets ,phases ,spans
-                                            ,destination ,output-start 1 ,count ',kind ',reducer ',tree)))))))))
+                   (multiple-value-bind (,inputs ,offsets ,spans)
+                       (unshift-declared-inputs (list ,@arguments) ',specs ,offsets ,spans
+                                                ,destination ,output-start ,count)
+                     (execute-declared-kernel ,runners ,programs ',bytes ',constants ,scratch
+                                              ,type ,inputs ',specs ,offsets ,phases ,spans
+                                              ,destination ,output-start 1 ,count ',kind ',reducer ',tree))))))))))

@@ -328,3 +328,42 @@
                      (is (zerop calls))
                      (is (equalp out #(0f0 0f0))))))))
         (setf (symbol-function 'simd::call-declared-native) original)))))
+
+(simd:define-kernel input-shifted (x (q :type :s8)) (+ x q))
+(simd:define-kernel shifted-fma (a b) (simd:fma a b 1))
+(simd:define-kernel shifted-centred (a) (- a (simd:sum a)))
+
+(test kernel-shifted-overlap-reads-inputs-first
+  ;; 257 elements cross the native 256-element block boundary.
+  (dolist (count '(19 257))
+    (let* ((x (make-array 259 :element-type 'single-float
+                              :initial-contents (loop for i below 259 collect (float (mod i 7)))))
+           (q (make-array 259 :element-type '(signed-byte 8) :initial-element 1))
+           (s32 (make-array 259 :element-type '(signed-byte 32)
+                                :initial-contents (loop for i below 259 collect (- (mod i 11) 5))))
+           (twos (make-array 259 :element-type '(signed-byte 32) :initial-element 2))
+           (declared (shifted-overlap-expected (lambda (i) (+ (aref x i) 1)) x 1 0 count))
+           (fma (shifted-overlap-expected (lambda (i) (+ (* (aref x i) 2) 1)) x 0 1 count))
+           (total (loop for i below count sum (aref x i)))
+           (centred (shifted-overlap-expected (lambda (i) (- (aref x i) total)) x 2 0 count))
+           (integer (shifted-overlap-expected (lambda (i) (+ (* (aref s32 i) 2) 3)) s32 1 0 count)))
+      (dolist (backend (available-backends))
+        (with-backend (backend)
+          (let ((vector (copy-seq x)))
+            (input-shifted vector vector q :end count :destination-start 1)
+            (is (equalp declared vector) "declared ~A count ~D" backend count))
+          (let ((vector (copy-seq x))
+                (twos (make-array 259 :element-type 'single-float :initial-element 2f0)))
+            (shifted-fma vector vector twos :end count :a-start 1)
+            (is (equalp fma vector) "fma ~A count ~D" backend count))
+          (let ((vector (copy-seq x)))
+            (shifted-centred vector vector :end count :destination-start 2)
+            (is (equalp centred vector) "multi-pass ~A count ~D" backend count))
+          (with-view-memory
+            ;; Distinct views of one memory block overlap by address.
+            (let* ((memory (mirror s32))
+                   (output (simd:make-vector-view (simd:vector-view-pointer memory) :s32 count
+                                                  :offset 1))
+                   (input (simd:make-vector-view (simd:vector-view-pointer memory) :s32 count)))
+              (integer-shifted output input twos :end count)
+              (is (equalp integer (contents memory)) "views ~A count ~D" backend count))))))))
