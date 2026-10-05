@@ -155,6 +155,10 @@
         (setf absolute (max absolute error) normalized (max normalized (/ error bound)))))
     (values absolute normalized)))
 
+(defun reset-output (out rows)
+  (dotimes (row rows)
+    (setf (trivial-simd::vector-ref out (1+ row)) -12345f0)))
+
 (defun check-native-calls (function rows width)
   (let ((original (symbol-function 'trivial-simd::call-declared-native)) (calls 0))
     (unwind-protect
@@ -182,12 +186,12 @@
               (ordered (append (nthcdr rotation timed) (subseq timed 0 rotation))))
          (check-native-calls (cdr (first methods)) rows width)
          (let ((trivial-simd::*backend* :lisp))
+           (reset-output out rows)
            (funcall (cdr (first methods)))
            (check-output out reference bounds))
          (dolist (method methods)
            (unless (and (eq (car method) :accelerate) (or (zerop rows) (zerop width)))
-             (dotimes (row rows)
-               (setf (trivial-simd::vector-ref out (1+ row)) -12345f0))
+             (reset-output out rows)
              (funcall (cdr method))
              (multiple-value-bind (absolute normalized) (check-output out reference bounds)
                (format t "CHECK ~A ~A ~D ~D abs=~,9E normalized=~,9E~%"

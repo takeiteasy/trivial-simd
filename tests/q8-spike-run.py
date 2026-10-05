@@ -12,6 +12,7 @@ parser.add_argument("--output", type=pathlib.Path, required=True)
 args = parser.parse_args()
 root = pathlib.Path(__file__).resolve().parent.parent
 environment = dict(os.environ, VECLIB_MAXIMUM_THREADS="1")
+environment.pop("Q8_CHECK_ONLY", None)
 results = collections.defaultdict(list)
 repack = collections.defaultdict(list)
 
@@ -32,14 +33,17 @@ with args.output.open("w") as log:
               "Each process rotates timing order; helper uses >=50ms calibration and three-batch median.\n")
     log.flush()
     for trial in range(5):
-        output = subprocess.check_output(
+        process = subprocess.run(
             ["sbcl", "--dynamic-space-size", "4096", "--script", "tests/q8-spike.lisp"],
-            cwd=root, env=dict(environment, Q8_TRIAL=str(trial)), text=True, stderr=subprocess.STDOUT)
+            cwd=root, env=dict(environment, Q8_TRIAL=str(trial)), text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        output = process.stdout
         log.write(f"\nPROCESS {trial}\n{output}")
         log.flush()
+        process.check_returncode()
         for line in output.splitlines():
             fields = line.split()
-            if fields and fields[0] == "RESULT":
+            if len(fields) == 8 and fields[0] == "RESULT" and fields[1].isdigit():
                 _, _, storage, rows, width, method, us, _ = fields
                 results[(storage, int(rows), int(width), method)].append(float(us))
             elif fields and fields[0] == "REPACK":
@@ -47,6 +51,7 @@ with args.output.open("w") as log:
                 repack[(int(rows), int(width))].append(float(us))
         print(f"Trial {trial + 1}/5 passed", flush=True)
     medians = {key: statistics.median(values) for key, values in results.items()}
+    assert len(medians) == 16
     log.write("\nSUMMARY columns: storage rows width method median-us min-us max-us effective-GFLOP/s kernel/C-throughput\n")
     for key, median in sorted(medians.items()):
         storage, rows, width, method = key
