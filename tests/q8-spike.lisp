@@ -1,0 +1,233 @@
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (require :asdf)
+  (unless (find-package :ql)
+    (load (merge-pathnames "quicklisp/setup.lisp" (user-homedir-pathname)))))
+
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (asdf:load-asd #.(merge-pathnames "../trivial-simd.asd"
+                                (uiop:pathname-directory-pathname
+                                 (or *compile-file-truename* *load-truename*))))
+  (asdf:load-system "trivial-simd/blas")
+  (load #.(merge-pathnames "benchmark-timing.lisp"
+                          (uiop:pathname-directory-pathname
+                           (or *compile-file-truename* *load-truename*)))))
+
+(defpackage #:trivial-simd/q8-spike (:use #:cl))
+(in-package #:trivial-simd/q8-spike)
+
+(cffi:load-foreign-library
+ (merge-pathnames "build/libq8_spike.dylib" (asdf:system-source-directory "trivial-simd")))
+(cffi:load-foreign-library "/System/Library/Frameworks/Accelerate.framework/Accelerate")
+
+(cffi:defcfun ("q8_neon" neon) :int
+  (blocks :pointer) (x :pointer) (out :pointer) (rows :size) (width :size))
+(cffi:defcfun ("q8_scalar" scalar) :int
+  (blocks :pointer) (x :pointer) (out :pointer) (rows :size) (width :size))
+(cffi:defcfun ("cblas_sgemv" accelerate) :void
+  (order :int) (transpose :int) (rows :int) (cols :int) (alpha :float)
+  (a :pointer) (lda :int) (x :pointer) (incx :int) (beta :float) (y :pointer) (incy :int))
+
+(trivial-simd:define-kernel quantized-dot (x (q :type :s8) (scale :repeat 32))
+  (trivial-simd:sum (* x (* q scale))))
+
+(defun validate-payload (raw rows width)
+  (unless (and (typep rows '(integer 0)) (typep width '(integer 0))
+               (zerop (mod width 32))
+               (= (length raw) (* rows (/ width 32) 34)))
+    (error "Q8_0 requires whole 32-element blocks and an exact payload length")))
+
+(defun repack-into (raw rows width q scales halves)
+  (validate-payload raw rows width)
+  (let ((blocks (* rows (/ width 32))))
+    (assert (= (length q) (* rows width)))
+    (assert (= (length scales) (length halves) blocks))
+    (dotimes (block blocks)
+      (let ((base (* block 34)))
+        (setf (aref halves block) (+ (aref raw base) (ash (aref raw (1+ base)) 8)))
+        (dotimes (i 32)
+          (let ((byte (aref raw (+ base 2 i))))
+            (setf (aref q (+ (* block 32) i)) (if (< byte 128) byte (- byte 256)))))))
+    (trivial-simd:convert! scales halves :input-encoding :f16)))
+
+(defun reference-half (bits)
+  (let ((sign (if (logbitp 15 bits) -1d0 1d0))
+        (exponent (ldb (byte 5 10) bits))
+        (fraction (ldb (byte 10 0) bits)))
+    (assert (< exponent 31))
+    (* sign (if (zerop exponent)
+                (* fraction (expt 2d0 -24))
+                (* (+ 1d0 (/ fraction 1024d0)) (expt 2d0 (- exponent 15)))))))
+
+(defun make-fixture (rows width)
+  (let* ((blocks (* rows (/ width 32)))
+         (raw (make-array (* blocks 34) :element-type '(unsigned-byte 8)))
+         (q (make-array (* rows width) :element-type '(signed-byte 8)))
+         (scales (make-array blocks :element-type 'single-float))
+         (halves (make-array blocks :element-type '(unsigned-byte 16)))
+         (matrix (make-array (* rows width) :element-type 'single-float))
+         (x (make-array width :element-type 'single-float))
+         (out (make-array (+ rows 2) :element-type 'single-float :initial-element -12345f0))
+         (reference (make-array rows :element-type 'double-float :initial-element 0d0))
+         (bounds (make-array rows :element-type 'double-float :initial-element 0d0))
+         (state 106))
+    (flet ((random-byte ()
+             (setf state (mod (+ (* state 1664525) 1013904223) (ash 1 32)))
+             (ldb (byte 8 16) state)))
+      (dotimes (i width) (setf (aref x i) (/ (- (random-byte) 128) 128f0)))
+      (dotimes (b blocks)
+        (let ((bits (case (mod b 19)
+                      (0 0) (1 #x8000) (2 1) (3 #x3c00) (4 #xbc00)
+                      (otherwise (+ (ash (+ 6 (mod b 8)) 10) (mod (* b 137) 1024))))))
+          (setf (aref raw (* b 34)) (logand bits 255)
+                (aref raw (1+ (* b 34))) (ash bits -8))
+          (dotimes (i 32)
+            (setf (aref raw (+ (* b 34) 2 i))
+                  (case i (0 128) (1 127) (otherwise (random-byte))))))))
+    (repack-into raw rows width q scales halves)
+    (dotimes (row rows)
+      (dotimes (col width)
+        (let* ((index (+ (* row width) col)) (block (floor index 32))
+               (base (* block 34))
+               (bits (+ (aref raw base) (ash (aref raw (1+ base)) 8)))
+               (byte (aref raw (+ base 2 (mod col 32))))
+               (weight (* (if (< byte 128) byte (- byte 256)) (reference-half bits)))
+               (product (* weight (coerce (aref x col) 'double-float))))
+          (assert (= (aref q index) (if (< byte 128) byte (- byte 256))))
+          (assert (= (coerce (aref scales block) 'double-float) (reference-half bits)))
+          (setf (aref matrix index) (* (coerce (aref q index) 'single-float) (aref scales block)))
+          (incf (aref reference row) product)
+          (incf (aref bounds row) (abs product)))))
+    (values (list q scales matrix x raw out) reference bounds halves)))
+
+(defun call-with-storage (vectors mode function)
+  (if (eq mode :arrays)
+      (funcall function vectors)
+      (let ((pointers nil) (views nil))
+        (unwind-protect
+             (progn
+               (loop for vector in vectors
+                     for type in '(:s8 :f32 :f32 :f32 :u8 :f32)
+                     for foreign in '(:int8 :float :float :float :uint8 :float)
+                     do (let ((pointer (cffi:foreign-alloc foreign :count (max 1 (length vector)))))
+                          (push pointer pointers)
+                          (dotimes (i (length vector))
+                            (setf (cffi:mem-aref pointer foreign i) (aref vector i)))
+                          (push (trivial-simd:make-vector-view pointer type (length vector)) views)))
+               (funcall function (nreverse views)))
+          (mapc #'cffi:foreign-free pointers)))))
+
+(defun make-methods (vectors rows width)
+  (destructuring-bind (q scales matrix x raw out) vectors
+    (let ((view (trivial-simd/blas:make-matrix-view matrix rows width :layout :row-major)))
+      (flet ((c-call (function)
+               (trivial-simd::call-with-row-pointers
+                (list raw x out)
+                (lambda (pointers)
+                  (assert (zerop (funcall function (first pointers) (second pointers)
+                                         (cffi:inc-pointer (third pointers) 4) rows width))))))
+             (kernel-call ()
+               (quantized-dot x q scales :rows rows :row-length width :x-row-stride 0
+                              :q-row-stride width :scale-row-stride (/ width 32)
+                              :destination out :destination-start 1)))
+        (list (cons :kernel #'kernel-call)
+              (cons :neon (lambda () (c-call #'neon)))
+              (cons :repo-sgemv (lambda ()
+                                  (trivial-simd/blas:sgemv :no-transpose 1f0 view x 1 0f0 out 1
+                                                         :y-offset 1)))
+              (cons :accelerate (lambda ()
+                                  (trivial-simd::call-with-row-pointers
+                                   (list matrix x out)
+                                   (lambda (pointers)
+                                     (accelerate 101 111 rows width 1f0 (first pointers) width
+                                                 (second pointers) 1 0f0
+                                                 (cffi:inc-pointer (third pointers) 4) 1)))))
+              (cons :scalar (lambda () (c-call #'scalar))))))))
+
+(defun check-output (out reference bounds)
+  (let ((absolute 0d0) (normalized 0d0) (rows (length reference)))
+    (assert (= -12345f0 (trivial-simd::vector-ref out 0)
+               (trivial-simd::vector-ref out (1+ rows))))
+    (dotimes (row rows)
+      (let* ((error (abs (- (coerce (trivial-simd::vector-ref out (1+ row)) 'double-float)
+                           (aref reference row))))
+             (bound (+ 1d-4 (* 1d-4 (aref bounds row)))))
+        (assert (<= error bound))
+        (setf absolute (max absolute error) normalized (max normalized (/ error bound)))))
+    (values absolute normalized)))
+
+(defun check-native-calls (function rows width)
+  (let ((original (symbol-function 'trivial-simd::call-declared-native)) (calls 0))
+    (unwind-protect
+         (progn
+           (setf (symbol-function 'trivial-simd::call-declared-native)
+                 (lambda (&rest arguments) (incf calls) (apply original arguments)))
+           (funcall function)
+           (assert (= calls (if (and (plusp rows) (plusp width)) 1 0))))
+      (setf (symbol-function 'trivial-simd::call-declared-native) original))))
+
+(defun run-case (rows width mode &key timing trial)
+  (multiple-value-bind (vectors reference bounds halves) (make-fixture rows width)
+    (when timing
+      (let ((raw (fifth vectors)) (q (first vectors)) (scales (second vectors)))
+        (format t "REPACK ~D ~D ~,6F packed-bytes=~D repacked-bytes=~D f32-bytes=~D~%"
+                rows width (cl-user::benchmark-time
+                            (lambda () (repack-into raw rows width q scales halves)))
+                (length raw) (+ (length q) (* 4 (length scales))) (* 4 rows width))))
+    (call-with-storage
+     vectors mode
+     (lambda (storage)
+       (let* ((out (sixth storage)) (methods (make-methods storage rows width))
+              (timed (butlast methods))
+              (rotation (mod (or trial 0) (length timed)))
+              (ordered (append (nthcdr rotation timed) (subseq timed 0 rotation))))
+         (check-native-calls (cdr (first methods)) rows width)
+         (let ((trivial-simd::*backend* :lisp))
+           (funcall (cdr (first methods)))
+           (check-output out reference bounds))
+         (dolist (method methods)
+           (unless (and (eq (car method) :accelerate) (or (zerop rows) (zerop width)))
+             (dotimes (row rows)
+               (setf (trivial-simd::vector-ref out (1+ row)) -12345f0))
+             (funcall (cdr method))
+             (multiple-value-bind (absolute normalized) (check-output out reference bounds)
+               (format t "CHECK ~A ~A ~D ~D abs=~,9E normalized=~,9E~%"
+                       mode (car method) rows width absolute normalized))))
+         (when timing
+           (dolist (method ordered)
+             (let ((us (cl-user::benchmark-time (cdr method))))
+               (check-output out reference bounds)
+               (format t "RESULT ~D ~A ~D ~D ~A ~,6F ~,6F~%" trial mode rows width (car method)
+                       us (/ (* 2d0 rows width) (* 1000d0 us)))
+               (finish-output)))))))))
+
+(defun expect-error (function)
+  (assert (handler-case (progn (funcall function) nil) (error () t))))
+
+(defun run-spike ()
+  (let ((trivial-simd::*backend* :native)
+        (trivial-simd::*native-array-access* :pointer)
+        (trivial-simd/blas::*native-blas-level2-threshold* 0)
+        (trial (parse-integer (or (uiop:getenv "Q8_TRIAL") "0"))))
+    (assert trivial-simd::*native-kernel-inputs-available-p*)
+    (format t "~A ~A; ~A ~A; trial=~D~%" (lisp-implementation-type) (lisp-implementation-version)
+            (machine-type) (machine-version) trial)
+    (format t "VECLIB_MAXIMUM_THREADS=~A; calling threads=1; native access=pointer~%"
+            (uiop:getenv "VECLIB_MAXIMUM_THREADS"))
+    (format t "RESULT columns: trial storage rows width method microseconds effective-GFLOP/s~%")
+    (expect-error (lambda () (validate-payload #() 1 33)))
+    (expect-error (lambda () (validate-payload #(0) 1 32)))
+    (expect-error (lambda () (validate-payload #() -1 32)))
+    (cffi:with-foreign-object (out :float)
+      (setf (cffi:mem-ref out :float) -12345f0)
+      (dolist (function (list #'neon #'scalar))
+        (assert (= 1 (funcall function (cffi:null-pointer) (cffi:null-pointer) out 1 33)))
+        (assert (= -12345f0 (cffi:mem-ref out :float)))))
+    (dolist (mode '(:arrays :views))
+      (dolist (rows '(0 1 3))
+        (dolist (width '(0 32 64 256 288)) (run-case rows width mode))))
+    (unless (uiop:getenv "Q8_CHECK_ONLY")
+      (dolist (mode '(:arrays :views))
+        (dolist (rows '(1024 3072)) (run-case rows 1024 mode :timing t :trial trial))))
+    (format t "Q8_0 spike checks passed.~%")))
+
+(run-spike)
