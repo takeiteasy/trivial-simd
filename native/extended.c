@@ -622,3 +622,46 @@ void ts_extended_convert_encoded(void *out, const void *input, size_t n,
         }
     }
 }
+
+void ts_nd_convert(void *out, const void *input, size_t n, int64_t ds, int64_t is,
+                   unsigned destination_type, unsigned input_type, int rounding) {
+    if (ds == 1 && is == 1 && destination_type != input_type) {
+        if (destination_type == 0 && input_type == 1) {
+            ts_extended_f64_to_f32(out, input, n); return;
+        }
+        if (destination_type == 1 && input_type == 0) {
+            ts_extended_f32_to_f64(out, input, n); return;
+        }
+        if (input_type == 0 || destination_type == 0) {
+            ts_extended_convert_encoded(out, input, n, destination_type, input_type, rounding); return;
+        }
+    }
+    const size_t sizes[] = {4, 8, 2, 2};
+    for (size_t i = 0; i < n; ++i) {
+        const void *source = (const char *)input + (int64_t)i * is * (int64_t)sizes[input_type];
+        void *target = (char *)out + (int64_t)i * ds * (int64_t)sizes[destination_type];
+        if (destination_type == input_type) {
+            memmove(target, source, sizes[input_type]); continue;
+        }
+        if (input_type == 1) {
+            if (destination_type == 0) *(float *)target = (float)*(const double *)source;
+            else {
+                uint64_t bits; memcpy(&bits, source, sizeof bits);
+                *(uint16_t *)target = ts_f64_bits_to_encoded(bits, destination_type == 3, rounding);
+            }
+        } else {
+            float value = input_type == 0 ? *(const float *)source : input_type == 2
+                ? ts_bf16_to_f32_scalar(*(const uint16_t *)source)
+                : ts_f16_to_f32_scalar(*(const uint16_t *)source);
+            if (destination_type == 0) *(float *)target = value;
+            else if (destination_type == 1) {
+                if (input_type == 0) *(double *)target = (double)value;
+                else {
+                    uint64_t bits = ts_f32_bits_to_f64_bits(ts_float_bits(value));
+                    memcpy(target, &bits, sizeof bits);
+                }
+            } else *(uint16_t *)target = destination_type == 2
+                ? ts_f32_to_bf16_scalar(value, rounding) : ts_f32_to_f16_scalar(value, rounding);
+        }
+    }
+}

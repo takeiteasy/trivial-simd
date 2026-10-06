@@ -33,6 +33,8 @@ offsets. `min!` and `max!` use `:destination-start`, `:left-start`, and
 `:lower-start`, and `:upper-start`. A start keyword for a scalar signals an
 error. Destinations may also be an input at the same slice position.
 
+Use [N-D entry points](nd.md) for shapes with several strided axes or zero-stride broadcasting.
+
 ## Limitations
 
 Shifted overlap between destination and input slices has

@@ -812,3 +812,7 @@ TS_FILL(u32, uint32_t)
 TS_FILL(s64, uint64_t)
 TS_FILL(u64, uint64_t)
 #undef TS_FILL
+
+#ifdef TS_ND_ENABLED
+#include "nd.h"
+#endif

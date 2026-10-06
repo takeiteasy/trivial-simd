@@ -34,6 +34,8 @@ Whole-vector call tests compare keyword-free calls with explicit-slice calls and
 check that mismatched lengths, types, masks and scalars still signal errors.
 Copy tests cover `copy!`, `fill!` and `swap!` on every element type and backend,
 including overlap, large unaligned slices and error cases.
+N-D tests cover independent layout enumeration, every computational dtype, conversion pairs, all encoded bit patterns, broadcasting, signed strides, aliases, validation before writes, foreign storage, native dispatch, missing-symbol fallback and absence of staging. Native N-D harnesses check SIMD and scalar builds, integer division, masks, conversion layouts, rank-zero and empty calls. Run `examples/nd.lisp` for a broadcast operation and an aliased reversed view.
+
 Stride tests compare every bulk operation and reduction with a contiguous call on
 plainly gathered copies for strides 1, 2, 3 and negative values on every
 backend, and cover bounds, empty slices, scalar operands and aliased outputs.

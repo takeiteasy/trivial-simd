@@ -1,6 +1,6 @@
 # API
 
-`trivial-simd` operates on whole, equal-length, simple vectors of
+`trivial-simd` operates on whole vectors, slices and [N-D strided layouts](nd.md), using simple vectors of
 `single-float`, `double-float`, `(complex single-float)`,
 `(complex double-float)`, or signed/unsigned 8/16/32/64-bit integers.
 Arithmetic inputs and destination have the same element type. Scalars match
@@ -27,6 +27,7 @@ is.
 | [`minimum`, `maximum`, `argmin`, `argmax`](reductions.md) | Extreme element or its index |
 | [`make-vector-view`](vector-views.md) | A vector of foreign memory |
 | `(backend)` | `:sbcl`, `:native`, or `:lisp` |
+| [N-D operations](nd.md) | Arithmetic, masks and conversion over a shape with independent signed strides |
 | [Small arrays](small-arrays.md) | Short float vectors run inline, without a backend call |
 
 The four binary `!` functions accept a scalar on either side, with a vector
