@@ -13,6 +13,7 @@
            #:srot #:drot #:csrot #:zdrot #:crot #:zrot #:srotm #:drotm
            #:matrix-view #:matrix-view-p #:matrix-view-data #:matrix-view-rows
            #:matrix-view-cols #:matrix-view-layout #:matrix-view-leading-dimension
+           #:matrix-view-row-stride #:matrix-view-column-stride
            #:matrix-view-offset #:matrix-view-kind #:matrix-view-kl #:matrix-view-ku
            #:make-matrix-view #:matrix-subview #:matrix-ref
            #:make-band-matrix-view #:make-packed-matrix-view
@@ -29,6 +30,7 @@
            #:ssyr2 #:dsyr2 #:sspr2 #:dspr2
            #:cher #:zher #:chpr #:zhpr #:cher2 #:zher2 #:chpr2 #:zhpr2
            #:sgemm #:dgemm #:cgemm #:zgemm
+           #:sgemm-batch-strided #:dgemm-batch-strided
            #:ssymm #:dsymm #:csymm #:zsymm #:chemm #:zhemm
            #:ssyrk #:dsyrk #:csyrk #:zsyrk #:cherk #:zherk
            #:ssyr2k #:dsyr2k #:csyr2k #:zsyr2k #:cher2k #:zher2k

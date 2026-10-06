@@ -2,6 +2,7 @@
 
 (deftype blas-dim () '(integer 0 1073741823))
 (deftype blas-offset () '(unsigned-byte 60))
+(deftype blas-batch-stride () '(integer -1152921504606846975 1152921504606846975))
 
 (deftype blas-increment () '(integer -1073741823 1073741823))
 
@@ -118,22 +119,27 @@ ARRAYS binds POINTER to the pinned element at OFFSET for use in ARGUMENTS."
 (defun dense-strides (view transpose)
   "Return VIEW's storage, first-element offset, and the row and column strides
 of op(VIEW)."
-  (let* ((ld (matrix-view-leading-dimension view))
-         (row-major (eq (matrix-view-layout view) :row-major))
-         (row-stride (if row-major ld 1))
-         (column-stride (if row-major 1 ld)))
+  (let ((row-stride (if (= (matrix-view-rows view) 1) 0 (matrix-view-row-stride view)))
+        (column-stride (if (= (matrix-view-cols view) 1) 0 (matrix-view-column-stride view))))
     (if (eq transpose :no-transpose)
         (values (matrix-view-data view) (matrix-view-offset view)
                 row-stride column-stride)
         (values (matrix-view-data view) (matrix-view-offset view)
                 column-stride row-stride))))
 
-(defun validate-kernel-limits (view)
+(defun validate-kernel-limits (view &optional strided)
+  (when (and (not strided) (eq (matrix-view-layout view) :strided))
+    (error "This BLAS operation requires a regular matrix layout"))
   (unless (and (typep (matrix-view-kl view) 'blas-dim)
                (typep (matrix-view-ku view) 'blas-dim)
                (typep (matrix-view-rows view) 'blas-dim)
                (typep (matrix-view-cols view) 'blas-dim)
-               (typep (matrix-view-leading-dimension view) 'blas-dim)
+               (if (and strided (eq (matrix-view-kind view) :dense))
+                   (and (or (= (matrix-view-rows view) 1)
+                            (typep (matrix-view-row-stride view) 'blas-increment))
+                        (or (= (matrix-view-cols view) 1)
+                            (typep (matrix-view-column-stride view) 'blas-increment)))
+                   (typep (matrix-view-leading-dimension view) 'blas-dim))
                (typep (matrix-view-offset view) 'blas-offset))
     (error "Matrix view is too large for the BLAS kernels")))
 

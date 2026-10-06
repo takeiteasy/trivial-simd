@@ -354,3 +354,194 @@
                   (is (close-enough-p (imagpart actual)
                                       (cffi:mem-aref fc :double (1+ (* 2 i)))
                                       'double-float)))))))))))
+
+(defun batch-data (type values)
+  (blas-vector type (mapcar (lambda (value) (coerce value type)) values)))
+
+(defun batch-matrix-values (view count step &optional (transpose :no-transpose))
+  (let ((rows (trivial-simd/blas:matrix-view-rows view))
+        (cols (trivial-simd/blas:matrix-view-cols view))
+        (rs (trivial-simd/blas:matrix-view-row-stride view))
+        (cs (trivial-simd/blas:matrix-view-column-stride view))
+        (base (trivial-simd/blas:matrix-view-offset view))
+        (data (trivial-simd/blas:matrix-view-data view)))
+    (unless (eq transpose :no-transpose) (rotatef rows cols) (rotatef rs cs))
+    (loop for batch below count collect
+          (loop for i below rows collect
+                (loop for j below cols collect
+                      (trivial-simd::vector-ref data (+ base (* batch step) (* i rs) (* j cs))))))))
+
+(defun check-batch-gemm (type a b c count astep bstep cstep
+                       &optional (ta :no-transpose) (tb :no-transpose) (alpha 1) (beta 0))
+  (let* ((av (batch-matrix-values a count astep ta))
+         (bv (batch-matrix-values b count bstep tb))
+         (cv (batch-matrix-values c count cstep))
+         (expected (loop for am in av for bm in bv for cm in cv collect
+                         (loop for row in am for old in cm collect
+                               (loop for previous in old for j from 0 collect
+                                     (+ (* beta previous)
+                                        (* alpha (loop for value in row for brow in bm
+                                                       sum (* value (nth j brow))))))))))
+    (is (eq c (level3-call (if (eq type 'single-float) "sgemm-batch-strided" "dgemm-batch-strided")
+                           ta tb (coerce alpha type) a b (coerce beta type) c
+                           :batch-count count :a-stride astep :b-stride bstep :c-stride cstep)))
+    (loop for actual-matrix in (batch-matrix-values c count cstep) for reference-matrix in expected
+          do (loop for actual-row in actual-matrix for reference-row in reference-matrix
+                   do (loop for actual in actual-row for reference in reference-row
+                            do (is (< (abs (- actual reference))
+                                      (* (if (eq type 'single-float) 1d-5 1d-12)
+                                         (max 1 (abs reference))))))))))
+
+(test blas-strided-matrix-views
+  (let* ((matrix (level3-view 'single-float '(1 2 3 4) :layout :column-major))
+         (part (trivial-simd/blas:matrix-subview matrix 1 1 1 1)))
+    (is (eq :column-major (trivial-simd/blas:matrix-view-layout part)))
+    (is (= 2 (trivial-simd/blas:matrix-view-leading-dimension part)))
+    (is (= 4f0 (trivial-simd/blas:matrix-ref part 0 0))))
+  (let* ((data (batch-data 'single-float '(0 1 2 3 4 5 6 7 8 9)))
+         (view (trivial-simd/blas:make-matrix-view data 2 3 :offset 8
+                                                   :row-stride -4 :column-stride -1))
+         (part (trivial-simd/blas:matrix-subview view 1 1 1 2)))
+    (is (eq :strided (trivial-simd/blas:matrix-view-layout view)))
+    (is (eq data (trivial-simd/blas:matrix-view-data part)))
+    (is (= 3 (trivial-simd/blas:matrix-ref part 0 0)))
+    (setf (trivial-simd/blas:matrix-ref part 0 1) 20f0)
+    (is (= 20f0 (aref data 2)))
+    (signals error (trivial-simd/blas:make-matrix-view data 2 3 :row-stride 4))
+    (signals error (trivial-simd/blas:make-matrix-view data 2 3 :row-stride 4 :column-stride 1
+                                                            :leading-dimension 4))
+    (signals error (trivial-simd/blas:make-matrix-view data 2 3 :row-stride -4 :column-stride 1))
+    (signals error (trivial-simd/blas:make-matrix-view data 2 3 :row-stride 4 :column-stride 3))
+    (let ((x (batch-data 'single-float '(1 1 1))) (y (batch-data 'single-float '(7 7))))
+      (signals error (trivial-simd/blas:sgemv :no-transpose 1f0 view x 1 0f0 y 1))
+      (is (equalp #(7f0 7f0) y)))
+    (signals error (trivial-simd/blas:ssyrk :upper :no-transpose 1f0 view 0f0
+                                          (level3-view 'single-float '(7 7 7 7)))))
+  (let* ((data (batch-data '(complex single-float) '(1 2 3 4)))
+         (view (trivial-simd/blas:make-matrix-view data 2 2 :offset 3
+                                                   :row-stride -2 :column-stride -1))
+         (out (level3-view '(complex single-float) '(0 0 0 0))))
+    (trivial-simd/blas:cgemm :conjugate-transpose :no-transpose #c(1f0 0f0)
+                            view view #c(0f0 0f0) out)
+    (is (equalp '(20 14 14 10)
+                (loop for i below 2 append
+                      (loop for j below 2 collect (trivial-simd/blas:matrix-ref out i j)))))))
+
+(test blas-gemm-batch-strided-values
+  (dolist (type '(single-float double-float))
+    (dolist (backend '(:lisp :native))
+      (let ((trivial-simd::*backend* backend)
+            (trivial-simd/blas::*native-blas-threshold* 1))
+        (dolist (layout '((9 3 1 0) (-9 -3 -1 23) (0 0 0 2) (11 2 3 1)))
+          (destructuring-bind (astep ars acs offset) layout
+            (let* ((a (trivial-simd/blas:make-matrix-view
+                       (batch-data type (loop for i below 40 collect (/ (- (mod (* i 7) 17) 8) 11)))
+                       2 3 :offset offset :row-stride ars :column-stride acs))
+                   (b (trivial-simd/blas:make-matrix-view
+                       (batch-data type (loop for i below 40 collect (/ (mod i 9) 7)))
+                       3 2 :offset 4 :row-stride 3 :column-stride 1))
+                   (c (trivial-simd/blas:make-matrix-view
+                       (batch-data type (loop repeat 40 collect 7))
+                       2 2 :offset 26 :row-stride -4 :column-stride -1)))
+              (check-batch-gemm type a b c 3 astep 9 -9 :no-transpose :no-transpose 2 3)
+              (check-batch-gemm type a b c 3 astep 0 -9 :no-transpose :no-transpose 1 0)
+              (let ((bt (trivial-simd/blas:make-matrix-view
+                         (trivial-simd/blas:matrix-view-data b) 2 3 :offset 4
+                         :row-stride 1 :column-stride 3)))
+                (check-batch-gemm type a bt c 3 astep 9 -9 :no-transpose :transpose)))))
+        (let ((trivial-simd::*native-blas-batch-available-p* nil))
+          (check-batch-gemm type (level3-view type '(1 2 3 4))
+                            (level3-view type '(1 0 0 1))
+                            (trivial-simd/blas:make-matrix-view
+                             (batch-data type '(0 0 0 0 0 0 0 0)) 2 2)
+                            2 0 0 4))))))
+
+(test blas-gemm-batch-strided-validation
+  (dolist (type '(single-float double-float))
+    (let* ((a (level3-view type '(1 2 3 4))) (b (level3-view type '(1 0 0 1)))
+           (data (batch-data type (loop repeat 12 collect 7)))
+           (c (trivial-simd/blas:make-matrix-view data 2 2))
+           (name (if (eq type 'single-float) "sgemm-batch-strided" "dgemm-batch-strided"))
+           (one (coerce 1 type)) (zero (coerce 0 type)))
+      (dolist (args '((:batch-count -1 :a-stride 0 :b-stride 0 :c-stride 4)
+                      (:batch-count 1073741824 :a-stride 0 :b-stride 0 :c-stride 4)
+                      (:batch-count 2 :a-stride 4 :b-stride 0 :c-stride 4)
+                      (:batch-count 2 :a-stride -1 :b-stride 0 :c-stride 4)
+                      (:batch-count 2 :a-stride 0 :b-stride 0 :c-stride 0)
+                      (:batch-count 2 :a-stride 0 :b-stride 0 :c-stride 3)
+                      (:batch-count 2 :a-stride 0 :b-stride 0 :c-stride 10)
+                      (:batch-count 1 :a-stride 1152921504606846976 :b-stride 0 :c-stride 4)
+                      (:batch-count 1 :a-stride 0 :b-stride 0)))
+        (signals error (apply #'level3-call name :no-transpose :no-transpose one a b zero c args))
+        (is (every (lambda (value) (= 7 value)) data)))
+      (is (eq c (level3-call name :no-transpose :no-transpose one a b zero c
+                             :batch-count 0 :a-stride 0 :b-stride 0 :c-stride 0)))
+      (signals error (level3-call name :no-transpose :no-transpose one c b zero c
+                                  :batch-count 2 :a-stride 4 :b-stride 0 :c-stride 4))
+      (let ((interleaved (trivial-simd/blas:make-matrix-view data 3 2 :row-stride 2 :column-stride 3)))
+        (signals error (level3-call name :no-transpose :no-transpose one
+                                    (level3-view type '(1 2 3 4 5 6) :rows 3) b zero interleaved
+                                    :batch-count 1 :a-stride 0 :b-stride 0 :c-stride 0)))
+      (is (every (lambda (value) (= 7 value)) data))
+      (let* ((empty-a (trivial-simd/blas:make-matrix-view (batch-data type nil) 2 0))
+             (empty-b (trivial-simd/blas:make-matrix-view (batch-data type nil) 0 2)))
+        (check-batch-gemm type empty-a empty-b c 3 0 0 4 :no-transpose :no-transpose 1 0)
+        (is (every #'zerop data)))
+      (check-batch-gemm type a b c 3 0 0 4 :no-transpose :no-transpose 0 2))))
+
+(test blas-gemm-batch-strided-foreign
+  (dolist (type '(single-float double-float))
+    (let ((foreign (if (eq type 'single-float) :float :double))
+          (dtype (if (eq type 'single-float) :f32 :f64)))
+      (cffi:with-foreign-object (pointer foreign 32)
+        (let* ((data (trivial-simd:make-vector-view pointer dtype 32))
+               (a (trivial-simd/blas:make-matrix-view data 2 2 :offset 7 :row-stride -2 :column-stride -1))
+               (b (level3-view type '(1 0 0 1)))
+               (c (trivial-simd/blas:make-matrix-view data 2 2 :offset 16)))
+          (dotimes (i 32) (setf (trivial-simd::vector-ref data i) (coerce (mod i 7) type)))
+          (let ((trivial-simd/blas::*native-blas-threshold* 1))
+            (check-batch-gemm type a b c 2 -4 0 4))
+          (let ((other (trivial-simd/blas:make-matrix-view
+                        (trivial-simd:make-vector-view (cffi:inc-pointer pointer (* 20 (cffi:foreign-type-size foreign)))
+                                                     dtype 8) 2 2)))
+            (signals error
+              (level3-call (if (eq type 'single-float) "sgemm-batch-strided" "dgemm-batch-strided")
+                           :no-transpose :no-transpose (coerce 1 type) c b (coerce 0 type) other
+                           :batch-count 2 :a-stride 4 :b-stride 0 :c-stride 4))))))))
+
+(test blas-gemm-batch-native-dispatch
+  (if (not (native-blas-usable-p))
+      (skip "Native pointer BLAS is unavailable")
+      (dolist (case '((single-float trivial-simd::%native-blas-gemm-batch-f32
+                                  trivial-simd::%native-blas-gemm-f32)
+                     (double-float trivial-simd::%native-blas-gemm-batch-f64
+                                  trivial-simd::%native-blas-gemm-f64)))
+        (destructuring-bind (type batch-name single-name) case
+          (let ((original-batch (symbol-function batch-name))
+                (original-single (symbol-function single-name))
+                (batch-calls 0) (single-calls 0)
+                (a (level3-view type '(1 1 1 1)))
+                (b (level3-view type '(1 1 1 1)))
+                (c (trivial-simd/blas:make-matrix-view
+                    (batch-data type (loop repeat 1024 collect 0)) 2 2)))
+            (unwind-protect
+                 (progn
+                   (setf (symbol-function batch-name)
+                         (lambda (&rest args) (incf batch-calls) (apply original-batch args))
+                         (symbol-function single-name)
+                         (lambda (&rest args) (incf single-calls) (apply original-single args)))
+                   (let ((trivial-simd::*backend* :native)
+                         (trivial-simd/blas::*native-blas-threshold* 1000))
+                     (check-batch-gemm type a b c 256 0 0 4))
+                   (is (= 1 batch-calls)) (is (= 0 single-calls))
+                   (let ((trivial-simd::*backend* :native)
+                         (trivial-simd::*native-blas-batch-available-p* nil)
+                         (trivial-simd/blas::*native-blas-threshold* 1))
+                     (check-batch-gemm type a b c 256 0 0 4))
+                   (is (= 1 batch-calls)) (is (= 256 single-calls))
+                   (let ((trivial-simd::*backend* :lisp)
+                         (trivial-simd/blas::*native-blas-threshold* 1))
+                     (check-batch-gemm type a b c 256 0 0 4))
+                   (is (= 1 batch-calls)) (is (= 256 single-calls)))
+              (setf (symbol-function batch-name) original-batch
+                    (symbol-function single-name) original-single)))))))

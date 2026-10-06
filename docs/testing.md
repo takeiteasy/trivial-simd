@@ -124,6 +124,19 @@ For a local ARM64 native check, build the library first, then run:
 TRIVIAL_SIMD_BACKEND=native sbcl --dynamic-space-size 4096 --script tests/run.lisp
 ```
 
+## Strided GEMM
+
+GEMM tests cover signed and zero matrix strides, reversed and broadcast batches,
+foreign storage, complete-batch bounds and overlap checks, and missing native
+batch symbols. Native C tests check numerical products, one scratch allocation
+per batch, allocation failure before writes, and scratch cleanup in SIMD and
+scalar builds.
+
+```sh
+ctest --test-dir build -R native-blas-batch --output-on-failure
+```
+
+
 ## Local platform runs
 
 All macOS combinations run locally. ARM64 scripts use the installed Lisp on

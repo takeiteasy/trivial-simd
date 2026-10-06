@@ -1,13 +1,14 @@
 # BLAS Level 3
 
 `trivial-simd/blas` provides matrix-matrix operations on dense
-[matrix views](matrix-views.md). Each view supplies its dimensions, row-major or
-column-major layout, leading dimension, and backing-vector offset. All calls
-return the modified output view. The routines accept simple specialized vectors
+[matrix views](matrix-views.md). GEMM accepts independent signed row and column
+strides. Other families require regular row-major or column-major layouts.
+All calls return the modified output view. The routines accept simple specialized vectors
 of single/double real or complex elements.
 
 | Family | Routines | Operation |
 |---|---|---|
+| Batched real multiply | `sgemm-batch-strided`, `dgemm-batch-strided` | [Constant-stride batches](blas-batches.md) |
 | General multiply | `sgemm`, `dgemm`, `cgemm`, `zgemm` | `C ← α op(A) op(B) + β C` |
 | Symmetric multiply | `ssymm`, `dsymm`, `csymm`, `zsymm` | `C ← α A B + β C` or `α B A + β C` |
 | Hermitian multiply | `chemm`, `zhemm` | Symmetric form with conjugate reflection |
@@ -48,7 +49,9 @@ have the matching real type; for `her2k`, `alpha` is complex and `beta` is real.
 
 All arguments are validated before changing output. A distinct input view
 cannot overlap the output's addressed elements; disjoint subviews may share
-one backing vector. `trmm` and `trsm` intentionally read and replace `B`,
+one backing vector. Irregular GEMM views use conservative storage-span overlap
+checks and a sorted-stride proof for output uniqueness; see
+[limitations](#limitations). `trmm` and `trsm` intentionally read and replace `B`,
 but `A` and `B` must not overlap. A zero `beta` does not read old output
 elements. A zero `alpha` does not read matrix operands when the result is
 determined without them. Symmetric and Hermitian rank updates leave the
@@ -70,6 +73,9 @@ native library is built; everything else runs typed Lisp loops.[^kernels] On the
 
 ## Limitations
 
+GEMM may reject disjoint interleaved views or valid output layouts that fail its
+sorted-stride proof. Broader validation is tracked in [#149](https://todo.sr.ht/~takeiteasy/trivial-simd/149).
+
 Complex routines use scalar Lisp loops without cache blocking or SIMD. Native
 complex kernels are tracked by [#80](https://todo.sr.ht/~takeiteasy/trivial-simd/80).
 
@@ -87,4 +93,6 @@ complex kernels are tracked by [#80](https://todo.sr.ht/~takeiteasy/trivial-simd
     call the `gemm` kernel. `trmm` and `trsm` operate on a dense row-major
     copy of `B`; right-side calls solve the transposed left-side problem.
     Kernels skip bounds checks after validation, so views must fit
-    30-bit dimensions and leading dimensions.
+    30-bit dimensions and leading dimensions. GEMM row/column strides fit
+    ±1,073,741,823 and accessed storage offsets fit 60 unsigned bits.
+    Singleton-axis strides are ignored.

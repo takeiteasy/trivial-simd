@@ -215,6 +215,19 @@
   (b :pointer) (b-row-stride :int64) (b-column-stride :int64) (beta :double)
   (c :pointer) (c-row-stride :int64) (c-column-stride :int64))
 
+(define-native ("ts_blas_gemm_batch_f32" %native-blas-gemm-batch-f32) :int
+  (m :int64) (n :int64) (k :int64) (alpha :float)
+  (a :pointer) (a-row-stride :int64) (a-column-stride :int64) (a-stride :int64)
+  (b :pointer) (b-row-stride :int64) (b-column-stride :int64) (b-stride :int64) (beta :float)
+  (c :pointer) (c-row-stride :int64) (c-column-stride :int64) (c-stride :int64)
+  (batch-count :int64))
+(define-native ("ts_blas_gemm_batch_f64" %native-blas-gemm-batch-f64) :int
+  (m :int64) (n :int64) (k :int64) (alpha :double)
+  (a :pointer) (a-row-stride :int64) (a-column-stride :int64) (a-stride :int64)
+  (b :pointer) (b-row-stride :int64) (b-column-stride :int64) (b-stride :int64) (beta :double)
+  (c :pointer) (c-row-stride :int64) (c-column-stride :int64) (c-stride :int64)
+  (batch-count :int64))
+
 (define-native ("ts_blas_rank_f32" %native-blas-rank-f32) :int
   (n :int64) (k :int64) (alpha :float)
   (a :pointer) (a-row-stride :int64) (a-column-stride :int64)
@@ -274,6 +287,10 @@
                 "ts_blas_gemv_f32" "ts_blas_gemv_f64"
                 "ts_blas_ger_f32" "ts_blas_ger_f64"
                 "ts_blas_trsv_f32" "ts_blas_trsv_f64"))))
+
+(defvar *native-blas-batch-available-p*
+  (and *native-blas-available-p*
+       (null (missing-native-symbols '("ts_blas_gemm_batch_f32" "ts_blas_gemm_batch_f64")))))
 
 (defun check-native-integer-status (status)
   (case status

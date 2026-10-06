@@ -245,6 +245,24 @@ int ts_blas_gemm_##suffix(int64_t m, int64_t n, int64_t k, type alpha, \
     ts_blas_gemm_run_##suffix(m, n, k, alpha, a, ars, acs, b, brs, bcs, beta, c, crs, ccs, work, TS_BLAS_FULL); \
     free(work); \
     return 0; \
+} \
+\
+int ts_blas_gemm_batch_##suffix(int64_t m, int64_t n, int64_t k, type alpha, \
+                                const type *a, int64_t ars, int64_t acs, int64_t astep, \
+                                const type *b, int64_t brs, int64_t bcs, int64_t bstep, type beta, \
+                                type *c, int64_t crs, int64_t ccs, int64_t cstep, int64_t count) { \
+    if (count <= 0 || m <= 0 || n <= 0) return 0; \
+    type *work = NULL; \
+    if (k > 0 && alpha != 0) { \
+        work = malloc(ts_blas_gemm_size_##suffix(m, n, k) * sizeof(type)); \
+        if (!work) return 1; \
+    } \
+    for (int64_t i = 0; i < count; ++i) \
+        ts_blas_gemm_run_##suffix(m, n, k, alpha, a + i * astep, ars, acs, \
+                                  b + i * bstep, brs, bcs, beta, c + i * cstep, crs, ccs, \
+                                  work, TS_BLAS_FULL); \
+    free(work); \
+    return 0; \
 }
 
 
@@ -598,6 +616,14 @@ int ts_blas_gemm_##suffix(int64_t m, int64_t n, int64_t k, type alpha, \
                           const type *b, int64_t brs, int64_t bcs, type beta, \
                           type *c, int64_t crs, int64_t ccs) { \
     return TS_BLAS_PICK(gemm, suffix, m, n, k, alpha, a, ars, acs, b, brs, bcs, beta, c, crs, ccs); \
+} \
+\
+int ts_blas_gemm_batch_##suffix(int64_t m, int64_t n, int64_t k, type alpha, \
+                                const type *a, int64_t ars, int64_t acs, int64_t astep, \
+                                const type *b, int64_t brs, int64_t bcs, int64_t bstep, type beta, \
+                                type *c, int64_t crs, int64_t ccs, int64_t cstep, int64_t count) { \
+    return TS_BLAS_PICK(gemm_batch, suffix, m, n, k, alpha, a, ars, acs, astep, \
+                        b, brs, bcs, bstep, beta, c, crs, ccs, cstep, count); \
 } \
 \
 int ts_blas_rank_##suffix(int64_t n, int64_t k, type alpha, \

@@ -36,3 +36,16 @@
    (trivial-simd/blas:make-matrix-view a 2 2)
    (trivial-simd/blas:make-matrix-view b 2 2))
   (format t "matrix product: ~S~%" c))
+
+(let* ((a (make-array 12 :element-type 'double-float
+                       :initial-contents '(1d0 2d0 3d0 4d0 5d0 6d0 7d0 8d0 9d0 10d0 11d0 12d0)))
+       (b (make-array 6 :element-type 'double-float :initial-element 1d0))
+       (c (make-array 8 :element-type 'double-float :initial-element 0d0)))
+  (trivial-simd/blas:dgemm-batch-strided
+   :no-transpose :no-transpose 1d0
+   (trivial-simd/blas:make-matrix-view a 2 3 :offset 11 :row-stride -3 :column-stride -1)
+   (trivial-simd/blas:make-matrix-view b 3 2) 0d0
+   (trivial-simd/blas:make-matrix-view c 2 2)
+   :batch-count 2 :a-stride -6 :b-stride 0 :c-stride 4)
+  (assert (equalp c #(33d0 33d0 24d0 24d0 15d0 15d0 6d0 6d0)))
+  (format t "reversed batched matrix product: ~S~%" c))

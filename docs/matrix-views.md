@@ -2,8 +2,9 @@
 
 BLAS matrix operands use a simple specialized vector, or a
 [vector view](vector-views.md) of foreign memory, plus dimension metadata.
-A view records its backing vector, row and column counts, layout, base offset,
-and leading dimension. Views share storage; creating a submatrix does not copy
+A dense view records its backing vector, row and column counts, independent
+row and column strides, and base offset. Regular layouts also expose a leading
+dimension. Views share storage; creating a submatrix does not copy
 elements. `make-matrix-view` constructs a dense view and `matrix-subview`
 selects a rectangular part of it.
 
@@ -21,9 +22,27 @@ selects a rectangular part of it.
 | Row-major | `offset + row*ld + column` | `max(1, columns)` |
 | Column-major | `offset + column*ld + row` | `max(1, rows)` |
 
-Rows and columns use zero-based indexes. A submatrix keeps its parent's
-layout and leading dimension, moves the offset to its first element, and
-records its own dimensions. Validation checks the full addressed span against
+## Explicit strides
+
+Pass both `:row-stride` and `:column-stride` to `make-matrix-view` to address
+`offset + row*row-stride + column*column-stride`. Strides are signed element
+counts; zero strides repeat input values. Explicit strides exclude an explicit
+`:leading-dimension`. Regular strides derive a row-major or column-major layout;
+other strides report `:strided` and a leading dimension of 1.[^strides]
+
+```lisp
+(trivial-simd/blas:make-matrix-view
+ (make-array 6 :element-type 'single-float :initial-contents '(1f0 2f0 3f0 4f0 5f0 6f0))
+ 2 3 :offset 5 :row-stride -3 :column-stride -1)
+;; Matrix rows are (6 5 4) and (3 2 1).
+```
+
+`matrix-view-row-stride` and `matrix-view-column-stride` expose dense strides.
+GEMM and [batched GEMM](blas-batches.md) accept arbitrary dense strides. Other
+BLAS routines require regular layouts and reject irregular views before writes.
+
+Rows and columns use zero-based indexes. A submatrix preserves its parent's
+strides, layout and leading dimension, moves the offset to its first element, and records its own dimensions. Validation checks the full addressed span against
 the backing vector, including padding between rows or columns. An empty view
 may point one element past the end.
 
@@ -53,3 +72,5 @@ base offset.
 
 [^pointer]: See [native array access](backends.md#array-access) for the tested
     implementations and the copy fallback.
+
+[^strides]: The layout and leading dimension describe regular storage only. Dense indexing and GEMM use the independent strides. Band and packed views retain their existing storage formats.
