@@ -1,5 +1,7 @@
 # trivial-simd
 
+> **Work in progress.** This project is under development; expect missing features and breaking changes.
+
 Bulk SIMD arithmetic and BLAS for Common Lisp float and fixed-width integer
 vectors. It uses SBCL SIMD where available, a small C library, or a pure Lisp
 fallback.
@@ -13,6 +15,21 @@ fallback.
       (out (make-array 4 :element-type 'single-float)))
   (trivial-simd:add! out a b)
   (trivial-simd:dot a b)) ; => 20.0
+```
+
+## Installation
+
+From the takeiteasy Quicklisp dist:
+
+```lisp
+(ql-dist:install-dist "https://takeiteasy.github.io/ql-dist/dist/takeiteasy.txt")
+(ql:quickload :trivial-simd)
+```
+
+Or clone into Quicklisp's local-projects:
+
+```sh
+git clone https://github.com/takeiteasy/trivial-simd ~/quicklisp/local-projects/trivial-simd
 ```
 
 ## Backends
