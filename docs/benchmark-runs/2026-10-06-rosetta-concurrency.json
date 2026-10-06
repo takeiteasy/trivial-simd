@@ -1,0 +1,1532 @@
+{
+  "date": "2026-10-06",
+  "target_revision": "b334cd0419ac78e7b4e7e46d4de86cbb7d145dfc",
+  "feature_revision": "84087c9",
+  "host": {
+    "macos": "15.7.5",
+    "build": "24G624",
+    "hardware": "Apple M1",
+    "rosetta": "1.0.0.0.1.1773146330",
+    "x86_ccl": "1.13 (v1.13) DarwinX8664"
+  },
+  "notes": [
+    "Wall-clock diagnostic measurements; not performance benchmarks.",
+    "Cancelled subsequent startups are excluded.",
+    "Plain isolation loads neither trivial-simd nor Quicklisp.",
+    "Timeouts and host assertions are distinct outcomes; a common cause is unconfirmed."
+  ],
+  "sets": {
+    "serial": {
+      "execution_context": "agent sandbox",
+      "log_directory": "/private/tmp/tickets140-matrix",
+      "results": [
+        {
+          "name": "warm-serial",
+          "lane": "serial",
+          "full": false,
+          "wrapper_pid": 40646,
+          "status": 0,
+          "seconds": 26.96
+        },
+        {
+          "name": "warm-pair-a",
+          "lane": "pair-a",
+          "full": false,
+          "wrapper_pid": 40728,
+          "status": 0,
+          "seconds": 26.988
+        },
+        {
+          "name": "warm-pair-b",
+          "lane": "pair-b",
+          "full": false,
+          "wrapper_pid": 40829,
+          "status": 0,
+          "seconds": 26.93
+        },
+        {
+          "name": "warm-target",
+          "lane": "target",
+          "full": false,
+          "wrapper_pid": 40896,
+          "status": 0,
+          "seconds": 27.138
+        },
+        {
+          "name": "warm-full",
+          "lane": "full",
+          "full": false,
+          "wrapper_pid": 40961,
+          "status": 0,
+          "seconds": 28.323
+        },
+        {
+          "name": "serial-01",
+          "lane": "serial",
+          "full": false,
+          "wrapper_pid": 41027,
+          "status": 0,
+          "seconds": 30.963
+        },
+        {
+          "name": "serial-02",
+          "lane": "serial",
+          "full": false,
+          "wrapper_pid": 41157,
+          "status": 0,
+          "seconds": 32.134
+        },
+        {
+          "name": "serial-03",
+          "lane": "serial",
+          "full": false,
+          "wrapper_pid": 41284,
+          "status": 124,
+          "seconds": 302.236
+        },
+        {
+          "name": "serial-04",
+          "lane": "serial",
+          "full": false,
+          "wrapper_pid": 42283,
+          "status": 124,
+          "seconds": 302.177
+        },
+        {
+          "name": "serial-05",
+          "lane": "serial",
+          "full": false,
+          "wrapper_pid": 43897,
+          "status": 124,
+          "seconds": 302.118
+        }
+      ],
+      "operator_adjustment": {
+        "reason": "User selected five serial and five paired trials",
+        "completed_serial": 5,
+        "cancelled_startup_wrappers": [
+          53118
+        ]
+      }
+    },
+    "warm_assertion": {
+      "execution_context": "agent sandbox",
+      "log_directory": "/private/tmp/tickets140-measured",
+      "results": [
+        {
+          "name": "warm-serial",
+          "lane": "serial",
+          "full": false,
+          "wrapper_pid": 25633,
+          "status": 0,
+          "seconds": 367.608
+        },
+        {
+          "name": "warm-pair-a",
+          "lane": "pair-a",
+          "full": false,
+          "wrapper_pid": 38376,
+          "status": 134,
+          "seconds": 36.404
+        }
+      ]
+    },
+    "isolation_rosetta": {
+      "execution_context": "ordinary CLI",
+      "log_directory": "/private/tmp/tickets140-isolation-x86_64",
+      "results": [
+        {
+          "name": "lisp-1-01",
+          "architecture": "x86_64",
+          "backend": "lisp",
+          "workers": 1,
+          "wrapper_pid": 55728,
+          "status": 0,
+          "seconds": 17.115
+        },
+        {
+          "name": "lisp-1-02",
+          "architecture": "x86_64",
+          "backend": "lisp",
+          "workers": 1,
+          "wrapper_pid": 56366,
+          "status": 0,
+          "seconds": 17.191
+        },
+        {
+          "name": "lisp-1-03",
+          "architecture": "x86_64",
+          "backend": "lisp",
+          "workers": 1,
+          "wrapper_pid": 57053,
+          "status": 0,
+          "seconds": 15.996
+        },
+        {
+          "name": "lisp-1-04",
+          "architecture": "x86_64",
+          "backend": "lisp",
+          "workers": 1,
+          "wrapper_pid": 57241,
+          "status": 0,
+          "seconds": 24.918
+        },
+        {
+          "name": "lisp-1-05",
+          "architecture": "x86_64",
+          "backend": "lisp",
+          "workers": 1,
+          "wrapper_pid": 76858,
+          "status": 0,
+          "seconds": 20.938
+        },
+        {
+          "name": "lisp-1-06",
+          "architecture": "x86_64",
+          "backend": "lisp",
+          "workers": 1,
+          "wrapper_pid": 85717,
+          "status": 0,
+          "seconds": 15.803
+        },
+        {
+          "name": "lisp-1-07",
+          "architecture": "x86_64",
+          "backend": "lisp",
+          "workers": 1,
+          "wrapper_pid": 85755,
+          "status": 0,
+          "seconds": 15.681
+        },
+        {
+          "name": "lisp-1-08",
+          "architecture": "x86_64",
+          "backend": "lisp",
+          "workers": 1,
+          "wrapper_pid": 85800,
+          "status": 0,
+          "seconds": 15.774
+        },
+        {
+          "name": "lisp-1-09",
+          "architecture": "x86_64",
+          "backend": "lisp",
+          "workers": 1,
+          "wrapper_pid": 85865,
+          "status": 0,
+          "seconds": 16.907
+        },
+        {
+          "name": "lisp-1-10",
+          "architecture": "x86_64",
+          "backend": "lisp",
+          "workers": 1,
+          "wrapper_pid": 86397,
+          "status": 0,
+          "seconds": 17.102
+        },
+        {
+          "name": "lisp-4-01",
+          "architecture": "x86_64",
+          "backend": "lisp",
+          "workers": 4,
+          "wrapper_pid": 86495,
+          "status": 0,
+          "seconds": 16.442
+        },
+        {
+          "name": "lisp-4-02",
+          "architecture": "x86_64",
+          "backend": "lisp",
+          "workers": 4,
+          "wrapper_pid": 86542,
+          "status": 0,
+          "seconds": 16.401
+        },
+        {
+          "name": "lisp-4-03",
+          "architecture": "x86_64",
+          "backend": "lisp",
+          "workers": 4,
+          "wrapper_pid": 86580,
+          "status": 0,
+          "seconds": 16.493
+        },
+        {
+          "name": "lisp-4-04",
+          "architecture": "x86_64",
+          "backend": "lisp",
+          "workers": 4,
+          "wrapper_pid": 86618,
+          "status": 0,
+          "seconds": 16.427
+        },
+        {
+          "name": "lisp-4-05",
+          "architecture": "x86_64",
+          "backend": "lisp",
+          "workers": 4,
+          "wrapper_pid": 86662,
+          "status": 0,
+          "seconds": 16.492
+        },
+        {
+          "name": "lisp-4-06",
+          "architecture": "x86_64",
+          "backend": "lisp",
+          "workers": 4,
+          "wrapper_pid": 86700,
+          "status": 0,
+          "seconds": 16.508
+        },
+        {
+          "name": "lisp-4-07",
+          "architecture": "x86_64",
+          "backend": "lisp",
+          "workers": 4,
+          "wrapper_pid": 86746,
+          "status": 0,
+          "seconds": 16.669
+        },
+        {
+          "name": "lisp-4-08",
+          "architecture": "x86_64",
+          "backend": "lisp",
+          "workers": 4,
+          "wrapper_pid": 86799,
+          "status": 0,
+          "seconds": 16.493
+        },
+        {
+          "name": "lisp-4-09",
+          "architecture": "x86_64",
+          "backend": "lisp",
+          "workers": 4,
+          "wrapper_pid": 86839,
+          "status": 0,
+          "seconds": 16.386
+        },
+        {
+          "name": "lisp-4-10",
+          "architecture": "x86_64",
+          "backend": "lisp",
+          "workers": 4,
+          "wrapper_pid": 86878,
+          "status": 0,
+          "seconds": 16.591
+        },
+        {
+          "name": "native-1-01",
+          "architecture": "x86_64",
+          "backend": "native",
+          "workers": 1,
+          "wrapper_pid": 86930,
+          "status": 0,
+          "seconds": 15.816
+        },
+        {
+          "name": "native-1-02",
+          "architecture": "x86_64",
+          "backend": "native",
+          "workers": 1,
+          "wrapper_pid": 87069,
+          "status": 0,
+          "seconds": 16.837
+        },
+        {
+          "name": "native-1-03",
+          "architecture": "x86_64",
+          "backend": "native",
+          "workers": 1,
+          "wrapper_pid": 87125,
+          "status": 0,
+          "seconds": 16.138
+        },
+        {
+          "name": "native-1-04",
+          "architecture": "x86_64",
+          "backend": "native",
+          "workers": 1,
+          "wrapper_pid": 87412,
+          "status": 0,
+          "seconds": 16.177
+        },
+        {
+          "name": "native-1-05",
+          "architecture": "x86_64",
+          "backend": "native",
+          "workers": 1,
+          "wrapper_pid": 87751,
+          "status": 0,
+          "seconds": 15.619
+        },
+        {
+          "name": "native-1-06",
+          "architecture": "x86_64",
+          "backend": "native",
+          "workers": 1,
+          "wrapper_pid": 87829,
+          "status": 0,
+          "seconds": 38.066
+        },
+        {
+          "name": "native-1-07",
+          "architecture": "x86_64",
+          "backend": "native",
+          "workers": 1,
+          "wrapper_pid": 16813,
+          "status": 0,
+          "seconds": 18.747
+        },
+        {
+          "name": "native-1-08",
+          "architecture": "x86_64",
+          "backend": "native",
+          "workers": 1,
+          "wrapper_pid": 18336,
+          "status": 0,
+          "seconds": 21.238
+        },
+        {
+          "name": "native-1-09",
+          "architecture": "x86_64",
+          "backend": "native",
+          "workers": 1,
+          "wrapper_pid": 20108,
+          "status": 0,
+          "seconds": 19.115
+        },
+        {
+          "name": "native-1-10",
+          "architecture": "x86_64",
+          "backend": "native",
+          "workers": 1,
+          "wrapper_pid": 21356,
+          "status": 0,
+          "seconds": 20.585
+        },
+        {
+          "name": "native-4-01",
+          "architecture": "x86_64",
+          "backend": "native",
+          "workers": 4,
+          "wrapper_pid": 23077,
+          "status": 124,
+          "seconds": 302.266
+        },
+        {
+          "name": "native-4-02",
+          "architecture": "x86_64",
+          "backend": "native",
+          "workers": 4,
+          "wrapper_pid": 26003,
+          "status": 0,
+          "seconds": 16.859
+        },
+        {
+          "name": "native-4-03",
+          "architecture": "x86_64",
+          "backend": "native",
+          "workers": 4,
+          "wrapper_pid": 26063,
+          "status": 0,
+          "seconds": 16.943
+        },
+        {
+          "name": "native-4-04",
+          "architecture": "x86_64",
+          "backend": "native",
+          "workers": 4,
+          "wrapper_pid": 26387,
+          "status": 0,
+          "seconds": 15.627
+        },
+        {
+          "name": "native-4-05",
+          "architecture": "x86_64",
+          "backend": "native",
+          "workers": 4,
+          "wrapper_pid": 26451,
+          "status": 124,
+          "seconds": 302.158
+        },
+        {
+          "name": "native-4-06",
+          "architecture": "x86_64",
+          "backend": "native",
+          "workers": 4,
+          "wrapper_pid": 27348,
+          "status": 0,
+          "seconds": 15.737
+        },
+        {
+          "name": "native-4-07",
+          "architecture": "x86_64",
+          "backend": "native",
+          "workers": 4,
+          "wrapper_pid": 27393,
+          "status": 124,
+          "seconds": 302.116
+        },
+        {
+          "name": "native-4-08",
+          "architecture": "x86_64",
+          "backend": "native",
+          "workers": 4,
+          "wrapper_pid": 29962,
+          "status": 0,
+          "seconds": 21.432
+        },
+        {
+          "name": "native-4-09",
+          "architecture": "x86_64",
+          "backend": "native",
+          "workers": 4,
+          "wrapper_pid": 32240,
+          "status": 0,
+          "seconds": 18.262
+        },
+        {
+          "name": "native-4-10",
+          "architecture": "x86_64",
+          "backend": "native",
+          "workers": 4,
+          "wrapper_pid": 33155,
+          "status": 0,
+          "seconds": 20.939
+        },
+        {
+          "name": "plain-4-01",
+          "architecture": "x86_64",
+          "backend": "plain",
+          "workers": 4,
+          "wrapper_pid": 35016,
+          "status": 134,
+          "seconds": 13.028
+        },
+        {
+          "name": "plain-4-02",
+          "architecture": "x86_64",
+          "backend": "plain",
+          "workers": 4,
+          "wrapper_pid": 35949,
+          "status": 134,
+          "seconds": 14.235
+        },
+        {
+          "name": "plain-4-03",
+          "architecture": "x86_64",
+          "backend": "plain",
+          "workers": 4,
+          "wrapper_pid": 37058,
+          "status": 124,
+          "seconds": 302.104
+        }
+      ],
+      "operator_adjustment": {
+        "reason": "Both host assertion and GC thread-suspension wait reproduce without the library; stop plain case within the ten-trial ceiling",
+        "completed_plain": 3,
+        "cancelled_startup_wrappers": [
+          43073
+        ]
+      }
+    },
+    "isolation_arm64": {
+      "execution_context": "agent sandbox",
+      "log_directory": "/private/tmp/tickets140-isolation-arm64",
+      "results": [
+        {
+          "name": "lisp-1-01",
+          "architecture": "arm64",
+          "backend": "lisp",
+          "workers": 1,
+          "wrapper_pid": 41111,
+          "status": 0,
+          "seconds": 1.785
+        },
+        {
+          "name": "lisp-1-02",
+          "architecture": "arm64",
+          "backend": "lisp",
+          "workers": 1,
+          "wrapper_pid": 41137,
+          "status": 0,
+          "seconds": 1.704
+        },
+        {
+          "name": "lisp-1-03",
+          "architecture": "arm64",
+          "backend": "lisp",
+          "workers": 1,
+          "wrapper_pid": 41148,
+          "status": 0,
+          "seconds": 1.712
+        },
+        {
+          "name": "lisp-1-04",
+          "architecture": "arm64",
+          "backend": "lisp",
+          "workers": 1,
+          "wrapper_pid": 41153,
+          "status": 0,
+          "seconds": 1.727
+        },
+        {
+          "name": "lisp-1-05",
+          "architecture": "arm64",
+          "backend": "lisp",
+          "workers": 1,
+          "wrapper_pid": 41155,
+          "status": 0,
+          "seconds": 1.716
+        },
+        {
+          "name": "lisp-1-06",
+          "architecture": "arm64",
+          "backend": "lisp",
+          "workers": 1,
+          "wrapper_pid": 41164,
+          "status": 0,
+          "seconds": 1.714
+        },
+        {
+          "name": "lisp-1-07",
+          "architecture": "arm64",
+          "backend": "lisp",
+          "workers": 1,
+          "wrapper_pid": 41175,
+          "status": 0,
+          "seconds": 1.733
+        },
+        {
+          "name": "lisp-1-08",
+          "architecture": "arm64",
+          "backend": "lisp",
+          "workers": 1,
+          "wrapper_pid": 41177,
+          "status": 0,
+          "seconds": 1.724
+        },
+        {
+          "name": "lisp-1-09",
+          "architecture": "arm64",
+          "backend": "lisp",
+          "workers": 1,
+          "wrapper_pid": 41183,
+          "status": 0,
+          "seconds": 1.759
+        },
+        {
+          "name": "lisp-1-10",
+          "architecture": "arm64",
+          "backend": "lisp",
+          "workers": 1,
+          "wrapper_pid": 41193,
+          "status": 0,
+          "seconds": 1.799
+        },
+        {
+          "name": "lisp-4-01",
+          "architecture": "arm64",
+          "backend": "lisp",
+          "workers": 4,
+          "wrapper_pid": 41195,
+          "status": 0,
+          "seconds": 1.771
+        },
+        {
+          "name": "lisp-4-02",
+          "architecture": "arm64",
+          "backend": "lisp",
+          "workers": 4,
+          "wrapper_pid": 41206,
+          "status": 0,
+          "seconds": 1.718
+        },
+        {
+          "name": "lisp-4-03",
+          "architecture": "arm64",
+          "backend": "lisp",
+          "workers": 4,
+          "wrapper_pid": 41211,
+          "status": 0,
+          "seconds": 1.799
+        },
+        {
+          "name": "lisp-4-04",
+          "architecture": "arm64",
+          "backend": "lisp",
+          "workers": 4,
+          "wrapper_pid": 41213,
+          "status": 138,
+          "seconds": 1.756
+        },
+        {
+          "name": "lisp-4-05",
+          "architecture": "arm64",
+          "backend": "lisp",
+          "workers": 4,
+          "wrapper_pid": 41227,
+          "status": 0,
+          "seconds": 1.776
+        },
+        {
+          "name": "lisp-4-06",
+          "architecture": "arm64",
+          "backend": "lisp",
+          "workers": 4,
+          "wrapper_pid": 41232,
+          "status": 0,
+          "seconds": 1.734
+        },
+        {
+          "name": "lisp-4-07",
+          "architecture": "arm64",
+          "backend": "lisp",
+          "workers": 4,
+          "wrapper_pid": 41234,
+          "status": 0,
+          "seconds": 1.709
+        },
+        {
+          "name": "lisp-4-08",
+          "architecture": "arm64",
+          "backend": "lisp",
+          "workers": 4,
+          "wrapper_pid": 41248,
+          "status": 0,
+          "seconds": 1.79
+        },
+        {
+          "name": "lisp-4-09",
+          "architecture": "arm64",
+          "backend": "lisp",
+          "workers": 4,
+          "wrapper_pid": 41250,
+          "status": 0,
+          "seconds": 1.737
+        },
+        {
+          "name": "lisp-4-10",
+          "architecture": "arm64",
+          "backend": "lisp",
+          "workers": 4,
+          "wrapper_pid": 41252,
+          "status": 0,
+          "seconds": 1.761
+        },
+        {
+          "name": "native-1-01",
+          "architecture": "arm64",
+          "backend": "native",
+          "workers": 1,
+          "wrapper_pid": 41266,
+          "status": 0,
+          "seconds": 1.841
+        },
+        {
+          "name": "native-1-02",
+          "architecture": "arm64",
+          "backend": "native",
+          "workers": 1,
+          "wrapper_pid": 41268,
+          "status": 0,
+          "seconds": 1.799
+        },
+        {
+          "name": "native-1-03",
+          "architecture": "arm64",
+          "backend": "native",
+          "workers": 1,
+          "wrapper_pid": 41270,
+          "status": 0,
+          "seconds": 1.834
+        },
+        {
+          "name": "native-1-04",
+          "architecture": "arm64",
+          "backend": "native",
+          "workers": 1,
+          "wrapper_pid": 41286,
+          "status": 0,
+          "seconds": 1.788
+        },
+        {
+          "name": "native-1-05",
+          "architecture": "arm64",
+          "backend": "native",
+          "workers": 1,
+          "wrapper_pid": 41288,
+          "status": 0,
+          "seconds": 1.84
+        },
+        {
+          "name": "native-1-06",
+          "architecture": "arm64",
+          "backend": "native",
+          "workers": 1,
+          "wrapper_pid": 41290,
+          "status": 0,
+          "seconds": 1.81
+        },
+        {
+          "name": "native-1-07",
+          "architecture": "arm64",
+          "backend": "native",
+          "workers": 1,
+          "wrapper_pid": 41304,
+          "status": 0,
+          "seconds": 1.798
+        },
+        {
+          "name": "native-1-08",
+          "architecture": "arm64",
+          "backend": "native",
+          "workers": 1,
+          "wrapper_pid": 41306,
+          "status": 0,
+          "seconds": 1.798
+        },
+        {
+          "name": "native-1-09",
+          "architecture": "arm64",
+          "backend": "native",
+          "workers": 1,
+          "wrapper_pid": 41308,
+          "status": 0,
+          "seconds": 1.823
+        },
+        {
+          "name": "native-1-10",
+          "architecture": "arm64",
+          "backend": "native",
+          "workers": 1,
+          "wrapper_pid": 41322,
+          "status": 0,
+          "seconds": 1.791
+        },
+        {
+          "name": "native-4-01",
+          "architecture": "arm64",
+          "backend": "native",
+          "workers": 4,
+          "wrapper_pid": 41324,
+          "status": 0,
+          "seconds": 1.739
+        },
+        {
+          "name": "native-4-02",
+          "architecture": "arm64",
+          "backend": "native",
+          "workers": 4,
+          "wrapper_pid": 41326,
+          "status": 0,
+          "seconds": 1.774
+        },
+        {
+          "name": "native-4-03",
+          "architecture": "arm64",
+          "backend": "native",
+          "workers": 4,
+          "wrapper_pid": 41340,
+          "status": 0,
+          "seconds": 1.732
+        },
+        {
+          "name": "native-4-04",
+          "architecture": "arm64",
+          "backend": "native",
+          "workers": 4,
+          "wrapper_pid": 41342,
+          "status": 0,
+          "seconds": 1.732
+        },
+        {
+          "name": "native-4-05",
+          "architecture": "arm64",
+          "backend": "native",
+          "workers": 4,
+          "wrapper_pid": 41345,
+          "status": 0,
+          "seconds": 1.77
+        },
+        {
+          "name": "native-4-06",
+          "architecture": "arm64",
+          "backend": "native",
+          "workers": 4,
+          "wrapper_pid": 41359,
+          "status": 0,
+          "seconds": 1.73
+        },
+        {
+          "name": "native-4-07",
+          "architecture": "arm64",
+          "backend": "native",
+          "workers": 4,
+          "wrapper_pid": 41361,
+          "status": 0,
+          "seconds": 1.738
+        },
+        {
+          "name": "native-4-08",
+          "architecture": "arm64",
+          "backend": "native",
+          "workers": 4,
+          "wrapper_pid": 41363,
+          "status": 0,
+          "seconds": 1.764
+        },
+        {
+          "name": "native-4-09",
+          "architecture": "arm64",
+          "backend": "native",
+          "workers": 4,
+          "wrapper_pid": 41377,
+          "status": 0,
+          "seconds": 1.72
+        },
+        {
+          "name": "native-4-10",
+          "architecture": "arm64",
+          "backend": "native",
+          "workers": 4,
+          "wrapper_pid": 41403,
+          "status": 0,
+          "seconds": 1.729
+        },
+        {
+          "name": "plain-4-01",
+          "architecture": "arm64",
+          "backend": "plain",
+          "workers": 4,
+          "wrapper_pid": 41405,
+          "status": 0,
+          "seconds": 1.212
+        },
+        {
+          "name": "plain-4-02",
+          "architecture": "arm64",
+          "backend": "plain",
+          "workers": 4,
+          "wrapper_pid": 41419,
+          "status": 0,
+          "seconds": 1.138
+        },
+        {
+          "name": "plain-4-03",
+          "architecture": "arm64",
+          "backend": "plain",
+          "workers": 4,
+          "wrapper_pid": 41421,
+          "status": 0,
+          "seconds": 1.076
+        },
+        {
+          "name": "plain-4-04",
+          "architecture": "arm64",
+          "backend": "plain",
+          "workers": 4,
+          "wrapper_pid": 41425,
+          "status": 0,
+          "seconds": 1.068
+        },
+        {
+          "name": "plain-4-05",
+          "architecture": "arm64",
+          "backend": "plain",
+          "workers": 4,
+          "wrapper_pid": 41427,
+          "status": 0,
+          "seconds": 1.078
+        },
+        {
+          "name": "plain-4-06",
+          "architecture": "arm64",
+          "backend": "plain",
+          "workers": 4,
+          "wrapper_pid": 41429,
+          "status": 0,
+          "seconds": 1.096
+        },
+        {
+          "name": "plain-4-07",
+          "architecture": "arm64",
+          "backend": "plain",
+          "workers": 4,
+          "wrapper_pid": 41443,
+          "status": 0,
+          "seconds": 1.073
+        },
+        {
+          "name": "plain-4-08",
+          "architecture": "arm64",
+          "backend": "plain",
+          "workers": 4,
+          "wrapper_pid": 41445,
+          "status": 0,
+          "seconds": 1.075
+        },
+        {
+          "name": "plain-4-09",
+          "architecture": "arm64",
+          "backend": "plain",
+          "workers": 4,
+          "wrapper_pid": 41447,
+          "status": 0,
+          "seconds": 1.078
+        },
+        {
+          "name": "plain-4-10",
+          "architecture": "arm64",
+          "backend": "plain",
+          "workers": 4,
+          "wrapper_pid": 41449,
+          "status": 0,
+          "seconds": 1.073
+        }
+      ]
+    },
+    "isolation_arm64_cli": {
+      "execution_context": "ordinary CLI",
+      "log_directory": "/private/tmp/tickets140-isolation-arm64-cli",
+      "results": [
+        {
+          "name": "lisp-1-01",
+          "architecture": "arm64",
+          "context": "cli",
+          "backend": "lisp",
+          "workers": 1,
+          "wrapper_pid": 25251,
+          "status": 0,
+          "seconds": 1.618
+        },
+        {
+          "name": "lisp-1-02",
+          "architecture": "arm64",
+          "context": "cli",
+          "backend": "lisp",
+          "workers": 1,
+          "wrapper_pid": 25259,
+          "status": 0,
+          "seconds": 1.579
+        },
+        {
+          "name": "lisp-1-03",
+          "architecture": "arm64",
+          "context": "cli",
+          "backend": "lisp",
+          "workers": 1,
+          "wrapper_pid": 25281,
+          "status": 0,
+          "seconds": 1.552
+        },
+        {
+          "name": "lisp-1-04",
+          "architecture": "arm64",
+          "context": "cli",
+          "backend": "lisp",
+          "workers": 1,
+          "wrapper_pid": 25290,
+          "status": 0,
+          "seconds": 1.555
+        },
+        {
+          "name": "lisp-1-05",
+          "architecture": "arm64",
+          "context": "cli",
+          "backend": "lisp",
+          "workers": 1,
+          "wrapper_pid": 25292,
+          "status": 0,
+          "seconds": 1.561
+        },
+        {
+          "name": "lisp-1-06",
+          "architecture": "arm64",
+          "context": "cli",
+          "backend": "lisp",
+          "workers": 1,
+          "wrapper_pid": 25306,
+          "status": 0,
+          "seconds": 1.549
+        },
+        {
+          "name": "lisp-1-07",
+          "architecture": "arm64",
+          "context": "cli",
+          "backend": "lisp",
+          "workers": 1,
+          "wrapper_pid": 25309,
+          "status": 0,
+          "seconds": 1.557
+        },
+        {
+          "name": "lisp-1-08",
+          "architecture": "arm64",
+          "context": "cli",
+          "backend": "lisp",
+          "workers": 1,
+          "wrapper_pid": 25311,
+          "status": 0,
+          "seconds": 1.552
+        },
+        {
+          "name": "lisp-1-09",
+          "architecture": "arm64",
+          "context": "cli",
+          "backend": "lisp",
+          "workers": 1,
+          "wrapper_pid": 25317,
+          "status": 0,
+          "seconds": 1.584
+        },
+        {
+          "name": "lisp-1-10",
+          "architecture": "arm64",
+          "context": "cli",
+          "backend": "lisp",
+          "workers": 1,
+          "wrapper_pid": 25327,
+          "status": 0,
+          "seconds": 1.545
+        },
+        {
+          "name": "lisp-4-01",
+          "architecture": "arm64",
+          "context": "cli",
+          "backend": "lisp",
+          "workers": 4,
+          "wrapper_pid": 25329,
+          "status": 0,
+          "seconds": 1.546
+        },
+        {
+          "name": "lisp-4-02",
+          "architecture": "arm64",
+          "context": "cli",
+          "backend": "lisp",
+          "workers": 4,
+          "wrapper_pid": 25334,
+          "status": 0,
+          "seconds": 1.582
+        },
+        {
+          "name": "lisp-4-03",
+          "architecture": "arm64",
+          "context": "cli",
+          "backend": "lisp",
+          "workers": 4,
+          "wrapper_pid": 25348,
+          "status": 0,
+          "seconds": 1.554
+        },
+        {
+          "name": "lisp-4-04",
+          "architecture": "arm64",
+          "context": "cli",
+          "backend": "lisp",
+          "workers": 4,
+          "wrapper_pid": 25350,
+          "status": 0,
+          "seconds": 1.543
+        },
+        {
+          "name": "lisp-4-05",
+          "architecture": "arm64",
+          "context": "cli",
+          "backend": "lisp",
+          "workers": 4,
+          "wrapper_pid": 25352,
+          "status": 0,
+          "seconds": 1.555
+        },
+        {
+          "name": "lisp-4-06",
+          "architecture": "arm64",
+          "context": "cli",
+          "backend": "lisp",
+          "workers": 4,
+          "wrapper_pid": 25366,
+          "status": 0,
+          "seconds": 1.547
+        },
+        {
+          "name": "lisp-4-07",
+          "architecture": "arm64",
+          "context": "cli",
+          "backend": "lisp",
+          "workers": 4,
+          "wrapper_pid": 25368,
+          "status": 0,
+          "seconds": 1.544
+        },
+        {
+          "name": "lisp-4-08",
+          "architecture": "arm64",
+          "context": "cli",
+          "backend": "lisp",
+          "workers": 4,
+          "wrapper_pid": 25370,
+          "status": 0,
+          "seconds": 1.552
+        },
+        {
+          "name": "lisp-4-09",
+          "architecture": "arm64",
+          "context": "cli",
+          "backend": "lisp",
+          "workers": 4,
+          "wrapper_pid": 25372,
+          "status": 0,
+          "seconds": 1.535
+        },
+        {
+          "name": "lisp-4-10",
+          "architecture": "arm64",
+          "context": "cli",
+          "backend": "lisp",
+          "workers": 4,
+          "wrapper_pid": 25386,
+          "status": 0,
+          "seconds": 1.608
+        },
+        {
+          "name": "native-1-01",
+          "architecture": "arm64",
+          "context": "cli",
+          "backend": "native",
+          "workers": 1,
+          "wrapper_pid": 25388,
+          "status": 0,
+          "seconds": 1.606
+        },
+        {
+          "name": "native-1-02",
+          "architecture": "arm64",
+          "context": "cli",
+          "backend": "native",
+          "workers": 1,
+          "wrapper_pid": 25390,
+          "status": 0,
+          "seconds": 1.646
+        },
+        {
+          "name": "native-1-03",
+          "architecture": "arm64",
+          "context": "cli",
+          "backend": "native",
+          "workers": 1,
+          "wrapper_pid": 25404,
+          "status": 0,
+          "seconds": 1.611
+        },
+        {
+          "name": "native-1-04",
+          "architecture": "arm64",
+          "context": "cli",
+          "backend": "native",
+          "workers": 1,
+          "wrapper_pid": 25406,
+          "status": 0,
+          "seconds": 1.616
+        },
+        {
+          "name": "native-1-05",
+          "architecture": "arm64",
+          "context": "cli",
+          "backend": "native",
+          "workers": 1,
+          "wrapper_pid": 25408,
+          "status": 0,
+          "seconds": 1.701
+        },
+        {
+          "name": "native-1-06",
+          "architecture": "arm64",
+          "context": "cli",
+          "backend": "native",
+          "workers": 1,
+          "wrapper_pid": 25422,
+          "status": 0,
+          "seconds": 1.671
+        },
+        {
+          "name": "native-1-07",
+          "architecture": "arm64",
+          "context": "cli",
+          "backend": "native",
+          "workers": 1,
+          "wrapper_pid": 25424,
+          "status": 0,
+          "seconds": 1.677
+        },
+        {
+          "name": "native-1-08",
+          "architecture": "arm64",
+          "context": "cli",
+          "backend": "native",
+          "workers": 1,
+          "wrapper_pid": 25426,
+          "status": 0,
+          "seconds": 1.631
+        },
+        {
+          "name": "native-1-09",
+          "architecture": "arm64",
+          "context": "cli",
+          "backend": "native",
+          "workers": 1,
+          "wrapper_pid": 25440,
+          "status": 0,
+          "seconds": 1.674
+        },
+        {
+          "name": "native-1-10",
+          "architecture": "arm64",
+          "context": "cli",
+          "backend": "native",
+          "workers": 1,
+          "wrapper_pid": 25449,
+          "status": 0,
+          "seconds": 1.621
+        },
+        {
+          "name": "native-4-01",
+          "architecture": "arm64",
+          "context": "cli",
+          "backend": "native",
+          "workers": 4,
+          "wrapper_pid": 25451,
+          "status": 0,
+          "seconds": 1.586
+        },
+        {
+          "name": "native-4-02",
+          "architecture": "arm64",
+          "context": "cli",
+          "backend": "native",
+          "workers": 4,
+          "wrapper_pid": 25465,
+          "status": 0,
+          "seconds": 1.604
+        },
+        {
+          "name": "native-4-03",
+          "architecture": "arm64",
+          "context": "cli",
+          "backend": "native",
+          "workers": 4,
+          "wrapper_pid": 25469,
+          "status": 0,
+          "seconds": 1.557
+        },
+        {
+          "name": "native-4-04",
+          "architecture": "arm64",
+          "context": "cli",
+          "backend": "native",
+          "workers": 4,
+          "wrapper_pid": 25471,
+          "status": 0,
+          "seconds": 1.559
+        },
+        {
+          "name": "native-4-05",
+          "architecture": "arm64",
+          "context": "cli",
+          "backend": "native",
+          "workers": 4,
+          "wrapper_pid": 25473,
+          "status": 0,
+          "seconds": 1.58
+        },
+        {
+          "name": "native-4-06",
+          "architecture": "arm64",
+          "context": "cli",
+          "backend": "native",
+          "workers": 4,
+          "wrapper_pid": 25487,
+          "status": 0,
+          "seconds": 1.542
+        },
+        {
+          "name": "native-4-07",
+          "architecture": "arm64",
+          "context": "cli",
+          "backend": "native",
+          "workers": 4,
+          "wrapper_pid": 25489,
+          "status": 0,
+          "seconds": 1.557
+        },
+        {
+          "name": "native-4-08",
+          "architecture": "arm64",
+          "context": "cli",
+          "backend": "native",
+          "workers": 4,
+          "wrapper_pid": 25491,
+          "status": 0,
+          "seconds": 1.576
+        },
+        {
+          "name": "native-4-09",
+          "architecture": "arm64",
+          "context": "cli",
+          "backend": "native",
+          "workers": 4,
+          "wrapper_pid": 25505,
+          "status": 0,
+          "seconds": 1.557
+        },
+        {
+          "name": "native-4-10",
+          "architecture": "arm64",
+          "context": "cli",
+          "backend": "native",
+          "workers": 4,
+          "wrapper_pid": 25507,
+          "status": 0,
+          "seconds": 1.55
+        },
+        {
+          "name": "plain-4-01",
+          "architecture": "arm64",
+          "context": "cli",
+          "backend": "plain",
+          "workers": 4,
+          "wrapper_pid": 25509,
+          "status": 0,
+          "seconds": 1.076
+        },
+        {
+          "name": "plain-4-02",
+          "architecture": "arm64",
+          "context": "cli",
+          "backend": "plain",
+          "workers": 4,
+          "wrapper_pid": 25511,
+          "status": 0,
+          "seconds": 1.105
+        },
+        {
+          "name": "plain-4-03",
+          "architecture": "arm64",
+          "context": "cli",
+          "backend": "plain",
+          "workers": 4,
+          "wrapper_pid": 25525,
+          "status": 0,
+          "seconds": 1.074
+        },
+        {
+          "name": "plain-4-04",
+          "architecture": "arm64",
+          "context": "cli",
+          "backend": "plain",
+          "workers": 4,
+          "wrapper_pid": 25527,
+          "status": 0,
+          "seconds": 1.073
+        },
+        {
+          "name": "plain-4-05",
+          "architecture": "arm64",
+          "context": "cli",
+          "backend": "plain",
+          "workers": 4,
+          "wrapper_pid": 25529,
+          "status": 0,
+          "seconds": 1.07
+        },
+        {
+          "name": "plain-4-06",
+          "architecture": "arm64",
+          "context": "cli",
+          "backend": "plain",
+          "workers": 4,
+          "wrapper_pid": 25532,
+          "status": 0,
+          "seconds": 1.058
+        },
+        {
+          "name": "plain-4-07",
+          "architecture": "arm64",
+          "context": "cli",
+          "backend": "plain",
+          "workers": 4,
+          "wrapper_pid": 25539,
+          "status": 0,
+          "seconds": 1.057
+        },
+        {
+          "name": "plain-4-08",
+          "architecture": "arm64",
+          "context": "cli",
+          "backend": "plain",
+          "workers": 4,
+          "wrapper_pid": 25548,
+          "status": 0,
+          "seconds": 1.067
+        },
+        {
+          "name": "plain-4-09",
+          "architecture": "arm64",
+          "context": "cli",
+          "backend": "plain",
+          "workers": 4,
+          "wrapper_pid": 25553,
+          "status": 0,
+          "seconds": 1.071
+        },
+        {
+          "name": "plain-4-10",
+          "architecture": "arm64",
+          "context": "cli",
+          "backend": "plain",
+          "workers": 4,
+          "wrapper_pid": 25555,
+          "status": 0,
+          "seconds": 1.078
+        }
+      ]
+    }
+  },
+  "operator_wrap_up": {
+    "reason": "User requested wrap up",
+    "serial_trials_completed": 5,
+    "paired_trials_completed": 0,
+    "background_trials_completed": 0,
+    "ccl_overlap_validation": "operator cancelled while first exhaustive test progressed; no completed suite result"
+  },
+  "feature_validation": {
+    "revision": "84087c9",
+    "arm64_full_before_final_test_expansion": {
+      "sbcl": 463090,
+      "ccl": 463080,
+      "ecl": 465865
+    },
+    "arm64_final_overlap": {
+      "sbcl": 10056,
+      "ccl": 10056,
+      "ecl": 10056
+    },
+    "x86_64_full": {
+      "sbcl": 613477,
+      "ecl": 469099
+    },
+    "native_c_tests": {
+      "arm64": 5,
+      "x86_64": 5
+    },
+    "x86_64_ccl": {
+      "status": "operator_cancelled",
+      "completed_suite": false,
+      "log": "/private/tmp/tickets141-x86-ccl-overlap.log",
+      "sample": "/private/tmp/tickets141-x86-ccl-overlap-sample.txt"
+    },
+    "independent_overlap_byte_oracle_cases": 4800
+  }
+}

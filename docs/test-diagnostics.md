@@ -20,6 +20,10 @@ and exits 124 on timeout. It terminates the command's process group; use
 script or a direct Lisp command. The scripts retain full coverage; selecting
 tests is for diagnosis, not a full validation run.
 
+[Rosetta concurrency diagnostics](rosetta-concurrency.md) compare serial CCL
+processes, simultaneous targeted processes, and checks alongside a full suite,
+with separate caches and retained logs.
+
 ## Limitations
 
 Rosetta CCL has costly cold compilation, test-data setup and lifetime trials.

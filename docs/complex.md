@@ -80,6 +80,8 @@ and a `NOTINLINE` declaration produce the expected result.[^ccl]
 The cached kernel helpers retain the workaround. The compiler defect remains
 tracked by [#138](https://todo.sr.ht/~takeiteasy/trivial-simd/138); its scope on
 x86-64 and in other typed complex arithmetic paths is unverified.
+Cold concurrent complex Lisp kernels have an intermittent ARM64 CCL SIGBUS
+under investigation in [#142](https://todo.sr.ht/~takeiteasy/trivial-simd/142).
 Exceptional floating-point behavior retains the
 [kernel numerical limitations](kernels.md#limitations).
 
