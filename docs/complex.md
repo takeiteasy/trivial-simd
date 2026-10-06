@@ -74,8 +74,12 @@ overhead is tracked by [#74](https://todo.sr.ht/~takeiteasy/trivial-simd/74).
 Native complex reductions materialize a block before reducing it; packed fusion
 is tracked by [#96](https://todo.sr.ht/~takeiteasy/trivial-simd/96).
 CCL complex helpers call generic arithmetic to avoid an ARM64 compiler bug with
-typed complex-double constants. Compiler verification and narrowing the
-workaround are tracked by [#138](https://todo.sr.ht/~takeiteasy/trivial-simd/138).
+typed complex-double constants in CCL 1.13 (`v1.13-459-g690ff7ea`,
+`DarwinARM6464`). A compiled sum drops its argument; interpreted evaluation
+and a `NOTINLINE` declaration produce the expected result.[^ccl]
+The cached kernel helpers retain the workaround. The compiler defect remains
+tracked by [#138](https://todo.sr.ht/~takeiteasy/trivial-simd/138); its scope on
+x86-64 and in other typed complex arithmetic paths is unverified.
 Exceptional floating-point behavior retains the
 [kernel numerical limitations](kernels.md#limitations).
 
@@ -84,3 +88,18 @@ Exceptional floating-point behavior retains the
     than expanding additional complex loops into the real/integer branches.
     Calls own their mutable constants, transfers, and scratch, including calls
     retained across redefinition.
+
+[^ccl]: Minimal reproducer:
+
+    ```lisp
+    (let ((f (compile nil
+                      '(lambda (a)
+                         (declare (type (complex double-float) a))
+                         (+ a #c(1d0 0d0))))))
+      (funcall f #c(2d0 2d0)))
+    ```
+
+    Expected: `#C(3d0 2d0)`. Observed: `#C(1d0 0d0)`.
+    Adding `(declare (notinline +))` inside the lambda restores the expected
+    result. Cached complex-kernel helpers declare `+`, `-`, `*`, `/`, `sqrt`,
+    `abs`, `=`, and `/=` not inline, including comparisons and selection.
