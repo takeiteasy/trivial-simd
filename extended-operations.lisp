@@ -638,14 +638,14 @@ strides of DESTINATION then every operand, with NIL for scalars."
                    ((eq operator 'select)
                     `(if ,(first operands) ,(second operands) ,(third operands)))
                    ((member operator '(sqrt abs exp sin cos))
-                    (when (and (or integerp (complex-type-p type))
-                               (member operator '(sqrt exp sin cos)))
+                    (when (or (and integerp (member operator '(sqrt exp sin cos)))
+                              (and (complex-type-p type) (member operator '(abs exp sin cos))))
                       (error "~A requires real float vectors" operator))
                     `(,(if (eq operator 'sqrt) 'kernel-sqrt
                            (if integerp (integer-operation-symbol :abs type) operator))
                       ,(first operands)))
                    ((eq operator 'fma)
-                    (when integerp (error "FMA requires float vectors"))
+                    (when (or integerp (complex-type-p type)) (error "FMA requires real float vectors"))
                     `(fma ,@operands))
                    (t
                     (let* ((operation (case operator
@@ -747,6 +747,7 @@ by a copy; see UNSHIFTED-KERNEL-INPUT."
 
   (defun mask-kernel-expansion (name arguments expression)
     ;; TODO: SBCL mask kernels still use scalar loops; add packed expressions (#72).
+    ;; TODO: ECL deep mask EVAL exceeds its jump range; move loops into helpers (#139).
     (unless arguments (error "A mask kernel needs input vectors"))
     (let* ((outer (and (consp expression) (first expression)))
            (reduction (and (member outer (list* 'count 'any 'all *kernel-reducers*)) outer))
@@ -761,6 +762,7 @@ by a copy; see UNSHIFTED-KERNEL-INPUT."
            (index (gensym "INDEX")) (result (gensym "RESULT"))
            (values (loop for nil in arguments collect (gensym "VALUE")))
            (programs (gensym "PROGRAMS")) (program (gensym "PROGRAM"))
+           (complex-kernel (gensym "COMPLEX-KERNEL"))
            (lowered (multiple-value-list (lower-kernel (mask-kernel-tree body arguments))))
            (bytes (kernel-bytes (first lowered)))
            (constants (second lowered)) (scratch-count (third lowered)))
@@ -769,7 +771,9 @@ by a copy; see UNSHIFTED-KERNEL-INPUT."
       (when (and reduction
                  (not (eq kind (if (member reduction '(count any all)) :mask :numeric))))
         (error "Kernel result has the wrong kind"))
-      `(let ((,programs (make-array ,(length *numeric-types*) :initial-element nil)))
+      `(let ((,programs (make-array ,(length *numeric-types*) :initial-element nil))
+             (,complex-kernel (make-complex-kernel ',arguments ',(mask-kernel-tree body arguments)
+                                                  ',kind ',reduction)))
          (defun ,name (,@(when destination (list destination)) ,@arguments
                      &key start end ,@(when destination '(destination-start)) ,@starts)
          ,(argument-index-result reduction result
@@ -781,6 +785,8 @@ by a copy; see UNSHIFTED-KERNEL-INPUT."
                `((unless (eq (vector-type ,destination)
                              ,(if (eq kind :mask) :u8 type))
                    (error "Kernel destination has the wrong element type"))))
+           (when (complex-type-p ,type)
+             (validate-complex-kernel (complex-kernel-tree ,complex-kernel) ',reduction))
            (multiple-value-bind (,count ,offsets)
                (resolve-mixed-slice
                 (list ,@(when destination (list destination)) ,@arguments)
@@ -791,9 +797,13 @@ by a copy; see UNSHIFTED-KERNEL-INPUT."
               ,(staged-kernel-form
                 name reduction type destination d-offset arguments input-offsets
                 (if destination (cons 'destination-start starts) starts) count
-                ;; Numeric reductions always take the Lisp path.
-                (if (member reduction *kernel-reducers*) nil '(eq *backend* :native))
-               `(ecase ,type
+                `(if (complex-type-p ,type) (native-complex-kernel-p)
+                     ,(if (member reduction *kernel-reducers*) nil '(eq *backend* :native)))
+               `(if (complex-type-p ,type)
+                    (run-complex-expression ,complex-kernel ,type ,destination
+                                            (list ,@arguments) (list ,@input-offsets) ,(if destination d-offset 0)
+                                            ,count)
+                    (ecase ,type
                  ,@(loop for (key element foreign) in *numeric-types*
                          for slot from 0
                          collect
@@ -824,7 +834,7 @@ by a copy; see UNSHIFTED-KERNEL-INPUT."
                                    key foreign kind reduction destination arguments
                                    d-offset input-offsets count))
                               (error (condition)
-                                `(error ,(princ-to-string condition)))))))
+                                `(error ,(princ-to-string condition))))))))
                 (lambda (position)
-                  `(kernel-tree-value ',(mask-kernel-tree body arguments) ,type (list ,@arguments)
+                  `(kernel-tree-value (complex-kernel-tree ,complex-kernel) ,type (list ,@arguments)
                                       (list ,@input-offsets) ,position t))))))))))))

@@ -639,8 +639,12 @@ Empty slices give NIL for the extrema and a zero otherwise."
                   (error "~A requires real float vectors" (second node)))
                 (walk (third node)))
                (:fma (error "FMA requires real float vectors"))
+               (:select
+                (walk (second node))
+                (walk (third node))
+                (walk (fourth node)))
                (:operation
-                (when (member (second node) '(:min :max))
+                (when (member (second node) '(:min :max :lt :le :gt :ge))
                   (error "Complex values have no ordering"))
                 (walk (third node))
                 (walk (fourth node))))))
@@ -663,18 +667,6 @@ Empty slices give NIL for the extrema and a zero otherwise."
                                '(error "SBCL SIMD is unavailable on this platform")
                                (lisp-kernel-form tree type destination arguments d-offset offsets count
                                                  'fma reducer))))))))
-
-(defun complex-kernel-function (cache tree type destination arguments count d-offset offsets
-                                &optional reducer)
-  (let ((slot (if (eq type :c32) 0 1)))
-    (or (aref cache slot)
-        (setf (aref cache slot)
-              (#+ecl eval #-ecl compile
-               #-ecl nil
-               `(lambda (,@(when destination (list destination)) ,@arguments ,count
-                         ,@(when destination (list d-offset)) ,@offsets)
-                  ,(lisp-kernel-form tree type destination arguments d-offset offsets count
-                                     'fma reducer)))))))
 
 (defun kernel-combine-form (reducer type)
   "Form folding the block results of a REDUCER kernel over vectors of TYPE."
@@ -777,7 +769,7 @@ END, and per-input start keywords. Experimental."
                (offsets (loop for nil in arguments collect (gensym "OFFSET")))
                (program (gensym "PROGRAM")) (programs (gensym "PROGRAMS"))
                (integer-functions (gensym "INTEGER-FUNCTIONS")) (type (gensym "TYPE"))
-               (complex-functions (gensym "COMPLEX-FUNCTIONS"))
+               (complex-kernel (gensym "COMPLEX-KERNEL"))
                (offsets-variable (gensym "OFFSETS"))
                (starts (mapcar (lambda (argument) (intern (format nil "~A-START" argument))) arguments))
                (vectors (if destination (cons destination arguments) arguments))
@@ -798,7 +790,7 @@ END, and per-input start keywords. Experimental."
                #+ecl (runner-form `(lambda ,runner-arguments ,native-form)))
           `(let ((,programs (make-array ,(length *numeric-types*) :initial-element nil))
                  (,integer-functions (make-array 16 :initial-element nil))
-                 (,complex-functions (make-array 2 :initial-element nil))
+                 (,complex-kernel (make-complex-kernel ',arguments ',tree :numeric ',reducer))
                  #+ecl (,runner ,runner-form))
              (defun ,name (,@vectors &key start end ,@all-starts)
                ,(if reduction-p
@@ -809,19 +801,18 @@ END, and per-input start keywords. Experimental."
                 `(multiple-value-bind (,type ,count ,offsets-variable)
                    (resolve-slice (list ,@vectors) (list ,@all-starts) start end)
                  (when (integer-type-p ,type) (validate-integer-kernel ',tree ,type ',reducer))
+                 (when (complex-type-p ,type)
+                   (validate-complex-kernel (complex-kernel-tree ,complex-kernel) ',reducer))
                  (destructuring-bind ,all-offsets ,offsets-variable
                    (declare (type fixnum ,@all-offsets))
                    ,@(unshifted-kernel-inputs-forms destination d-offset arguments offsets count)
                    ,(staged-kernel-form
                      name reducer type destination d-offset arguments offsets all-starts count
-                     `(and (eq *backend* :native) (not (complex-type-p ,type)))
+                     `(and (eq *backend* :native)
+                           (or (not (complex-type-p ,type)) (native-complex-kernel-p)))
                      `(if (complex-type-p ,type)
-                       (progn
-                         (validate-complex-kernel ',tree ',reducer)
-                         (funcall (complex-kernel-function
-                                   ,complex-functions ',tree ,type ',destination ',arguments
-                                   ',count ',d-offset ',offsets ',reducer)
-                                  ,@vectors ,count ,@all-offsets))
+                       (run-complex-expression ,complex-kernel ,type ,destination
+                                               (list ,@arguments) (list ,@offsets) ,(or d-offset 0) ,count)
                        (ecase *backend*
                      (:lisp (if (integer-type-p ,type) ,integer-form
                                 (if (eq ,type :f32)

@@ -24,6 +24,7 @@
                (:file "kernel")
                (:file "kernel-rows")
                (:file "kernel-inputs")
+               (:file "kernel-complex")
                (:file "kernel-plan"))
   :in-order-to ((asdf:test-op (asdf:test-op "trivial-simd/tests"))))
 
@@ -53,7 +54,8 @@
                (:file "tests/blas-native")
                (:file "tests/views")
                (:file "tests/kernel-inputs")
-               (:file "tests/kernel-plans"))
+               (:file "tests/kernel-plans")
+               (:file "tests/complex-kernels"))
   :perform (asdf:test-op (operation component)
              (declare (ignore operation component))
              (unless (uiop:symbol-call :trivial-simd/tests :run-tests)

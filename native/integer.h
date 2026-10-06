@@ -174,19 +174,7 @@ static int ts_integer_kernel_##suffix(const uint8_t *code, size_t code_length, \
     for (size_t base = 0; base < n; base += TS_KERNEL_BLOCK) { \
         size_t m = n - base < TS_KERNEL_BLOCK ? n - base : TS_KERNEL_BLOCK; \
         for (size_t pc = 0; pc < code_length; pc += 4) { \
-            unsigned op = code[pc], dst = code[pc + 1], a = code[pc + 2], b = code[pc + 3]; \
-            if (op == TS_OP_SPILL || op == TS_OP_RELOAD) { \
-                type *slot = scratch + ((size_t)a | ((size_t)b << 8)) * TS_KERNEL_BLOCK; \
-                if (op == TS_OP_SPILL) memcpy(slot, registers[dst], m * sizeof(type)); \
-                else memcpy(registers[dst], slot, m * sizeof(type)); \
-                continue; \
-            } \
-            type *destination = dst == TS_KERNEL_OUTPUT ? (sum ? reduction : out + base) : registers[dst]; \
-            const type *left = NULL, *right = NULL; \
-            if (op != TS_OP_CONSTANT) left = a < TS_KERNEL_REGISTERS ? registers[a] : inputs[a - TS_KERNEL_REGISTERS] + base; \
-            if ((op >= TS_OP_ADD && op <= TS_OP_DIVIDE) || op == TS_OP_MIN || op == TS_OP_MAX || \
-                (op >= TS_OP_EQ && op <= TS_OP_SELECT)) \
-                right = b < TS_KERNEL_REGISTERS ? registers[b] : inputs[b - TS_KERNEL_REGISTERS] + base; \
+            TS_KERNEL_DECODE(type, 1, sum ? reduction : out + base); \
             if (op == TS_OP_CONSTANT) { \
                 for (size_t j = 0; j < m; ++j) destination[j] = constants[a]; \
             } else if (op == TS_OP_COPY) { \

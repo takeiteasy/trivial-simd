@@ -102,9 +102,8 @@
                       (append inputs (loop for (key value) on options by #'cddr
                                            unless (eq key :destination-start) append (list key value))))
                type))))
-    (let ((*backend* (if (and (eq *backend* :native) (complex-type-p type)) :lisp *backend*)))
-      (apply (aref functions (1- (length functions)))
-             (append (when destination (list destination)) inputs options)))))
+    (apply (aref functions (1- (length functions)))
+           (append (when destination (list destination)) inputs options))))
 
 (defun kernel-row-span (vector start stride rows count)
   (let* ((limit (declared-kernel-limit (vector-type vector)))

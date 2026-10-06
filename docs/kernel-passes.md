@@ -69,6 +69,9 @@ Types, bounds, and prohibited overlap are checked before writes. Slice calls
 follow the [kernel overlap rule](kernels.md#overlap). An arithmetic error in an output pass may
 leave partial output. Redefined kernels and retained older functions have
 separate pass closures and program lifetimes.
+Complex equality and selection compose with dependent `sum`, `asum`, and `nrm2`
+passes. Compatible complex passes use native execution when its symbols are
+available; otherwise they use the [complex scalar helpers](complex.md#kernels).
 
 [Row batches](kernel-rows.md) evaluate the graph independently for each row.
 Zero rows write nothing; zero-length rows skip inner evaluation.

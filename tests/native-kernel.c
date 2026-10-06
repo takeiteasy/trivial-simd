@@ -893,7 +893,11 @@ static void check_transcendentals_##suffix(void) { \
 CHECK_TRANSCENDENTALS(f32, float, 0, expf, sinf, cosf)
 CHECK_TRANSCENDENTALS(f64, double, 1, exp, sin, cos)
 
+#include "native-complex-kernel.h"
+
 int main(void) {
+    check_complex_c32();
+    check_complex_c64();
     check_loader_2_f32();
     check_loader_3_f32();
     check_loader_4_f32();

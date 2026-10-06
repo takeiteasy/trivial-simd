@@ -316,121 +316,89 @@ int ts_kernel_transcendentals(void) { return 1; }
  * SPILL/RELOAD use a register and a little-endian 16-bit scratch index.
  * FMA uses a register destination as its addend.
  */
+#include "kernel-vm.h"
+
 #define TS_KERNEL_RUN(suffix, mode, sum, type, width, load, store, zero, add, sub, mul, div, \
                       sqrtv, absv, minv, maxv, fmav, sqrts, abss, fmas) \
+static int ts_kernel_apply_##mode##_##suffix(unsigned op, type *destination, \
+                                             const type *left, const type *right, size_t m) { \
+    size_t i = 0; \
+    switch (op) { \
+    case TS_OP_COPY: \
+        for (; i < m; ++i) destination[i] = left[i]; \
+        break; \
+    case TS_OP_ADD: TS_KERNEL_LOOP(width, load, store, add, +); break; \
+    case TS_OP_SUBTRACT: TS_KERNEL_LOOP(width, load, store, sub, -); break; \
+    case TS_OP_MULTIPLY: TS_KERNEL_LOOP(width, load, store, mul, *); break; \
+    case TS_OP_DIVIDE: TS_KERNEL_LOOP(width, load, store, div, /); break; \
+    case TS_OP_EXP: for (; i < m; ++i) destination[i] = sizeof(type) == sizeof(float) ? expf(left[i]) : exp(left[i]); break; \
+    case TS_OP_SIN: for (; i < m; ++i) destination[i] = sizeof(type) == sizeof(float) ? sinf(left[i]) : sin(left[i]); break; \
+    case TS_OP_COS: for (; i < m; ++i) destination[i] = sizeof(type) == sizeof(float) ? cosf(left[i]) : cos(left[i]); break; \
+    case TS_OP_SQRT: \
+        for (size_t j = 0; j < m; ++j) { \
+            if (left[j] < 0) return -2; \
+        } \
+        for (; i + width <= m; i += width) store(destination + i, sqrtv(load(left + i))); \
+        for (; i < m; ++i) { \
+            if (left[i] == 0) { \
+                if (destination != left) memcpy(destination + i, left + i, sizeof(type)); \
+            } \
+            else destination[i] = sqrts(left[i]); \
+        } \
+        break; \
+    case TS_OP_ABS: \
+        for (; i + width <= m; i += width) store(destination + i, absv(load(left + i))); \
+        for (; i < m; ++i) destination[i] = abss(left[i]); \
+        break; \
+    case TS_OP_MIN: \
+        for (; i + width <= m; i += width) \
+            store(destination + i, minv(load(left + i), load(right + i))); \
+        for (; i < m; ++i) { \
+            if (left[i] == right[i]) { \
+                if (destination != left) memcpy(destination + i, left + i, sizeof(type)); \
+            } \
+            else destination[i] = left[i] < right[i] ? left[i] : right[i]; \
+        } \
+        break; \
+    case TS_OP_MAX: \
+        for (; i + width <= m; i += width) \
+            store(destination + i, maxv(load(left + i), load(right + i))); \
+        for (; i < m; ++i) { \
+            if (left[i] == right[i]) { \
+                if (destination != left) memcpy(destination + i, left + i, sizeof(type)); \
+            } \
+            else destination[i] = left[i] > right[i] ? left[i] : right[i]; \
+        } \
+        break; \
+    case TS_OP_FMA: \
+        for (; i + width <= m; i += width) \
+            store(destination + i, fmav(load(left + i), load(right + i), load(destination + i))); \
+        for (; i < m; ++i) destination[i] = fmas(left[i], right[i], destination[i]); \
+        break; \
+    /* TODO: scalar comparison and selection lanes; add packed VM opcodes (#72). */ \
+    case TS_OP_EQ: for (; i < m; ++i) destination[i] = left[i] == right[i]; break; \
+    case TS_OP_NE: for (; i < m; ++i) destination[i] = left[i] != right[i]; break; \
+    case TS_OP_LT: for (; i < m; ++i) destination[i] = left[i] < right[i]; break; \
+    case TS_OP_LE: for (; i < m; ++i) destination[i] = left[i] <= right[i]; break; \
+    case TS_OP_GT: for (; i < m; ++i) destination[i] = left[i] > right[i]; break; \
+    case TS_OP_GE: for (; i < m; ++i) destination[i] = left[i] >= right[i]; break; \
+    case TS_OP_SELECT: \
+        for (; i < m; ++i) destination[i] = left[i] != 0 ? right[i] : destination[i]; \
+        break; \
+    case TS_OP_NEGATE: \
+        for (; i + width <= m; i += width) \
+            store(destination + i, sub(zero(), load(left + i))); \
+        for (; i < m; ++i) destination[i] = (type)0 - left[i]; \
+        break; \
+    } \
+    return 0; \
+} \
 static int ts_kernel_run_##mode##_##suffix(const uint8_t *code, size_t code_length, \
                         const type *constants, const type *const *inputs, \
                         type *out, size_t n, size_t scratch_count, type *scratch) { \
-    if (n == 0) { if (sum) *out = 0; return 0; } \
-    if (scratch_count > SIZE_MAX / TS_KERNEL_BLOCK / sizeof(type)) return -1; \
-    type registers[TS_KERNEL_REGISTERS][TS_KERNEL_BLOCK]; \
-    type result = 0; \
-    for (size_t base = 0; base < n; base += TS_KERNEL_BLOCK) { \
-        size_t m = n - base < TS_KERNEL_BLOCK ? n - base : TS_KERNEL_BLOCK; \
-        type block_result = 0; \
-        for (size_t pc = 0; pc < code_length; pc += 4) { \
-            if (code[pc] == TS_OP_SPILL || code[pc] == TS_OP_RELOAD) { \
-                size_t slot = (size_t)code[pc + 2] | ((size_t)code[pc + 3] << 8); \
-                type *block = scratch + slot * TS_KERNEL_BLOCK; \
-                type *reg = registers[code[pc + 1]]; \
-                if (code[pc] == TS_OP_SPILL) memcpy(block, reg, m * sizeof(type)); \
-                else memcpy(reg, block, m * sizeof(type)); \
-                continue; \
-            } \
-            int reduce = sum && code[pc + 1] == TS_KERNEL_OUTPUT; \
-            type *destination = code[pc + 1] == TS_KERNEL_OUTPUT \
-                ? out + (sum ? 0 : base) : registers[code[pc + 1] & (TS_KERNEL_REGISTERS - 1)]; \
-            size_t i = 0; \
-            if (code[pc] == TS_OP_CONSTANT) { \
-                type value = constants[code[pc + 2]]; \
-                if (reduce) { \
-                    int status = ts_kernel_reduce_##suffix(TS_OP_CONSTANT, NULL, NULL, value, m, &block_result); \
-                    if (status) return status; \
-                } else for (; i < m; ++i) destination[i] = value; \
-                continue; \
-            } \
-            const type *left = code[pc + 2] < TS_KERNEL_REGISTERS \
-                ? registers[code[pc + 2]] : inputs[code[pc + 2] - TS_KERNEL_REGISTERS] + base; \
-            const type *right = code[pc + 3] < TS_KERNEL_REGISTERS \
-                ? registers[code[pc + 3]] : inputs[code[pc + 3] - TS_KERNEL_REGISTERS] + base; \
-            if (reduce) { \
-                int status = ts_kernel_reduce_##suffix(code[pc], left, right, 0, m, &block_result); \
-                if (status) return status; \
-                continue; \
-            } \
-            switch (code[pc]) { \
-            case TS_OP_COPY: \
-                for (; i < m; ++i) destination[i] = left[i]; \
-                break; \
-            case TS_OP_ADD: TS_KERNEL_LOOP(width, load, store, add, +); break; \
-            case TS_OP_SUBTRACT: TS_KERNEL_LOOP(width, load, store, sub, -); break; \
-            case TS_OP_MULTIPLY: TS_KERNEL_LOOP(width, load, store, mul, *); break; \
-            case TS_OP_DIVIDE: TS_KERNEL_LOOP(width, load, store, div, /); break; \
-            case TS_OP_EXP: for (; i < m; ++i) destination[i] = sizeof(type) == sizeof(float) ? expf(left[i]) : exp(left[i]); break; \
-            case TS_OP_SIN: for (; i < m; ++i) destination[i] = sizeof(type) == sizeof(float) ? sinf(left[i]) : sin(left[i]); break; \
-            case TS_OP_COS: for (; i < m; ++i) destination[i] = sizeof(type) == sizeof(float) ? cosf(left[i]) : cos(left[i]); break; \
-            case TS_OP_SQRT: \
-                for (size_t j = 0; j < m; ++j) { \
-                    if (left[j] < 0) return -2; \
-                } \
-                for (; i + width <= m; i += width) store(destination + i, sqrtv(load(left + i))); \
-                for (; i < m; ++i) { \
-                    if (left[i] == 0) { \
-                        if (destination != left) memcpy(destination + i, left + i, sizeof(type)); \
-                    } \
-                    else destination[i] = sqrts(left[i]); \
-                } \
-                break; \
-            case TS_OP_ABS: \
-                for (; i + width <= m; i += width) store(destination + i, absv(load(left + i))); \
-                for (; i < m; ++i) destination[i] = abss(left[i]); \
-                break; \
-            case TS_OP_MIN: \
-                for (; i + width <= m; i += width) \
-                    store(destination + i, minv(load(left + i), load(right + i))); \
-                for (; i < m; ++i) { \
-                    if (left[i] == right[i]) { \
-                        if (destination != left) memcpy(destination + i, left + i, sizeof(type)); \
-                    } \
-                    else destination[i] = left[i] < right[i] ? left[i] : right[i]; \
-                } \
-                break; \
-            case TS_OP_MAX: \
-                for (; i + width <= m; i += width) \
-                    store(destination + i, maxv(load(left + i), load(right + i))); \
-                for (; i < m; ++i) { \
-                    if (left[i] == right[i]) { \
-                        if (destination != left) memcpy(destination + i, left + i, sizeof(type)); \
-                    } \
-                    else destination[i] = left[i] > right[i] ? left[i] : right[i]; \
-                } \
-                break; \
-            case TS_OP_FMA: \
-                for (; i + width <= m; i += width) \
-                    store(destination + i, fmav(load(left + i), load(right + i), load(destination + i))); \
-                for (; i < m; ++i) destination[i] = fmas(left[i], right[i], destination[i]); \
-                break; \
-            /* TODO: scalar comparison and selection lanes; add packed VM opcodes (#72). */ \
-            case TS_OP_EQ: for (; i < m; ++i) destination[i] = left[i] == right[i]; break; \
-            case TS_OP_NE: for (; i < m; ++i) destination[i] = left[i] != right[i]; break; \
-            case TS_OP_LT: for (; i < m; ++i) destination[i] = left[i] < right[i]; break; \
-            case TS_OP_LE: for (; i < m; ++i) destination[i] = left[i] <= right[i]; break; \
-            case TS_OP_GT: for (; i < m; ++i) destination[i] = left[i] > right[i]; break; \
-            case TS_OP_GE: for (; i < m; ++i) destination[i] = left[i] >= right[i]; break; \
-            case TS_OP_SELECT: \
-                for (; i < m; ++i) destination[i] = left[i] != 0 ? right[i] : destination[i]; \
-                break; \
-            case TS_OP_NEGATE: \
-                for (; i + width <= m; i += width) \
-                    store(destination + i, sub(zero(), load(left + i))); \
-                for (; i < m; ++i) destination[i] = (type)0 - left[i]; \
-                break; \
-            } \
-        } \
-        if (sum) result += block_result; \
-    } \
-    if (sum) *out = result; \
-    return 0; \
+    TS_KERNEL_EXECUTE(type, 1, sum, \
+        ts_kernel_reduce_##suffix(op, left, right, constant ? *constant : 0, m, block_result), \
+        ts_kernel_apply_##mode##_##suffix(op, destination, left, right, m)); \
 }
 
 #define TS_KERNEL(suffix, type, vector_type, width, load, store, zero, add, sub, mul, div, \
@@ -540,6 +508,7 @@ TS_KERNEL(f64, double, TS_F64_VECTOR, TS_F64_WIDTH, TS_F64_LOAD, TS_F64_STORE, T
           TS_F64_SQRT, TS_F64_ABS, TS_F64_MIN, TS_F64_MAX, TS_F64_FMA, sqrt, fabs, fma)
 
 #include "integer.h"
+
 
 #define TS_KERNEL_ROWS(suffix, type) \
 int ts_kernel_sum_rows_##suffix(const uint8_t *code, size_t code_length, \
@@ -735,6 +704,8 @@ TS_REDUCE_FLOAT_OPERATIONS(f32, float, fabsf)
 TS_REDUCE_FLOAT_OPERATIONS(f64, double, fabs)
 TS_KERNEL_REDUCTION(f32, float, 0)
 TS_KERNEL_REDUCTION(f64, double, 0)
+
+#include "complex-kernel.h"
 
 #include "kernel-inputs.h"
 #define TS_REDUCE_INTEGER(suffix, type) \

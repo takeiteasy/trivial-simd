@@ -60,11 +60,14 @@ destination are not copied.[^overlap] Reduction kernels write nothing, and
 lists and unsupported forms signal an error when the kernel is defined. Vectors
 share one numeric element type, chosen per call, unless they use
 [typed or repeated input declarations](kernel-inputs.md). Integer expressions use
-[wrapping arithmetic](integers.md); `sqrt` and `fma` remain float-only.
+[wrapping arithmetic](integers.md); `sqrt` accepts real and complex floats,
+while `fma` requires real floats.
 `exp`, `sin`, and `cos` require real float computation.
 Comparisons use `=`, `/=`, `<`, `<=`, `>`, and `>=` with two operands. A
 comparison-only kernel writes a [byte mask](masks.md). Mask reductions return
 an integer count or a boolean; they must be top-level forms.
+Complex expressions support equality and inequality, nested selections,
+`sum`, `asum`, and `nrm2`; see [complex kernels](complex.md#kernels).
 
 ## Reduction kernels
 
@@ -143,9 +146,11 @@ the native library.
 on `:native` and typed scalar loops on `:lisp` and `:sbcl`.
 
 Elementwise mask kernels and mask reductions use the native register VM on
-`:native`. Its comparison and selection opcodes process scalar lanes;
-arithmetic opcodes retain their SIMD paths. With bare arguments, a `sum` over a selection uses a
-typed scalar loop, as do mask expressions on `:sbcl` and `:lisp`.
+`:native`. Real/integer comparison and selection opcodes process scalar lanes;
+arithmetic opcodes retain their SIMD paths. With bare real/integer arguments, a
+`sum` over a selection uses a typed scalar loop, as do mask expressions on
+`:sbcl` and `:lisp`. [Complex kernels](complex.md#kernels) use packed native
+equality and selection, native numeric reductions, or cached scalar helpers.
 On `:native`, `asum`, `nrm2`, `minimum`, `maximum`, `argmin` and `argmax` evaluate
 each 256-element block, then reduce it. `:sbcl` accumulates float `asum` and
 double-float `nrm2` with SIMD packs; its other reducers, and integer `asum`, use typed scalar loops.
@@ -185,7 +190,7 @@ for measurements and [FMA fallback limitations](#limitations).
 
 - Transcendental math uses scalar system routines. See its
   [numerical and execution limitations](kernel-transcendentals.md#limitations).
-- Mask expressions use scalar comparison and selection lanes in the native VM
+- Real/integer mask expressions use scalar comparison and selection lanes in the native VM
   and scalar loops on SBCL. Spilling mask reductions allocate scratch per
   256-element block. Packed execution and scratch reuse are tracked in
   [#72](https://todo.sr.ht/~takeiteasy/trivial-simd/72).
@@ -204,6 +209,9 @@ for measurements and [FMA fallback limitations](#limitations).
   [call setup ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/59).
 - Nested mask reductions are unsupported. Multi-pass kernels recompute vector
   intermediates; see [pass execution limitations](kernel-passes.md#limitations).
+- Deep mask definitions evaluated with ECL can exceed its interpreter jump
+  range. Compile these definitions with `compile-file`; reducing the expansion
+  is tracked by [#139](https://todo.sr.ht/~takeiteasy/trivial-simd/139).
 - Native reducers other than `sum` evaluate a block before reducing it; see the
   [fused reducers ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/96).
   SBCL `minimum`, `maximum`, `argmin` and `argmax` use scalar loops

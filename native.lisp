@@ -680,16 +680,33 @@ back for the POINTERs in OUTPUTS. A vector view binds its own memory instead."
            pointer)
       (unless complete (free-native-program-buffers buffers)))))
 
+(defun native-constant-storage (values type)
+  (if (complex-type-p type)
+      (loop for value in values
+            for number = (if (kernel-scalar-p value) 0 value)
+            append (list (realpart number) (imagpart number)))
+      values))
+
+(defun native-constant-types (type)
+  (case type
+    (:c32 (values :float 'single-float))
+    (:c64 (values :double 'double-float))
+    (otherwise (values (third (numeric-type type)) (second (numeric-type type))))))
+
+(defun copy-native-constants (values type)
+  (multiple-value-bind (foreign element) (native-constant-types type)
+    (foreign-copy (native-constant-storage values type) foreign element)))
+
 (defmacro with-kernel-program ((program type) &body body)
   (let ((owner (gensym "OWNER")) (pointer (gensym "CONSTANTS")) (key (gensym "TYPE")))
     `(let ((,owner ,program))
        (if (native-program-scalar-constants ,owner)
-           (let* ((,key (if (assoc ,type *numeric-types*) ,type
+           (let* ((,key (if (or (complex-type-p ,type) (assoc ,type *numeric-types*)) ,type
                            (first (find ,type *numeric-types* :key #'third))))
-                  (,pointer (foreign-copy
+                  (,pointer (copy-native-constants
                              (mapcar (lambda (value) (kernel-constant-value value ,key))
                                      (native-program-scalar-constants ,owner))
-                             (third (numeric-type ,key)) (second (numeric-type ,key))))
+                             ,key))
                   (,program (copy-native-program ,owner)))
              (unwind-protect
                   (progn (setf (native-program-constants ,program) ,pointer) ,@body)
@@ -712,8 +729,9 @@ back for the POINTERs in OUTPUTS. A vector view binds its own memory instead."
                            :constant-type type
                            :scalar-constants (when (kernel-special-constants-p constants) constants)
                            :constants (when type
-                                        (let ((info (numeric-type type)))
-                                          (copy constants (third info) (second info))))
+                                        (let ((pointer (copy-native-constants constants type)))
+                                          (push pointer buffers)
+                                          pointer))
                            :f32-constants (unless type (copy constants :float 'single-float))
                            :f64-constants (unless type (copy constants :double 'double-float)))))
              (register-native-program-finalizer program (native-program-finalizer buffers))
@@ -731,6 +749,7 @@ back for the POINTERs in OUTPUTS. A vector view binds its own memory instead."
     (0 nil)
     (-2 (error "Negative kernel square root operand"))
     (-3 (error 'division-by-zero :operation 'truncate :operands nil))
+    (-4 (error "Invalid native kernel program or operands"))
     (otherwise (error "Unable to allocate native kernel scratch storage"))))
 
 (defmacro define-native-kernel-dispatch ()

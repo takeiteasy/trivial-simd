@@ -37,6 +37,12 @@ indexes, overflow, wrapping and error cases.
 Kernel reducer tests compare `minimum`, `maximum`, `argmin`, `argmax`, `asum`
 and `nrm2` kernels with the bulk reducers on every backend, covering slices,
 block boundaries, ties, selections, spilling, complex vectors and overflow.
+Complex mask tests check both precisions, nested arithmetic and selections,
+mask and numeric reductions, dependent passes, slices, views, spilling,
+overlap, extreme norms, validation before writes, native dispatch, missing-symbol
+fallback, redefinition, and concurrent calls. Direct C tests check packed and
+scalar complex execution, allocation failures, scratch cleanup, domain errors,
+and interleaved component storage.
 Kernel overlap tests write into a slice shifted by one element in both
 directions on every backend, at 19 elements and across the 257-element native
 block boundary, for every integer type, masks, declared inputs, multi-pass
@@ -288,6 +294,9 @@ spilling, redefinition and concurrent calls. Native tests check one scratch
 allocation per batch, allocation failure, overflow, domain errors and cleanup.
 
 ## Kernel profiling
+
+See [kernel expansion size](kernel-size.md) for the optional macro-expansion
+budget and cold SBCL/CCL compiler diagnostic.
 
 The optional profile measures identical native bytecode with per-call allocation
 and explicitly owned reusable scratch. It reports complete Lisp calls separately

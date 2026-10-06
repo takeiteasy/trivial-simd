@@ -32,6 +32,9 @@ In `define-kernel`, `=`, `/=`, `<`, `<=`, `>`, and `>=` produce mask expressions
 alone writes a byte mask. An outermost `trivial-simd:count`,
 `trivial-simd:any`, or `trivial-simd:all` reduces a mask expression; these
 reductions do not nest inside elementwise expressions.
+Complex kernel inputs support `=` and `/=` with arithmetic operands, nested
+selections, and all three mask reductions. Ordered comparisons require real or
+integer inputs. See [complex kernel execution](complex.md#kernels).
 
 ```lisp
 (trivial-simd:define-kernel larger (a b)
@@ -46,8 +49,8 @@ conversion, comparison, and mask counting.
 
 ## Limitations
 
-Mask kernels use scalar comparison and selection lanes in the native VM, and
-typed scalar loops on SBCL. Packed execution is tracked in
+Real/integer mask kernels use scalar comparison and selection lanes in the native
+VM, and scalar loops on SBCL. Packed execution for these types is tracked in
 [#72](https://todo.sr.ht/~takeiteasy/trivial-simd/72).
 Mask kernels follow the [kernel overlap rule](kernels.md#overlap); shifted
 overlap in bulk mask operations follows the [bulk overlap limitation](api.md#limitations).
