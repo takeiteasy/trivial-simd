@@ -151,6 +151,8 @@ arithmetic opcodes retain their SIMD paths. With bare real/integer arguments, a
 `sum` over a selection uses a typed scalar loop, as do mask expressions on
 `:sbcl` and `:lisp`. [Complex kernels](complex.md#kernels) use packed native
 equality and selection, native numeric reductions, or cached scalar helpers.
+ECL executes real/integer mask kernels through cached helpers. Deeply nested
+selections accept definitions with `eval`.[^mask-helpers]
 On `:native`, `asum`, `nrm2`, `minimum`, `maximum`, `argmin` and `argmax` evaluate
 each 256-element block, then reduce it. `:sbcl` accumulates float `asum` and
 double-float `nrm2` with SIMD packs; its other reducers, and integer `asum`, use typed scalar loops.
@@ -209,9 +211,6 @@ for measurements and [FMA fallback limitations](#limitations).
   [call setup ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/59).
 - Nested mask reductions are unsupported. Multi-pass kernels recompute vector
   intermediates; see [pass execution limitations](kernel-passes.md#limitations).
-- Deep mask definitions evaluated with ECL can exceed its interpreter jump
-  range. Compile these definitions with `compile-file`; reducing the expansion
-  is tracked by [#139](https://todo.sr.ht/~takeiteasy/trivial-simd/139).
 - Native reducers other than `sum` evaluate a block before reducing it; see the
   [fused reducers ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/96).
   SBCL `minimum`, `maximum`, `argmin` and `argmax` use scalar loops
@@ -282,3 +281,8 @@ for measurements and [FMA fallback limitations](#limitations).
     or per-call data. Each program stores its selected runner, so warmed calls
     avoid shared-cache lookup and locking. Threaded ECL protects initialization
     with one native lock; non-threaded ECL initializes directly.
+
+[^mask-helpers]: Each ECL real/integer mask kernel evaluates one helper per input
+    element type on first use. The helper receives the call's vectors and slice
+    offsets, and uses the kernel's native-program cache. Redefinition creates a
+    separate helper cache; retained older functions keep their own helpers.

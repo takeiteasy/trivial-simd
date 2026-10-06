@@ -91,3 +91,14 @@
       (assert (every (lambda (value) (= value 6.0)) out)))
     (eval-multiply-subtract out a a a)
     (assert (every (lambda (value) (= value 2.0)) out))))
+
+#+ecl
+(progn
+  (labels ((tree (depth)
+             (if (zerop depth) 'a
+                 `(trivial-simd:select (> a b) ,(tree (1- depth)) ,(tree (1- depth))))))
+    (eval `(trivial-simd:define-kernel eval-deep-mask-count (a b)
+             (trivial-simd:count (> ,(tree 8) b)))))
+  (let ((a (make-array 257 :element-type '(signed-byte 8) :initial-element 2))
+        (b (make-array 257 :element-type '(signed-byte 8) :initial-element 1)))
+    (assert (= 257 (eval-deep-mask-count a b)))))

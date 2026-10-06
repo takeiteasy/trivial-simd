@@ -747,7 +747,6 @@ by a copy; see UNSHIFTED-KERNEL-INPUT."
 
   (defun mask-kernel-expansion (name arguments expression)
     ;; TODO: SBCL mask kernels still use scalar loops; add packed expressions (#72).
-    ;; TODO: ECL deep mask EVAL exceeds its jump range; move loops into helpers (#139).
     (unless arguments (error "A mask kernel needs input vectors"))
     (let* ((outer (and (consp expression) (first expression)))
            (reduction (and (member outer (list* 'count 'any 'all *kernel-reducers*)) outer))
@@ -762,6 +761,7 @@ by a copy; see UNSHIFTED-KERNEL-INPUT."
            (index (gensym "INDEX")) (result (gensym "RESULT"))
            (values (loop for nil in arguments collect (gensym "VALUE")))
            (programs (gensym "PROGRAMS")) (program (gensym "PROGRAM"))
+           #+ecl (runners (gensym "RUNNERS"))
            (complex-kernel (gensym "COMPLEX-KERNEL"))
            (lowered (multiple-value-list (lower-kernel (mask-kernel-tree body arguments))))
            (bytes (kernel-bytes (first lowered)))
@@ -772,6 +772,7 @@ by a copy; see UNSHIFTED-KERNEL-INPUT."
                  (not (eq kind (if (member reduction '(count any all)) :mask :numeric))))
         (error "Kernel result has the wrong kind"))
       `(let ((,programs (make-array ,(length *numeric-types*) :initial-element nil))
+             #+ecl (,runners (make-array ,(length *numeric-types*) :initial-element nil))
              (,complex-kernel (make-complex-kernel ',arguments ',(mask-kernel-tree body arguments)
                                                   ',kind ',reduction)))
          (defun ,name (,@(when destination (list destination)) ,@arguments
@@ -806,9 +807,7 @@ by a copy; see UNSHIFTED-KERNEL-INPUT."
                     (ecase ,type
                  ,@(loop for (key element foreign) in *numeric-types*
                          for slot from 0
-                         collect
-                         `(,key
-                           ,(handler-case
+                         for form = (handler-case
                                 (let* ((scalar (mask-kernel-scalar-form body arguments values key))
                                        (bindings (loop for value in values for argument in arguments
                                                        for offset in input-offsets
@@ -834,7 +833,18 @@ by a copy; see UNSHIFTED-KERNEL-INPUT."
                                    key foreign kind reduction destination arguments
                                    d-offset input-offsets count))
                               (error (condition)
-                                `(error ,(princ-to-string condition))))))))
+                                `(error ,(princ-to-string condition))))
+                         collect
+                         `(,key
+                           ,#+ecl
+                           (let ((parameters (append (list programs)
+                                                     (when destination (list destination d-offset))
+                                                     arguments input-offsets (list count))))
+                             `(funcall (or (aref ,runners ,slot)
+                                           (setf (aref ,runners ,slot)
+                                                 (eval '(lambda ,parameters ,form))))
+                                       ,@parameters))
+                           #-ecl form))))
                 (lambda (position)
                   `(kernel-tree-value (complex-kernel-tree ,complex-kernel) ,type (list ,@arguments)
                                       (list ,@input-offsets) ,position t))))))))))))

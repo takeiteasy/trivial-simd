@@ -91,7 +91,10 @@ also check helper sharing across definitions, signature separation, both
 precisions and access modes, concurrent initialization, compiler-failure fallback,
 and collection with populated helper caches. Kernel tests cover register spilling, scratch-slot reuse, encoding boundaries, square-root domain errors, signed zeros, single-rounding FMA, deterministic exact-reference comparisons, forced FMA fallbacks, and
 scalar-returning sums with slices and spilling. ECL also exercises interpreted
-spilling and reduction definitions.
+spilling and reduction definitions. Interpreted ECL mask tests cover depth-eight
+selections, byte masks, every reduction, both float precisions and all eight
+integer types, empty and offset slices, shifted overlap across native block
+boundaries, and retained functions after redefinition.
 
 SBCL test runs reserve a 4 GiB heap for cold compilation.[^sbcl-heap]
 
