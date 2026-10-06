@@ -25,7 +25,7 @@
                (:file "kernel-rows")
                (:file "kernel-inputs")
                (:file "kernel-complex")
-               (:file "kernel-plan"))
+               (:file "kernel-plan") (:file "product"))
   :in-order-to ((asdf:test-op (asdf:test-op "trivial-simd/tests"))))
 
 (asdf:defsystem "trivial-simd/tests"
@@ -46,7 +46,7 @@
                (:file "tests/complex")
                (:file "tests/reductions")
                (:file "tests/kernel-reductions")
-               (:file "tests/kernel-rows")
+               (:file "tests/kernel-rows") (:file "tests/row-reducers")
                (:file "tests/blas-level1")
                (:file "tests/blas-level2")
                (:file "tests/blas-level3")

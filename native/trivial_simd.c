@@ -582,9 +582,9 @@ TS_KERNEL_MASK(u32, uint32_t)
 TS_KERNEL_MASK(s64, uint64_t)
 TS_KERNEL_MASK(u64, uint64_t)
 
-/* Reducer codes for ts_kernel_reduction_*; SUMSQ and later reducers are float-only. */
+/* Reducer codes for ts_kernel_reduction_*; Norm reducers are float-only. */
 enum { TS_REDUCE_ARGMIN = 1, TS_REDUCE_ARGMAX, TS_REDUCE_ASUM,
-       TS_REDUCE_SUMSQ, TS_REDUCE_MAXABS, TS_REDUCE_SCALED_SUMSQ };
+       TS_REDUCE_SUMSQ, TS_REDUCE_MAXABS, TS_REDUCE_SCALED_SUMSQ, TS_REDUCE_PROD };
 
 #define TS_REDUCE_FLOAT_OPERATIONS(suffix, type, absolute) \
 static int ts_reduce_less_##suffix(type x, type y) { return x < y; } \
@@ -629,16 +629,14 @@ static type ts_reduce_add_##suffix(type x, type y) { return ts_value_##suffix(TS
 /* TODO: scalar reduction of an evaluated block; fuse into the VM with packed lanes (#96). */
 /* The first extreme wins, so ties keep the earlier element. */
 #define TS_KERNEL_REDUCTION(suffix, type, integral) \
-int ts_kernel_reduction_##suffix(const uint8_t *code, size_t code_length, const type *constants, \
+static int ts_kernel_reduction_with_scratch_##suffix(const uint8_t *code, size_t code_length, const type *constants, \
                                 const type *const *inputs, size_t input_count, size_t n, \
                               size_t scratch_count, unsigned reducer, double scale, \
-                              type *value, double *wide, size_t *index) { \
-    if (reducer < TS_REDUCE_ARGMIN || reducer > TS_REDUCE_SCALED_SUMSQ || \
-        (integral && reducer > TS_REDUCE_ASUM) || input_count > 256) return -1; \
+                              type *value, double *wide, size_t *index, type *scratch) { \
+    if (reducer < TS_REDUCE_ARGMIN || reducer > TS_REDUCE_PROD || \
+        (integral && reducer > TS_REDUCE_ASUM && reducer != TS_REDUCE_PROD) || input_count > 256) return -1; \
     if (scratch_count > SIZE_MAX / TS_KERNEL_BLOCK / sizeof(type)) return -1; \
-    type *scratch = scratch_count ? malloc(scratch_count * TS_KERNEL_BLOCK * sizeof(type)) : NULL; \
-    if (scratch_count && !scratch) return -1; \
-    type best = 0, total = 0; \
+    type best = 0, total = reducer == TS_REDUCE_PROD ? 1 : 0; \
     double accumulator = 0; \
     int out_of_range = 0; \
     size_t best_index = 0; \
@@ -650,10 +648,14 @@ int ts_kernel_reduction_##suffix(const uint8_t *code, size_t code_length, const 
         int status = ts_kernel_with_scratch_##suffix(code, code_length, constants, shifted, \
                                                      values, m, scratch_count, scratch, \
                                                      scratch_count); \
-        if (status) { free(scratch); return status; } \
+        if (status) return status; \
         switch (reducer) { \
         case TS_REDUCE_ARGMIN: TS_REDUCE_EXTREME(suffix, type, ts_reduce_less_##suffix) break; \
         case TS_REDUCE_ARGMAX: TS_REDUCE_EXTREME(suffix, type, ts_reduce_greater_##suffix) break; \
+        case TS_REDUCE_PROD: \
+            for (size_t j = 0; j < m; ++j) \
+                total = integral ? (type)((uint64_t)total * (uint64_t)values[j]) : total * values[j]; \
+            break; \
         case TS_REDUCE_ASUM: { \
             type lane[TS_REDUCE_LANES] = {0}; \
             size_t j = 0; \
@@ -693,24 +695,83 @@ int ts_kernel_reduction_##suffix(const uint8_t *code, size_t code_length, const 
             break; \
         } \
     } \
-    free(scratch); \
-    *value = reducer == TS_REDUCE_ASUM ? total : best; \
+    *value = (reducer == TS_REDUCE_ASUM || reducer == TS_REDUCE_PROD) ? total : best; \
     *wide = out_of_range ? HUGE_VAL : accumulator; \
     *index = best_index; \
+    return 0; \
+}
+
+
+#define TS_KERNEL_REDUCTION_WRAPPER(suffix, type) \
+int ts_kernel_reduction_##suffix(const uint8_t *code, size_t code_length, const type *constants, \
+                                const type *const *inputs, size_t input_count, size_t n, \
+                                size_t scratch_count, unsigned reducer, double scale, \
+                                type *value, double *wide, size_t *index) { \
+    if (scratch_count > SIZE_MAX / TS_KERNEL_BLOCK / sizeof(type)) return -1; \
+    type *scratch = scratch_count ? malloc(scratch_count * TS_KERNEL_BLOCK * sizeof(type)) : NULL; \
+    if (scratch_count && !scratch) return -1; \
+    int status = ts_kernel_reduction_with_scratch_##suffix(code, code_length, constants, inputs, \
+        input_count, n, scratch_count, reducer, scale, value, wide, index, scratch); \
+    free(scratch); \
+    return status; \
+}
+
+#define TS_KERNEL_REDUCTION_ROWS(suffix, type) \
+int ts_kernel_reduction_rows_##suffix(const uint8_t *code, size_t code_length, const type *constants, \
+    const type *const *inputs, size_t input_count, const int64_t *strides, void *output, \
+    size_t rows, size_t n, size_t scratch_count, unsigned reducer, unsigned indices) { \
+    if (!rows) return 0; \
+    if (!output || indices > 1 || \
+        (reducer != TS_REDUCE_ARGMIN && reducer != TS_REDUCE_ARGMAX && reducer != TS_REDUCE_PROD) || \
+        (indices && reducer == TS_REDUCE_PROD) || \
+        rows > PTRDIFF_MAX / (indices ? sizeof(int64_t) : sizeof(type))) return -1; \
+    if (!n) { \
+        if (reducer != TS_REDUCE_PROD) return -1; \
+        for (size_t row = 0; row < rows; ++row) ((type *)output)[row] = 1; \
+        return 0; \
+    } \
+    if (input_count > 248 || n > PTRDIFF_MAX / sizeof(type) || \
+        (input_count && (!inputs || !strides))) return -1; \
+    for (size_t j = 0; j < input_count; ++j) { \
+        uint64_t stride = strides[j] < 0 \
+            ? (uint64_t)(-(strides[j] + 1)) + 1 : (uint64_t)strides[j]; \
+        if (!inputs[j] || (stride && rows - 1 > (PTRDIFF_MAX / sizeof(type) - n) / stride)) return -1; \
+    } \
+    if (scratch_count > SIZE_MAX / TS_KERNEL_BLOCK / sizeof(type)) return -1; \
+    type *scratch = scratch_count ? malloc(scratch_count * TS_KERNEL_BLOCK * sizeof(type)) : NULL; \
+    if (scratch_count && !scratch) return -1; \
+    const type *shifted[256]; \
+    for (size_t j = 0; j < input_count; ++j) shifted[j] = inputs[j]; \
+    for (size_t row = 0; row < rows; ++row) { \
+        type value; double wide; size_t index; \
+        int status = ts_kernel_reduction_with_scratch_##suffix(code, code_length, constants, \
+            shifted, input_count, n, scratch_count, reducer, 0, &value, &wide, &index, scratch); \
+        if (status) { free(scratch); return status; } \
+        if (indices) ((int64_t *)output)[row] = (int64_t)index; \
+        else ((type *)output)[row] = value; \
+        if (row + 1 < rows) \
+            for (size_t j = 0; j < input_count; ++j) shifted[j] += strides[j]; \
+    } \
+    free(scratch); \
     return 0; \
 }
 
 TS_REDUCE_FLOAT_OPERATIONS(f32, float, fabsf)
 TS_REDUCE_FLOAT_OPERATIONS(f64, double, fabs)
 TS_KERNEL_REDUCTION(f32, float, 0)
+TS_KERNEL_REDUCTION_WRAPPER(f32, float)
+TS_KERNEL_REDUCTION_ROWS(f32, float)
 TS_KERNEL_REDUCTION(f64, double, 0)
+TS_KERNEL_REDUCTION_WRAPPER(f64, double)
+TS_KERNEL_REDUCTION_ROWS(f64, double)
 
 #include "complex-kernel.h"
 
 #include "kernel-inputs.h"
 #define TS_REDUCE_INTEGER(suffix, type) \
     TS_REDUCE_INTEGER_OPERATIONS(suffix, type) \
-    TS_KERNEL_REDUCTION(suffix, type, 1)
+    TS_KERNEL_REDUCTION(suffix, type, 1) \
+    TS_KERNEL_REDUCTION_WRAPPER(suffix, type)
 TS_REDUCE_INTEGER(s8, uint8_t)
 TS_REDUCE_INTEGER(u8, uint8_t)
 TS_REDUCE_INTEGER(s16, uint16_t)

@@ -41,7 +41,7 @@ may be mixed.
 
 All float expressions, nested numeric reducers, comparisons, selection,
 mask outputs and mask reducers accept declarations. Float elementwise and
-`sum` kernels also support [row batching](kernel-rows.md).
+`sum`, `prod` and extrema kernels also support [row batching](kernel-rows.md).
 
 ## Slices and block alignment
 
@@ -72,7 +72,7 @@ Empty slices read no input values and retain the existing reducer results.
 ## Row batching
 
 Numeric elementwise batches write each row into the positional destination;
-`sum` batches take `:destination`. Nested reductions are local to each row. See
+Scalar reduction batches take `:destination`; arg destinations use `:s64`. Nested reductions are local to each row. See
 [output layout and strides](kernel-rows.md#arguments).
 
 Each input start and row stride counts stored elements of that input.

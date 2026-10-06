@@ -18,8 +18,8 @@ and repetition rules in every pass.
 
 ## Results and types
 
-All seven [numeric reducers](kernels.md#reduction-kernels) support nesting:
-`sum`, `asum`, `nrm2`, `minimum`, `maximum`, `argmin`, and `argmax`. Their existing
+All eight [numeric reducers](kernels.md#reduction-kernels) support nesting:
+`sum`, `prod`, `asum`, `nrm2`, `minimum`, `maximum`, `argmin`, and `argmax`. Their existing
 type restrictions, precision, wrapping arithmetic, ties, and norm scaling apply.
 
 | Result | Consumption by another expression |
@@ -69,7 +69,7 @@ Types, bounds, and prohibited overlap are checked before writes. Slice calls
 follow the [kernel overlap rule](kernels.md#overlap). An arithmetic error in an output pass may
 leave partial output. Redefined kernels and retained older functions have
 separate pass closures and program lifetimes.
-Complex equality and selection compose with dependent `sum`, `asum`, and `nrm2`
+Complex equality and selection compose with dependent `sum`, `prod`, `asum`, and `nrm2`
 passes. Compatible complex passes use native execution when its symbols are
 available; otherwise they use the [complex scalar helpers](complex.md#kernels).
 

@@ -427,3 +427,11 @@ gives NIL."
                (if maximum-p (> (cdr value) (cdr accumulated)) (< (cdr value) (cdr accumulated))))
            (cons (+ start (car value)) (cdr value)))
           (t accumulated))))
+
+(defun product-combiner (type)
+  (let ((multiply (if (integer-type-p type)
+                      (symbol-function (integer-operation-symbol :multiply type))
+                      #'*)))
+    (lambda (accumulated start value)
+      (declare (ignore start))
+      (if accumulated (funcall multiply accumulated value) value))))

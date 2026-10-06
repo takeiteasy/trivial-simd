@@ -37,9 +37,11 @@ including overlap, large unaligned slices and error cases.
 Stride tests compare every bulk operation and reduction with a contiguous call on
 plainly gathered copies for strides 1, 2, 3 and negative values on every
 backend, and cover bounds, empty slices, scalar operands and aliased outputs.
-Reduction tests cover `minimum`, `maximum`, `argmin`, `argmax`, `asum`, `nrm2`
+Reduction tests cover `prod`, `minimum`, `maximum`, `argmin`, `argmax`, `asum`, `nrm2`
 and `:accumulate` on every backend, including ties, signed zeros, absolute
 indexes, overflow, wrapping and error cases.
+Row reducer tests cover all dtypes, logical arg indices, signed row strides, identities, foreign destinations, declared inputs, dependent passes and native dispatch/fallback. Run `examples/row-reductions.lisp` for a small row batch.
+
 Kernel reducer tests compare `minimum`, `maximum`, `argmin`, `argmax`, `asum`
 and `nrm2` kernels with the bulk reducers on every backend, covering slices,
 block boundaries, ties, selections, spilling, complex vectors and overflow.

@@ -573,7 +573,7 @@ strides of DESTINATION then every operand, with NIL for scalars."
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defparameter *mask-kernel-comparisons* '(= /= < <= > >=))
-  (defparameter *kernel-reducers* '(sum asum nrm2 minimum maximum argmin argmax))
+  (defparameter *kernel-reducers* '(sum asum nrm2 minimum maximum argmin argmax prod))
 
   (defun mask-kernel-expression-p (expression)
     (and (consp expression)
@@ -798,7 +798,8 @@ by a copy; see UNSHIFTED-KERNEL-INPUT."
               ,(staged-kernel-form
                 name reduction type destination d-offset arguments input-offsets
                 (if destination (cons 'destination-start starts) starts) count
-                `(if (complex-type-p ,type) (native-complex-kernel-p)
+                `(if (complex-type-p ,type)
+                     (and (native-complex-kernel-p) ,(not (eq reduction 'prod)))
                      ,(if (member reduction *kernel-reducers*) nil '(eq *backend* :native)))
                `(if (complex-type-p ,type)
                     (run-complex-expression ,complex-kernel ,type ,destination
@@ -820,7 +821,7 @@ by a copy; see UNSHIFTED-KERNEL-INPUT."
                                                 (when ,test (incf ,result)))))
                                     (any `(loop for ,index below ,count thereis ,test))
                                     (all `(loop for ,index below ,count always ,test))
-                                    ((sum asum nrm2 minimum maximum argmin argmax)
+                                    ((sum asum nrm2 minimum maximum argmin argmax prod)
                                      (reduction-loop-form reduction key count index test))
                                     (otherwise
                                      `(progn

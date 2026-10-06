@@ -146,7 +146,8 @@
 (defun run-complex-expression (kernel type destination inputs offsets output-start count)
   (let ((tree (complex-kernel-tree kernel))
         (kind (complex-kernel-kind kernel)) (reducer (complex-kernel-reducer kernel)))
-    (if (native-complex-kernel-p)
+    ;; TODO: complex products use typed Lisp; add native product kernels (#148).
+    (if (and (native-complex-kernel-p) (not (eq reducer 'prod)))
         (let* ((slot (if (eq type :c32) 0 1)) (programs (complex-kernel-programs kernel))
                (program (or (aref programs slot)
                             (setf (aref programs slot)

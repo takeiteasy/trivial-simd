@@ -6,7 +6,7 @@
            #:copy! #:fill! #:swap!
            #:convert! #:compare! #:select! #:select #:count #:any #:all
            #:sum #:dot #:dotc #:backend #:*inline-small-arrays*
-           #:minimum #:maximum #:argmin #:argmax #:asum #:nrm2
+           #:prod #:minimum #:maximum #:argmin #:argmax #:asum #:nrm2
            #:define-kernel #:fma
            #:vector-view #:make-vector-view #:vector-view-p #:vector-view-pointer
            #:vector-view-type #:vector-view-length))

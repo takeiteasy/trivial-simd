@@ -52,6 +52,7 @@ destination are not copied.[^overlap] Reduction kernels write nothing, and
 | `(> a b)` and other two-operand comparisons | Byte mask expression |
 | `(trivial-simd:select mask a b)` | Choose a numeric value per element |
 | `(trivial-simd:count mask)`, `(trivial-simd:any mask)`, `(trivial-simd:all mask)` | Top-level mask reductions |
+| `(trivial-simd:prod x)` | Product |
 | `(trivial-simd:sum x)`, `(trivial-simd:asum x)`, `(trivial-simd:nrm2 x)` | Sum, sum of absolute values, Euclidean norm |
 | `(trivial-simd:minimum x)`, `(trivial-simd:maximum x)` | Smallest or largest value |
 | `(trivial-simd:argmin x)`, `(trivial-simd:argmax x)` | Index of that value |
@@ -67,7 +68,7 @@ Comparisons use `=`, `/=`, `<`, `<=`, `>`, and `>=` with two operands. A
 comparison-only kernel writes a [byte mask](masks.md). Mask reductions return
 an integer count or a boolean; they must be top-level forms.
 Complex expressions support equality and inequality, nested selections,
-`sum`, `asum`, and `nrm2`; see [complex kernels](complex.md#kernels).
+`sum`, `prod`, `asum`, and `nrm2`; see [complex kernels](complex.md#kernels).
 
 ## Reduction kernels
 
@@ -91,6 +92,7 @@ The same vector-type and [slice checks](api.md#slices) apply.
 
 | Reducer | Result | Empty slice | Types |
 |---|---|---|---|
+| `prod` | Product of the expression | Typed one | Float, integer, complex |
 | `sum` | Sum of the expression | Typed zero | Float, integer, complex |
 | `asum` | Sum of `abs`; complex uses the modulus | Typed zero | Float, integer, complex |
 | `nrm2` | Euclidean norm, scaled against overflow and underflow[^nrm2] | Typed zero | Float, complex |
@@ -105,10 +107,9 @@ may differ slightly by backend because the addition order differs.[^sum]
 `nrm2` of single-float inputs accumulates in double precision and rounds once.
 Ties keep the first element, matching the [bulk reductions](reductions.md#ties-and-signed-zeros).
 
-Float elementwise and `sum` kernels accept `:rows`, `:row-length`, and input row
-strides. Elementwise output stays positional; sum output uses `:destination`.
-[Row batching](kernel-rows.md) applies the expression to several rows. Native
-single-pass sums without transcendental operators execute the batch in one
+Float elementwise kernels and `sum`/`prod`/extrema kernels accept `:rows`, `:row-length`, and input row
+strides. Elementwise output stays positional; reduction output uses `:destination`.
+[Row batching](kernel-rows.md) applies the expression to several rows. Eligible native single-pass real float reductions execute the batch in one
 foreign call. Nested reductions are evaluated separately for each row.
 
 ## Numerical behavior
@@ -153,7 +154,7 @@ arithmetic opcodes retain their SIMD paths. With bare real/integer arguments, a
 equality and selection, native numeric reductions, or cached scalar helpers.
 ECL executes real/integer mask kernels through cached helpers. Deeply nested
 selections accept definitions with `eval`.[^mask-helpers]
-On `:native`, `asum`, `nrm2`, `minimum`, `maximum`, `argmin` and `argmax` evaluate
+On `:native`, `prod`, `asum`, `nrm2`, `minimum`, `maximum`, `argmin` and `argmax` evaluate
 each 256-element block, then reduce it. `:sbcl` accumulates float `asum` and
 double-float `nrm2` with SIMD packs; its other reducers, and integer `asum`, use typed scalar loops.
 

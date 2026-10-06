@@ -182,7 +182,7 @@ shifted against the destination's replaced by a copy; see UNSHIFTED-KERNEL-INPUT
                (count `(loop for ,index below ,count count ,value))
                (any `(loop for ,index below ,count thereis ,value))
                (all `(loop for ,index below ,count always ,value))
-               ((sum asum nrm2 minimum maximum argmin argmax)
+               ((sum asum nrm2 minimum maximum argmin argmax prod)
                 (reduction-loop-form reducer type count index value))
                (otherwise
                 `(progn
@@ -259,6 +259,7 @@ shifted against the destination's replaced by a copy; see UNSHIFTED-KERNEL-INPUT
              (first (if (and (eq order :reverse) (plusp count)) (* size (floor (1- count) size)) 0))
              (combine (case reducer
                         ((sum asum) (sum-combiner type))
+                        (prod (product-combiner type))
                         (nrm2 #'norm-combiner)
                         ((minimum maximum) (extremum-combiner (eq reducer 'maximum)))
                         ((argmin argmax) (index-combiner (eq reducer 'argmax)))
@@ -407,7 +408,8 @@ shifted against the destination's replaced by a copy; see UNSHIFTED-KERNEL-INPUT
 (defun execute-declared-kernel (runners programs bytes constants scratch type inputs specs offsets phases
                                 spans destination output-start rows count kind reducer tree &optional strides)
   (let ((slot (if (eq type :f32) 0 1)))
-    (if (and (eq *backend* :native) *native-kernel-inputs-available-p*
+    (if (and (eq *backend* :native) *native-kernel-inputs-available-p* (not (eq reducer 'prod))
+             (or (null strides) (eq reducer 'sum))
              (or (null strides) (and (plusp rows) (plusp count))))
         (run-declared-native
          (or (aref programs slot)
@@ -423,7 +425,7 @@ shifted against the destination's replaced by a copy; see UNSHIFTED-KERNEL-INPUT
                                 phases count nil 0 reducer type tree)))
                     (if (vector-view-p destination)
                         (setf (cffi:mem-aref (vector-view-pointer destination)
-                                             (third (numeric-type type)) (+ output-start row)) value)
+                                             (third (numeric-type (vector-type destination))) (+ output-start row)) value)
                         (setf (aref destination (+ output-start row)) value))))
                 destination)
               (run-declared-lisp runner inputs specs offsets phases count destination output-start
@@ -431,13 +433,17 @@ shifted against the destination's replaced by a copy; see UNSHIFTED-KERNEL-INPUT
 
 (defun run-declared-rows (runners programs bytes constants scratch inputs specs destination
                           destination-start rows row-length starts strides kind reducer tree)
-  (let* ((type (declared-kernel-precision inputs specs destination kind))
+  (let* ((type (declared-kernel-precision inputs specs (unless (member reducer '(argmin argmax)) destination) kind))
          (limit (declared-kernel-limit type))
          (output-start destination-start))
-    (unless (and (eq reducer 'sum) destination
+    (unless (and (member reducer '(sum minimum maximum argmin argmax prod)) destination
                  (typep rows `(integer 0 ,limit))
                  (typep row-length `(integer 0 ,limit)))
-      (error "Declared-input batching requires float SUM, destination, rows and row-length"))
+      (error "Declared-input batching requires a numeric reducer, destination, rows and row-length"))
+    (when (and (member reducer '(argmin argmax)) (not (eq (vector-type destination) :s64)))
+      (error "Index destinations require :s64"))
+    (when (and (plusp rows) (zerop row-length) (member reducer '(minimum maximum argmin argmax)))
+      (error "Empty rows have no extrema"))
     (declared-kernel-span destination output-start rows 1 0)
     (let* ((offsets (mapcar (lambda (start) (or start 0)) starts))
            (strides (loop for stride in strides for (nil repeat) in specs
@@ -473,7 +479,7 @@ shifted against the destination's replaced by a copy; see UNSHIFTED-KERNEL-INPUT
              (destination (unless reducer (gensym "DESTINATION")))
              (starts (mapcar (lambda (argument) (intern (format nil "~A-START" argument))) arguments))
              (strides (mapcar (lambda (argument) (intern (format nil "~A-ROW-STRIDE" argument))) arguments))
-             (batch-p (eq reducer 'sum))
+             (batch-p (member reducer '(sum minimum maximum argmin argmax prod)))
              (supplied (loop repeat (+ 3 (length arguments)) collect (gensym "SUPPLIED")))
              (programs (gensym "PROGRAMS")) (runners (gensym "RUNNERS"))
              (type (gensym "TYPE")) (count (gensym "COUNT")) (offsets (gensym "OFFSETS"))

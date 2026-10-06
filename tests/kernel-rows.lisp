@@ -76,14 +76,15 @@
     (signals error (rows-dot a a :rows 2 :row-length 3 :destination a))
     (signals error (rows-dot a a :rows 2 :row-length 2 :a-row-stride 6 :b-row-stride 6
                             :destination a :destination-start 3))
-    (signals error (reducer-min-of a :rows 2 :row-length 3 :destination out))
+    (is (eq out (reducer-min-of a :rows 2 :row-length 3 :destination out)))
+    (fill out -99f0)
     (signals error (rows-dot a (make-array 12 :element-type 'double-float)
                             :rows 2 :row-length 3 :destination out))
     (signals error (rows-dot a a :rows 2 :row-length 3
                             :destination (make-array 4 :element-type 'double-float)))
     (let ((integers (make-array 12 :element-type '(signed-byte 32) :initial-element 1)))
-      (signals error (rows-dot integers integers :rows 2 :row-length 3
-                              :destination (make-array 2 :element-type '(signed-byte 32)))))
+      (is (equalp #(3 3) (rows-dot integers integers :rows 2 :row-length 3
+                                 :destination (make-array 2 :element-type '(signed-byte 32))))))
     (rows-dot a a :rows 2 :row-length 3 :a-start 4 :b-start 4 :destination a)
     (is (= 12 (aref a 0)))
     (is (= 12 (aref a 1)))))

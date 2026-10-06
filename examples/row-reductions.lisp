@@ -1,0 +1,17 @@
+(require :asdf)
+(asdf:load-system :trivial-simd)
+
+(trivial-simd:define-kernel example-row-minimum (x) (trivial-simd:minimum x))
+(trivial-simd:define-kernel example-row-argmax (x) (trivial-simd:argmax x))
+(trivial-simd:define-kernel example-row-product (x) (trivial-simd:prod x))
+
+(let ((input (make-array 6 :element-type 'single-float :initial-contents '(3f0 1f0 2f0 4f0 6f0 5f0)))
+      (values (make-array 2 :element-type 'single-float))
+      (indices (make-array 2 :element-type '(signed-byte 64))))
+  (example-row-minimum input :rows 2 :row-length 3 :destination values)
+  (assert (equalp #(1 4) values))
+  (example-row-argmax input :rows 2 :row-length 3 :destination indices)
+  (assert (equalp #(0 1) indices))
+  (example-row-product input :rows 2 :row-length 3 :destination values)
+  (assert (equalp #(6 120) values))
+  (format t "~&Row products: ~S; argmax: ~S~%" values indices))

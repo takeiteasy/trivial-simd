@@ -43,6 +43,7 @@ match it, and comparisons write byte masks.
 | `(trivial-simd:select (= a b) a 0)` | Complex vector; real constants have zero imaginary part |
 | `(trivial-simd:count (= a b))` | Integer count |
 | `(trivial-simd:any (= a b))`, `(trivial-simd:all (= a b))` | Boolean |
+| `prod` over a numeric expression | Complex scalar of input precision |
 | `sum` over a numeric expression | Complex scalar of input precision |
 | `asum`, `nrm2` over a numeric expression | Real scalar of input precision |
 
@@ -50,7 +51,7 @@ Selections nest inside arithmetic, comparisons, and numeric reductions.
 [Dependent numeric reductions](kernel-passes.md) broadcast complex sums and
 promote real magnitudes/norms to complex values with zero imaginary part.
 Mask reductions stay top-level. Empty masks return zero for `count`, false for
-`any`, and true for `all`; empty numeric reductions return typed zero.
+`any`, and true for `all`; empty sums/magnitude reductions return typed zero and empty products return typed one.
 
 On `:native`, NEON/SSE2 execute equality, selection, addition, subtraction,
 and multiplication in packed lanes. Division and square root use scalar lanes.
@@ -66,8 +67,10 @@ See the [runnable complex kernel example](../examples/complex-kernels.lisp).
 
 Complex numbers have no ordering for `min!`, `max!`, `clamp!`, or ordered
 comparisons. Complex kernels reject `min`, `max`, `abs`, FMA, and transcendental
-expressions; `asum` computes complex magnitudes. Declared inputs and row batches
-retain their real-float restrictions.
+expressions; `asum` computes complex magnitudes. Simple `sum` and `prod` row batches
+support complex inputs. Declared inputs and dependent-pass batches retain their real-float restrictions.
+Complex product kernels use typed Lisp execution; native execution is tracked in
+[#148](https://todo.sr.ht/~takeiteasy/trivial-simd/148).
 `fma!` retains its real floating-point contract.
 The native complex path copies vectors into temporary buffers; reducing that
 overhead is tracked by [#74](https://todo.sr.ht/~takeiteasy/trivial-simd/74).

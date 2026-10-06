@@ -8,11 +8,12 @@ element type.
 |---|---|
 | `add!`, `subtract!`, `multiply!`, `scale!`, `axpy!` | Wrap to the vector's width |
 | `divide!` | Quotient truncated toward zero; zero divisor signals `division-by-zero` |
+| `prod` | Same-width wrapped product; empty slice returns `1` |
 | `sum`, `dot` | Same-width wrapped integer result; empty slice returns `0` |
 | `negate!`, `abs!` | Wrap to the vector width |
 | `min!`, `max!`, `clamp!` | Compare values without wrapping |
 | `convert!` | Clamp to the destination integer range |
-| `define-kernel` | Wrap each arithmetic step and the result of a sum kernel |
+| `define-kernel` | Wrap each arithmetic step and the result of a sum/product kernel |
 
 Signed results use the two's-complement range. For example, signed 8-bit
 `127 + 1` is `-128`, and unsigned 8-bit `250 + 10` is `4`. Signed minimum

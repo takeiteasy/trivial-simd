@@ -23,7 +23,7 @@ is.
 | [Unary and bounded operations](elementwise.md) | Negate, absolute value, square root, reciprocal, min, max, clamp |
 | [`convert!`](conversion.md) | Convert among numeric vector types and bf16/f16 storage |
 | [Masks and selection](masks.md) | Compare, select, count, any, all |
-| [`sum`, `dot`, `dotc`, `asum`, `nrm2`](reductions.md) | Scalar sum, dot product, absolute sum, Euclidean norm |
+| [`sum`, `prod`, `dot`, `dotc`, `asum`, `nrm2`](reductions.md) | Scalar sum/product, dot product, absolute sum, Euclidean norm |
 | [`minimum`, `maximum`, `argmin`, `argmax`](reductions.md) | Extreme element or its index |
 | [`make-vector-view`](vector-views.md) | A vector of foreign memory |
 | `(backend)` | `:sbcl`, `:native`, or `:lisp` |

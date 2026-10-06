@@ -1,6 +1,6 @@
 # Reductions
 
-Scalar reductions over a slice of one vector: `sum`, `dot`, `dotc`, `asum`,
+Scalar reductions over a slice of one vector: `sum`, `prod`, `dot`, `dotc`, `asum`,
 `nrm2`, `minimum`, `maximum`, `argmin` and `argmax`. All accept the
 [bulk slice keywords](api.md#slices) and [strides](api.md#strides); the
 single-vector functions take `:input-start` and `:input-stride`. [Kernels](kernels.md#reduction-kernels) apply the same reducers
@@ -8,6 +8,7 @@ to an expression.
 
 | Function | Result | Types |
 |---|---|---|
+| `(prod x)` | Product | Float, complex, integer |
 | `(sum x &key accumulate)` | Sum | Float, complex, integer |
 | `(dot x y &key accumulate)` | Dot product | Float, complex, integer |
 | `(asum x &key accumulate)` | Sum of `abs`; complex uses the modulus | Float, complex, integer |
@@ -22,16 +23,18 @@ to an expression.
 (trivial-simd:sum singles :accumulate :f64) ; => double-float
 ```
 
+Row-batched kernel reductions write one result per row; see [row batches](kernel-rows.md).
+
 ## Empty slices
 
 `minimum`, `maximum`, `argmin` and `argmax` return `NIL`. `sum`, `dot`,
-`asum` and `nrm2` return a zero.
+`asum` and `nrm2` return a zero. `prod` returns typed one.
 
 ## Ties and signed zeros
 
 The first extreme element wins: `argmin` of the single-floats `0.0, -0.0` is `0`,
 and `minimum` of `-0.0, 0.0` is `-0.0`. Every backend returns the same index.
-`asum` of integers [wraps](integers.md) at the vector width, including
+Integer `prod` wraps at the vector width. `asum` of integers [wraps](integers.md) at the vector width, including
 `abs` of the most negative value. Complex vectors have no ordering, and
 `nrm2` has no integer form; both signal an error. NaN inputs follow the
 [IEEE consistency limitation](kernels.md#limitations).

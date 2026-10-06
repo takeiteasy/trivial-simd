@@ -277,7 +277,7 @@ static void check_kernel_reduction_##suffix(void) { \
     assert(ts_kernel_reduction_##suffix(copy, sizeof(copy), NULL, inputs, 1, 4, 0, 0, 0, \
                                         &value, &wide, &index) == -1); \
     assert(ts_kernel_reduction_##suffix(copy, sizeof(copy), NULL, inputs, 1, 4, 0, \
-                                        TS_REDUCE_SCALED_SUMSQ + 1, 0, &value, &wide, &index) == -1); \
+                                        TS_REDUCE_PROD + 1, 0, &value, &wide, &index) == -1); \
     assert(ts_kernel_reduction_##suffix(copy, sizeof(copy), NULL, inputs, 257, 4, 0, \
                                         TS_REDUCE_ARGMIN, 0, &value, &wide, &index) == -1); \
     size_t before = allocations; \
@@ -895,6 +895,55 @@ CHECK_TRANSCENDENTALS(f64, double, 1, exp, sin, cos)
 
 #include "native-complex-kernel.h"
 
+
+#define CHECK_REDUCER_ROWS(suffix, type) \
+static void check_reducer_rows_##suffix(void) { \
+    const uint8_t code[] = {TS_OP_COPY, TS_KERNEL_OUTPUT, 8, 0}; \
+    const type values[] = {3, 1, 2, 4, 6, 5}; \
+    const type *inputs[] = {values}; \
+    const int64_t strides[] = {3}; \
+    type output[2] = {99, 99}; \
+    int64_t indices[2] = {-1, -1}; \
+    assert(ts_kernel_reduction_rows_##suffix(code, sizeof(code), NULL, inputs, 1, strides, \
+        output, 2, 3, 0, TS_REDUCE_ARGMIN, 0) == 0); \
+    assert(output[0] == 1 && output[1] == 4); \
+    assert(ts_kernel_reduction_rows_##suffix(code, sizeof(code), NULL, inputs, 1, strides, \
+        indices, 2, 3, 0, TS_REDUCE_ARGMAX, 1) == 0); \
+    assert(indices[0] == 0 && indices[1] == 1); \
+    assert(ts_kernel_reduction_rows_##suffix(code, sizeof(code), NULL, inputs, 1, strides, \
+        output, 2, 3, 0, TS_REDUCE_PROD, 0) == 0); \
+    assert(output[0] == 6 && output[1] == 120); \
+    const type *reversed[] = {values + 3}; \
+    const int64_t negative[] = {-3}; \
+    assert(ts_kernel_reduction_rows_##suffix(code, sizeof(code), NULL, reversed, 1, negative, \
+        output, 2, 3, 0, TS_REDUCE_PROD, 0) == 0); \
+    assert(output[0] == 120 && output[1] == 6); \
+    assert(ts_kernel_reduction_rows_##suffix(code, sizeof(code), NULL, inputs, 1, strides, \
+        output, 2, 0, 0, TS_REDUCE_PROD, 0) == 0); \
+    assert(output[0] == 1 && output[1] == 1); \
+    assert(ts_kernel_reduction_rows_##suffix(code, sizeof(code), NULL, inputs, 1, strides, \
+        output, 2, 0, 0, TS_REDUCE_ARGMIN, 0) != 0); \
+    const uint8_t spill[] = {TS_OP_COPY, 0, 8, 0, TS_OP_SPILL, 0, 0, 0, \
+        TS_OP_RELOAD, 1, 0, 0, TS_OP_COPY, TS_KERNEL_OUTPUT, 1, 0}; \
+    size_t before = allocations; \
+    assert(ts_kernel_reduction_rows_##suffix(spill, sizeof(spill), NULL, inputs, 1, strides, \
+        output, 2, 3, 1, TS_REDUCE_PROD, 0) == 0); \
+    assert(output[0] == 6 && output[1] == 120); \
+    assert(allocations == before + 1 && allocations == releases); \
+    fail_allocation = 1; \
+    assert(ts_kernel_reduction_rows_##suffix(spill, sizeof(spill), NULL, inputs, 1, strides, \
+        output, 2, 3, 1, TS_REDUCE_PROD, 0) == -1); \
+    fail_allocation = 0; --allocations; \
+    assert(allocations == releases); \
+    const int64_t invalid[] = {INT64_MIN}; \
+    assert(ts_kernel_reduction_rows_##suffix(code, sizeof(code), NULL, inputs, 1, invalid, \
+        output, 2, 3, 0, TS_REDUCE_PROD, 0) == -1); \
+    assert(ts_kernel_reduction_rows_##suffix(NULL, 0, NULL, NULL, 0, NULL, \
+        NULL, 0, SIZE_MAX, SIZE_MAX, TS_REDUCE_ARGMIN, 0) == 0); \
+}
+CHECK_REDUCER_ROWS(f32, float)
+CHECK_REDUCER_ROWS(f64, double)
+
 int main(void) {
     check_complex_c32();
     check_complex_c64();
@@ -920,6 +969,8 @@ int main(void) {
     check_transcendentals_f64();
     check_inputs_f32();
     check_inputs_f64();
+    check_reducer_rows_f32();
+    check_reducer_rows_f64();
     check_rows_f32();
     check_rows_f64();
     check_swap_and_fill();

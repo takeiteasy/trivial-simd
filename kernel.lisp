@@ -263,6 +263,13 @@ Empty slices give NIL for the extrema and a zero otherwise."
               ,(if integerp
                    `(setf ,sum (,(integer-operation-symbol :add type) ,sum ,term))
                    `(incf ,sum ,term))))))
+      (prod
+       `(let ((,sum ,(coerce 1 element)))
+          (declare (type ,element ,sum))
+          (dotimes (,index ,count ,sum)
+            (setf ,sum ,(if integerp
+                           `(,(integer-operation-symbol :multiply type) ,sum ,value)
+                           `(* ,sum ,value))))))
       (nrm2
        (when integerp (error "NRM2 requires float or complex vectors"))
        (let* ((real-part (gensym "REAL")) (imaginary-part (gensym "IMAGINARY"))
@@ -332,7 +339,7 @@ Empty slices give NIL for the extrema and a zero otherwise."
 ;; TODO: min/max/arg reducers use scalar loops (#92); f32 nrm2 too (#95).
 (defun sbcl-kernel-form (tree type destination arguments d-offset offsets count &optional reducer)
   (when (or (kernel-transcendental-p tree)
-            (member reducer '(minimum maximum argmin argmax))
+            (member reducer '(minimum maximum argmin argmax prod))
             (and (eq reducer 'nrm2) (eq type :f32)))
     (return-from sbcl-kernel-form
       (lisp-kernel-form tree type destination arguments d-offset offsets count 'fma reducer)))
@@ -529,6 +536,11 @@ Empty slices give NIL for the extrema and a zero otherwise."
              `(when (plusp ,count)
                 ,(call (if (eq reducer 'argmin) 1 2))
                 (cffi:mem-ref ,index :size)))
+            (prod
+             `(progn ,(call 7)
+                     ,(if integerp
+                          `(native-integer-result ,value ,foreign)
+                          `(cffi:mem-ref ,value ,foreign))))
             (asum
              `(progn ,(call 3)
                      ,(if integerp
@@ -673,6 +685,7 @@ Empty slices give NIL for the extrema and a zero otherwise."
   (ecase reducer
     ((nil) nil)
     ((sum asum) `(sum-combiner ,type))
+    (prod `(product-combiner ,type))
     (nrm2 '#'norm-combiner)
     ((minimum maximum) `(extremum-combiner ,(eq reducer 'maximum)))
     ((argmin argmax) `(index-combiner ,(eq reducer 'argmax)))
@@ -803,13 +816,20 @@ END, and per-input start keywords. Experimental."
                  (when (integer-type-p ,type) (validate-integer-kernel ',tree ,type ',reducer))
                  (when (complex-type-p ,type)
                    (validate-complex-kernel (complex-kernel-tree ,complex-kernel) ',reducer))
+                 ,@(when (eq reducer 'prod)
+                     `((unless (or (not (eq *backend* :native)) *native-row-reducers-p*)
+                         (return-from ,name
+                           (let ((*backend* :lisp))
+                             (,name ,@vectors :start start :end end
+                                    ,@(loop for s in all-starts append (list (intern (symbol-name s) :keyword) s))))))))
                  (destructuring-bind ,all-offsets ,offsets-variable
                    (declare (type fixnum ,@all-offsets))
                    ,@(unshifted-kernel-inputs-forms destination d-offset arguments offsets count)
                    ,(staged-kernel-form
                      name reducer type destination d-offset arguments offsets all-starts count
                      `(and (eq *backend* :native)
-                           (or (not (complex-type-p ,type)) (native-complex-kernel-p)))
+                           (or (not (complex-type-p ,type))
+                               (and (native-complex-kernel-p) ,(not (eq reducer 'prod)))))
                      `(if (complex-type-p ,type)
                        (run-complex-expression ,complex-kernel ,type ,destination
                                                (list ,@arguments) (list ,@offsets) ,(or d-offset 0) ,count)
@@ -834,7 +854,7 @@ END, and per-input start keywords. Experimental."
                                            (setf (aref ,programs slot)
                                                  (make-native-program ',bytes ',constants ,scratch-count ,type)))))
                         #+ecl (funcall (ensure-native-kernel-runner
-                                       ,program ,(+ (* 8 (length arguments)) (position reducer '(nil sum asum nrm2 minimum maximum argmin argmax)))
+                                       ,program ,(+ (* 8 (length arguments)) (position reducer '(nil sum asum nrm2 minimum maximum argmin argmax prod)))
                                        ',runner-form ,runner)
                                        ,@runner-arguments)
                         #-ecl ,native-form))))
