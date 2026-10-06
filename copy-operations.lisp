@@ -71,8 +71,8 @@ Overlapping slices of one vector copy as if SOURCE were read first."
                      start end (list destination-stride source-stride) stride)
     (declare (ignore type))
     (destructuring-bind (destination-offset source-offset) offsets
-      (with-staged ((destination destination-offset (first strides) :out)
-                    (source source-offset (second strides)))
+      (with-bulk-staged ((destination destination-offset (first strides) :out)
+                         (source source-offset (second strides)))
           (count)
         (replace destination source
                  :start1 destination-offset :end1 (+ destination-offset count)
@@ -99,6 +99,9 @@ Overlapping slices of one vector copy as if SOURCE were read first."
       (resolve-slice (list x y) (list x-start y-start) start end
                      (list x-stride y-stride) stride)
     (destructuring-bind (x-offset y-offset) offsets
+      (case (slice-overlap x x-offset (first strides) y y-offset (second strides) count)
+        (:same (return-from swap! (values x y)))
+        (:overlap (error "SWAP! output slices overlap")))
       (with-staged ((x x-offset (first strides) :in-out)
                     (y y-offset (second strides) :in-out))
           (count :direct (native-copy-p type count +native-swap-minimum-bytes+))

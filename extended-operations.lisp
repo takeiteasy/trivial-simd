@@ -294,8 +294,8 @@ strides of DESTINATION then every operand, with NIL for scalars."
                       :operand-strides (list input-stride) :stride stride
                       :destination-stride destination-stride)
     (destructuring-bind (d-offset i-offset) offsets
-     (with-staged ((destination d-offset (first strides) :out)
-                   (input i-offset (second strides)))
+     (with-bulk-staged ((destination d-offset (first strides) :out)
+                        (input i-offset (second strides)))
          (count :direct (and (eq *backend* :native) (not (complex-type-p type))))
       (cond ((complex-type-p type)
              (complex-unary operation destination input count d-offset i-offset))
@@ -351,9 +351,9 @@ strides of DESTINATION then every operand, with NIL for scalars."
                       :destination-stride d-stride)
     (declare (ignore type))
     (destructuring-bind (d-offset l-offset r-offset) offsets
-      (with-staged ((destination d-offset (first strides) :out)
-                    (left l-offset (second strides))
-                    (right r-offset (third strides)))
+      (with-bulk-staged ((destination d-offset (first strides) :out)
+                         (left l-offset (second strides))
+                         (right r-offset (third strides)))
           (count :direct (eq *backend* :native))
         (if (eq *backend* :native)
             (native-extended-minmax operation destination left right count d-offset l-offset r-offset)
@@ -387,10 +387,10 @@ strides of DESTINATION then every operand, with NIL for scalars."
                       :stride stride :destination-stride destination-stride)
     (declare (ignore type))
     (destructuring-bind (d-offset i-offset l-offset u-offset) offsets
-      (with-staged ((destination d-offset (first strides) :out)
-                    (input i-offset (second strides))
-                    (lower l-offset (third strides))
-                    (upper u-offset (fourth strides)))
+      (with-bulk-staged ((destination d-offset (first strides) :out)
+                         (input i-offset (second strides))
+                         (lower l-offset (third strides))
+                         (upper u-offset (fourth strides)))
           (count :direct (eq *backend* :native))
         (if (eq *backend* :native)
             (native-extended-clamp destination input lower upper count
@@ -452,8 +452,8 @@ strides of DESTINATION then every operand, with NIL for scalars."
                                (list destination-start input-start) start end
                                (list destination-stride input-stride) stride)
         (destructuring-bind (d-offset i-offset) offsets
-          (with-staged ((destination d-offset (first strides) :out)
-                        (input i-offset (second strides)))
+          (with-bulk-staged ((destination d-offset (first strides) :out)
+                             (input i-offset (second strides)))
               (count :direct (if encoding
                                  (native-encoded-conversion-p
                                   encode rounding
@@ -495,9 +495,9 @@ strides of DESTINATION then every operand, with NIL for scalars."
                         :stride stride :destination-stride mask-stride)
       (declare (ignore resolved))
       (destructuring-bind (m-offset l-offset r-offset) offsets
-        (with-staged ((mask m-offset (first strides) :out)
-                      (left l-offset (second strides))
-                      (right r-offset (third strides)))
+        (with-bulk-staged ((mask m-offset (first strides) :out)
+                           (left l-offset (second strides))
+                           (right r-offset (third strides)))
             (count :direct (and (eq *backend* :native) (not (complex-type-p type))))
           (cond ((complex-type-p type)
                  (dotimes (i count)
@@ -523,10 +523,10 @@ strides of DESTINATION then every operand, with NIL for scalars."
                       :operand-strides (list mask-stride true-stride false-stride)
                       :stride stride :destination-stride destination-stride)
     (destructuring-bind (d-offset m-offset t-offset f-offset) offsets
-      (with-staged ((destination d-offset (first strides) :out)
-                    (mask m-offset (second strides))
-                    (on-true t-offset (third strides))
-                    (on-false f-offset (fourth strides)))
+      (with-bulk-staged ((destination d-offset (first strides) :out)
+                         (mask m-offset (second strides))
+                         (on-true t-offset (third strides))
+                         (on-false f-offset (fourth strides)))
           (count :direct (and (eq *backend* :native) (not (complex-type-p type))))
         (cond ((complex-type-p type)
                (dotimes (i count)

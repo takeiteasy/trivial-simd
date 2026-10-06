@@ -118,9 +118,9 @@ stride, or NIL to use START or STRIDE (default 1)."
                              (list left-stride right-stride) stride destination-stride)
     (destructuring-bind (destination-offset left-offset right-offset) offsets
       (destructuring-bind (&optional destination-stride left-stride right-stride) strides
-        (with-staged ((destination destination-offset destination-stride :out)
-                      (left left-offset left-stride)
-                      (right right-offset right-stride))
+        (with-bulk-staged ((destination destination-offset destination-stride :out)
+                           (left left-offset left-stride)
+                           (right right-offset right-stride))
             (count :direct (and (eq *backend* :native) (not (complex-type-p type))))
           (dispatch-binary type operation destination left right count
                            destination-offset left-offset right-offset)))))
@@ -220,8 +220,8 @@ the ...-START and ...-STRIDE keywords override one vector." verb)
                              (list nil x-stride) stride y-stride)
     (destructuring-bind (y-offset scalar-offset x-offset) offsets
       (declare (ignore scalar-offset))
-      (with-staged ((y y-offset (first strides) :in-out)
-                    (x x-offset (third strides)))
+      (with-bulk-staged ((y y-offset (first strides) :in-out)
+                         (x x-offset (third strides)))
           (count :direct (and (eq *backend* :native) (not (complex-type-p type))))
         (if (complex-type-p type)
             (complex-axpy y a x count y-offset x-offset)
@@ -240,8 +240,8 @@ the ...-START and ...-STRIDE keywords override one vector." verb)
     (declare (ignore type))
     (destructuring-bind (d-offset x-offset y-offset z-offset) offsets
       (destructuring-bind (&optional d-stride x-stride y-stride z-stride) strides
-        (with-staged ((destination d-offset d-stride :out)
-                      (x x-offset x-stride) (y y-offset y-stride) (z z-offset z-stride))
+        (with-bulk-staged ((destination d-offset d-stride :out)
+                           (x x-offset x-stride) (y y-offset y-stride) (z z-offset z-stride))
             (count :direct (eq *backend* :native))
           (ecase *backend*
             (:sbcl (sbcl-bulk-fma destination x y z count d-offset x-offset y-offset z-offset))

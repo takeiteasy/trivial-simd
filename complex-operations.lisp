@@ -113,8 +113,8 @@
                              (list destination-start input-start) start end
                              (list destination-stride input-stride) stride)
       (destructuring-bind (d-offset i-offset) offsets
-        (with-staged ((destination d-offset (first strides) :out)
-                      (input i-offset (second strides)))
+        (with-bulk-staged ((destination d-offset (first strides) :out)
+                           (input i-offset (second strides)))
             (count)
           (dotimes (i count)
             (setf (aref destination (+ d-offset i))

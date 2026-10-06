@@ -36,9 +36,9 @@ The `-stride` keywords step through a slice; see [strides](api.md#strides).
   needs a `value` of exactly the element type; integer values fit the vector's
   signed or unsigned range.
 - Overlapping slices of one vector copy as if the source were read first, in
-  either direction, with or without strides.[^overlap] `swap!` of overlapping, unequal slices of one
-  vector is a [shifted overlap](api.md#limitations); swapping a slice with
-  itself leaves it unchanged.
+  either direction, with or without strides.[^overlap] `swap!` rejects overlapping
+  output slices before writes unless their element mappings are identical, in
+  which case it leaves them unchanged. Disjoint interleaved slices are valid.
 - Slice errors, empty slices and start keywords behave as in the
   [other bulk functions](api.md#slices).
 
@@ -53,8 +53,9 @@ The `-stride` keywords step through a slice; see [strides](api.md#strides).
 Complex vectors, and native calls in `:copy` array-access mode, use the Lisp
 forms. Strided calls gather, run the contiguous operation, and scatter.
 
-[^overlap]: `replace` on one vector copies as if through a temporary, which is
-    the same result as `memmove`.
+[^overlap]: Shifted overlaps are snapshotted before gathering or block staging,
+    including views sharing foreign memory. The contiguous Lisp path uses
+    `replace`; see the [bulk overlap contract](api.md#overlap).
 [^threshold]: Native calls cost about 0.2 µs to set up, so they only win
     above these sizes on SBCL with an Apple M1. See
     [benchmarks](benchmarks.md#copy-fill-and-swap).

@@ -43,6 +43,26 @@ signal an error, including on empty slices.
 defined complex result. Their magnitudes and conversions use matching real
 vectors where appropriate.
 
+## Overlap
+
+Single-destination bulk operations read overlapping inputs as if those inputs
+were copied before any destination writes. This applies to arithmetic, AXPY,
+FMA, unary and bounded operations, conversion, masks, selection, and copy,
+including slices, strides, and foreign views.[^overlap]
+
+```lisp
+(let ((a (make-array 4 :element-type 'single-float
+                       :initial-contents '(1f0 2f0 3f0 4f0))))
+  (trivial-simd:add! a a 10f0 :end 3 :destination-start 1)
+  a) ; => #(1f0 11f0 12f0 13f0)
+```
+
+Exact in-place calls work without a snapshot. `swap!` accepts disjoint slices
+and treats identical slices as a no-op; other overlapping output slices signal
+an error before either slice changes. The [kernel overlap contract](kernels.md#overlap)
+and [BLAS rules](blas.md) are described separately.
+See the [runnable overlap example](../examples/bulk-overlap.lisp).
+
 ## Slices
 
 Every function takes `:start` (default 0) and `:end` (default the vector
@@ -109,8 +129,7 @@ vector (`:input-start` and `:input-stride`, `:left-start` and `:left-stride`).
 - The first and last visited elements must lie inside the vector; the last is
   `start + (count-1)*stride`.
 - A stride keyword for a scalar operand signals an error.
-- A call reads every strided input before it writes, so an output that is also
-  an input behaves as if the input were copied first.
+- Strided bulk calls follow the [overlap rules](#overlap).
 - `argmin` and `argmax` return the index into the vector, not the position
   along the stride. `define-kernel` functions take no per-element strides; float numeric kernels
   support [row strides](kernel-rows.md).
@@ -136,8 +155,11 @@ instead. The available integer operations and backend paths are described in
 | Area | Ticket |
 |---|---|
 | Native strided kernels | [#101](https://todo.sr.ht/~takeiteasy/trivial-simd/101) |
-| Shifted overlap between bulk-operation destination and input slices; [kernels](kernels.md#overlap) read inputs first | [#141](https://todo.sr.ht/~takeiteasy/trivial-simd/141) |
 
+[^overlap]: Shifted overlapping inputs use full-slice temporary vectors before
+    backend dispatch or block staging. Simple Lisp vectors share storage by
+    identity; foreign views share storage by byte address, including views with
+    different element sizes. Disjoint strided slices do not require snapshots.
 [^gather]: Each strided vector costs one temporary and one extra pass per call.
     At 1,024 elements a strided call takes 3x to 7x a contiguous native call.
     See [benchmarks](benchmarks.md#strided-access).

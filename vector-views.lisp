@@ -137,6 +137,62 @@ from OFFSET at STRIDE."
 
 (define-staging-transfers)
 
+(defun slice-overlap (left left-offset left-stride right right-offset right-stride count)
+  "Return :SAME for identical byte mappings, :OVERLAP for intersecting slices,
+or NIL. Lisp vectors share storage by identity; views share it by address."
+  (unless (and (plusp count) (operand-vector-p left) (operand-vector-p right)
+               (or (eq left right)
+                   (and (vector-view-p left) (vector-view-p right))))
+    (return-from slice-overlap nil))
+  (let* ((left-size (vector-element-size (vector-type left)))
+         (right-size (vector-element-size (vector-type right)))
+         (left-first (if (vector-view-p left) (view-address left left-offset)
+                         (* left-offset left-size)))
+         (right-first (if (vector-view-p right) (view-address right right-offset)
+                          (* right-offset right-size)))
+         (left-step (* (or left-stride 1) left-size))
+         (right-step (* (or right-stride 1) right-size)))
+    (when (and (= left-first right-first) (= left-size right-size)
+               (or (= count 1) (= left-step right-step)))
+      (return-from slice-overlap :same))
+    (let* ((left-low (min left-first (+ left-first (* (1- count) left-step))))
+           (right-low (min right-first (+ right-first (* (1- count) right-step))))
+           (left-step (abs left-step)) (right-step (abs right-step))
+           (left-high (+ left-low (* (1- count) left-step) left-size))
+           (right-high (+ right-low (* (1- count) right-step) right-size)))
+      (when (and (< left-low right-high) (< right-low left-high))
+        (loop with a = left-low with b = right-low
+              with i = 0 with j = 0
+              while (and (< i count) (< j count))
+              do (cond ((<= (+ a left-size) b) (incf a left-step) (incf i))
+                       ((<= (+ b right-size) a) (incf b right-step) (incf j))
+                       (t (return-from slice-overlap :overlap))))))))
+
+(defun unshifted-bulk-input (destination d-offset d-stride input offset stride count)
+  (if (eq :overlap (slice-overlap destination d-offset d-stride input offset stride count))
+      (let ((copy (staging-buffer input count)))
+        (stage-in input offset (or stride 1) count copy)
+        (values copy 0 1))
+      (values input offset stride)))
+
+(defmacro with-bulk-staged ((destination &rest inputs) options &body body)
+  "Snapshot shifted inputs before staging a single-destination bulk call."
+  (destructuring-bind (output output-offset output-stride role) destination
+    (let* ((count (first options)) (d-stride (gensym "OUTPUT-STRIDE"))
+           (bindings (list (list output output-offset d-stride role)))
+           (wrappers nil))
+      (dolist (input inputs)
+        (destructuring-bind (vector offset stride &optional (role :in)) input
+          (let ((i-stride (gensym "INPUT-STRIDE")))
+            (push (list vector offset i-stride role) bindings)
+            (push `(multiple-value-bind (,vector ,offset ,i-stride)
+                       (unshifted-bulk-input ,output ,output-offset ,d-stride
+                                             ,vector ,offset ,stride ,count)) wrappers))))
+      (let ((form `(with-staged ,(nreverse bindings) ,options ,@body)))
+        (dolist (wrapper wrappers)
+          (setf form `(,@wrapper ,form)))
+        `(let ((,d-stride ,output-stride)) ,form)))))
+
 (defun unshifted-kernel-input (destination d-offset input offset count)
   "Return INPUT and OFFSET, or a Lisp copy of INPUT's COUNT-element slice and 0
 when that slice shares memory with DESTINATION's slice other than element for
@@ -160,7 +216,6 @@ element, so a kernel reads every input element before writing any output (#67)."
 (defvar *view-block-size* 4096
   "Elements per block when a backend reads a vector view through a Lisp buffer.")
 
-;; FIXME: only views are compared; overlapping staged Lisp vectors are not (#121).
 (defun staging-order (specs count)
   "Return :FORWARD, :REVERSE or :WHOLE: the block order that lets every output
 view read the input views it overlaps before overwriting them, or :WHOLE when

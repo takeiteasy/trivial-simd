@@ -53,6 +53,7 @@
                (:file "tests/blas-random")
                (:file "tests/blas-native")
                (:file "tests/views")
+               (:file "tests/bulk-overlap")
                (:file "tests/kernel-inputs")
                (:file "tests/kernel-plans")
                (:file "tests/complex-kernels"))

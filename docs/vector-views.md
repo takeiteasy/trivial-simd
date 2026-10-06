@@ -36,9 +36,10 @@ beyond its length. Slices, per-vector starts and [strides](api.md#strides)
 apply to views. `minimum` and `maximum` return an element read from the view.
 
 Views over the same memory are compared by address, even when they are
-different objects. `copy!` between overlapping views behaves as if the source
-were read first, as it does for one Lisp vector. A destination may also be an
-input at the same position, as for Lisp vectors.
+different objects, including views with different element sizes. Bulk operations
+follow the [snapshot overlap contract](api.md#overlap); inputs retain their
+pre-write values across staging blocks. Exact in-place calls are supported.
+`swap!` rejects intersecting output slices unless their mappings are identical.
 
 ## Backends
 
@@ -47,7 +48,8 @@ without copying, for every operation that has a native path.[^direct] That
 includes `define-kernel` functions and the native BLAS kernels. The SBCL and
 Lisp backends, strided views, and operations without a native path read and
 write views through Lisp buffers of 4,096 elements, one block at a time.[^block]
-Memory use stays bounded whatever the view's length. Lisp BLAS kernels read
+Block staging uses fixed-size buffers when block ordering permits; shifted
+overlapping bulk inputs require full-slice snapshots. Lisp BLAS kernels read
 matrix and vector views through their pointers element by element.
 
 Floating-point reductions of a view on the buffered path add per-block results,
@@ -87,6 +89,7 @@ views.
     other than BLAS, other conversions, `copy!`, double-float `nrm2` and
     numeric reductions of mask kernels use buffers.
 [^block]: A buffered call allocates one buffer per view or strided operand.
-    When overlapping views need a copy order that blocks cannot keep, such as
-    different strides over shared memory, the whole slice moves through one
-    buffer, as for a strided Lisp vector.
+    Bulk calls snapshot shifted overlapping inputs before allocating these
+    buffers. Block ordering compares enclosing view spans; different strides
+    with intersecting spans can require whole-slice buffers even when the visited
+    elements are disjoint. Kernel calls apply their own input snapshot contract.

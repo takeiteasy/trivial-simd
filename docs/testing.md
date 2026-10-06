@@ -4,6 +4,12 @@ The runner loads declared test dependencies through Quicklisp when available.
 The FiveAM suite checks the Lisp reference and every locally available SIMD
 backend for both float types and eight integer types, empty vectors, SIMD
 tails, aliasing, wrapping arithmetic, division errors, and type boundaries.
+
+Bulk overlap tests cover pre-write input snapshots in both shift directions,
+opposing input shifts, exact in-place calls, signed strides, and mixed Lisp/view
+staging beyond block boundaries. They exercise every numeric type, native
+pointer/copy modes, mixed-size foreign views, and `swap!` validation before writes.
+
 Extended operation tests cover unary and bounded arithmetic, all conversion
 type pairs and rounding modes, byte masks, selection, and mask kernels.
 bf16 and f16 tests widen all 65536 bit patterns of each encoding on every
