@@ -479,10 +479,8 @@
       (signals error (level3-call name :no-transpose :no-transpose one c b zero c
                                   :batch-count 2 :a-stride 4 :b-stride 0 :c-stride 4))
       (let ((interleaved (trivial-simd/blas:make-matrix-view data 3 2 :row-stride 2 :column-stride 3)))
-        (signals error (level3-call name :no-transpose :no-transpose one
-                                    (level3-view type '(1 2 3 4 5 6) :rows 3) b zero interleaved
-                                    :batch-count 1 :a-stride 0 :b-stride 0 :c-stride 0)))
-      (is (every (lambda (value) (= 7 value)) data))
+        (check-batch-gemm type (level3-view type '(1 2 3 4 5 6) :rows 3)
+                          b interleaved 1 0 0 0))
       (let* ((empty-a (trivial-simd/blas:make-matrix-view (batch-data type nil) 2 0))
              (empty-b (trivial-simd/blas:make-matrix-view (batch-data type nil) 0 2)))
         (check-batch-gemm type empty-a empty-b c 3 0 0 4 :no-transpose :no-transpose 1 0)
@@ -542,6 +540,15 @@
                    (let ((trivial-simd::*backend* :lisp)
                          (trivial-simd/blas::*native-blas-threshold* 1))
                      (check-batch-gemm type a b c 256 0 0 4))
-                   (is (= 1 batch-calls)) (is (= 256 single-calls)))
+                   (is (= 1 batch-calls)) (is (= 256 single-calls))
+                   (let* ((data (batch-data type (loop repeat 4096 collect 1)))
+                          (input (trivial-simd/blas:make-matrix-view
+                                  data 3 2 :row-stride 4 :column-stride 6))
+                          (output (trivial-simd/blas:make-matrix-view
+                                   data 3 2 :offset 1 :row-stride 4 :column-stride 6))
+                          (trivial-simd::*backend* :native)
+                          (trivial-simd/blas::*native-blas-threshold* 1))
+                     (check-batch-gemm type input b output 256 16 0 16))
+                   (is (= 2 batch-calls)) (is (= 256 single-calls)))
               (setf (symbol-function batch-name) original-batch
                     (symbol-function single-name) original-single)))))))

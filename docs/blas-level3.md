@@ -49,9 +49,8 @@ have the matching real type; for `her2k`, `alpha` is complex and `beta` is real.
 
 All arguments are validated before changing output. A distinct input view
 cannot overlap the output's addressed elements; disjoint subviews may share
-one backing vector. Irregular GEMM views use conservative storage-span overlap
-checks and a sorted-stride proof for output uniqueness; see
-[limitations](#limitations). `trmm` and `trsm` intentionally read and replace `B`,
+one backing vector. GEMM uses exact arithmetic proofs for output uniqueness
+and input/output overlap, including interleaved layouts.[^validation] `trmm` and `trsm` intentionally read and replace `B`,
 but `A` and `B` must not overlap. A zero `beta` does not read old output
 elements. A zero `alpha` does not read matrix operands when the result is
 determined without them. Symmetric and Hermitian rank updates leave the
@@ -73,8 +72,9 @@ native library is built; everything else runs typed Lisp loops.[^kernels] On the
 
 ## Limitations
 
-GEMM may reject disjoint interleaved views or valid output layouts that fail its
-sorted-stride proof. Broader validation is tracked in [#149](https://todo.sr.ht/~takeiteasy/trivial-simd/149).
+Exact GEMM validation uses bounded workspace but can require substantial search
+time for difficult layouts. Stronger search pruning is tracked in
+[#154](https://todo.sr.ht/~takeiteasy/trivial-simd/154).
 
 Complex routines use scalar Lisp loops without cache blocking or SIMD. Native
 complex kernels are tracked by [#80](https://todo.sr.ht/~takeiteasy/trivial-simd/80).
@@ -96,3 +96,5 @@ complex kernels are tracked by [#80](https://todo.sr.ht/~takeiteasy/trivial-simd
     30-bit dimensions and leading dimensions. GEMM row/column strides fit
     ±1,073,741,823 and accessed storage offsets fit 60 unsigned bits.
     Singleton-axis strides are ignored.
+
+[^validation]: Validation first tries storage-span and sorted-stride proofs. Inconclusive layouts use bounded integer equations over at most six stride variables. Live workspace is independent of element count; exact arithmetic can allocate temporary bignums, and difficult layouts can require substantial search time. Foreign overlap includes partially intersecting element byte ranges.

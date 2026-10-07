@@ -33,8 +33,10 @@ named real precision and supported Lisp or foreign storage.
 ## Validation and execution
 
 Shapes, types, bounds and output uniqueness are checked across the complete
-batch before any writes. Input/output storage spans must be disjoint. Repeated
-input elements work; repeated output elements signal an error. A zero batch
+batch before any writes. Input/output addressed elements must be disjoint,
+including aliases between different products. Disjoint interleaved views may
+share backing storage. Repeated input elements work; repeated output elements
+signal an error.[^validation] A zero batch
 count performs no writes after argument validation. Zero contraction or alpha
 scales output by beta; zero beta does not read old output values.[^limits]
 
@@ -45,9 +47,11 @@ existing per-product dispatch.[^native]
 
 ## Limitations
 
-Conservative span checks reject disjoint interleaved input/output storage.
-The sorted-stride output proof also rejects some valid interleaved destinations.
-Stronger bounded validation is tracked in [#149](https://todo.sr.ht/~takeiteasy/trivial-simd/149).
+Exact validation uses bounded workspace but can require substantial search time
+for difficult layouts. Stronger search pruning is tracked in
+[#154](https://todo.sr.ht/~takeiteasy/trivial-simd/154).
 
 [^limits]: Matrix dimensions and row/column strides follow [GEMM limits](blas-level3.md). Batch strides fit ±(2⁶⁰−1); every accessed offset fits 60 unsigned bits and lies inside backing storage. Stride/count arithmetic is checked before native calls.
 [^native]: Native batching requires both batch symbols, the native GEMM backend and pointer array access. Allocation failure precedes native writes. Computation errors can leave output partially updated.
+
+[^validation]: Output uniqueness solves a bounded row/column/batch difference equation, excluding the zero difference. Input/output overlap solves an address equation over both complete batches. Range and GCD checks prune the search; one/two-variable equations have closed-form solutions. No address table is allocated.

@@ -49,3 +49,16 @@
    :batch-count 2 :a-stride -6 :b-stride 0 :c-stride 4)
   (assert (equalp c #(33d0 33d0 24d0 24d0 15d0 15d0 6d0 6d0)))
   (format t "reversed batched matrix product: ~S~%" c))
+
+(let* ((data (make-array 17 :element-type 'double-float :initial-element -1d0))
+       (a (make-array 24 :element-type 'double-float :initial-element 1d0))
+       (b (make-array 8 :element-type 'double-float :initial-element 1d0))
+       (out (trivial-simd/blas:make-matrix-view data 3 2 :row-stride 2 :column-stride 3)))
+  (trivial-simd/blas:dgemm-batch-strided
+   :no-transpose :no-transpose 1d0
+   (trivial-simd/blas:make-matrix-view a 3 4)
+   (trivial-simd/blas:make-matrix-view b 4 2) 0d0 out
+   :batch-count 2 :a-stride 12 :b-stride 0 :c-stride 8)
+  (assert (= 4d0 (aref data 15)))
+  (assert (= -1d0 (aref data 1)))
+  (format t "interleaved batched destination: ~S~%" data))

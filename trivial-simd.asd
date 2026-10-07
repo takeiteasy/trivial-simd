@@ -52,6 +52,7 @@
                (:file "tests/blas-level2")
                (:file "tests/blas-level3")
                (:file "tests/blas-random")
+               (:file "tests/gemm-validation")
                (:file "tests/blas-native")
                (:file "tests/views")
                (:file "tests/nd")
@@ -75,6 +76,7 @@
                (:file "blas/matrix-view")
                (:file "blas/kernel")
                (:file "blas/level2")
+               (:file "blas/gemm-arithmetic")
                (:file "blas/level3"))
   :in-order-to ((asdf:test-op (asdf:test-op "trivial-simd/tests"))))
 

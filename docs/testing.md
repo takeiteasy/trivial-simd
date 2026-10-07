@@ -130,7 +130,9 @@ TRIVIAL_SIMD_BACKEND=native sbcl --dynamic-space-size 4096 --script tests/run.li
 
 GEMM tests cover signed and zero matrix strides, reversed and broadcast batches,
 foreign storage, complete-batch bounds and overlap checks, and missing native
-batch symbols. Native C tests check numerical products, one scratch allocation
+batch symbols. Arithmetic validation tests compare exhaustive small layouts
+and seeded equations against independent enumeration, including interleaved
+outputs, cross-batch aliases and foreign partial-byte overlap. Native C tests check numerical products, one scratch allocation
 per batch, allocation failure before writes, and scratch cleanup in SIMD and
 scalar builds.
 
