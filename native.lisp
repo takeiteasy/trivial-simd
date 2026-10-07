@@ -641,7 +641,7 @@ back for the POINTERs in OUTPUTS. A vector view binds its own memory instead."
 
   (defun kernel-transcendental-p (tree)
     (if (consp tree) (some #'kernel-transcendental-p tree)
-        (member tree '(exp sin cos :exp :sin :cos)))))
+        (member tree '(exp sin cos log tanh sigmoid :exp :sin :cos :log :tanh :sigmoid)))))
 
 (defun kernel-constant-value (value type)
   (let ((value (if (kernel-scalar-p value) (aref *kernel-scalars* (second value)) value)))
@@ -657,6 +657,14 @@ back for the POINTERs in OUTPUTS. A vector view binds its own memory instead."
 (defvar *native-kernel-transcendentals-p*
   (and *native-available-p*
        (not (null (ignore-errors (cffi:foreign-symbol-pointer "ts_kernel_transcendentals"))))))
+
+(defvar *native-kernel-activation-math-p*
+  (and *native-available-p*
+       (not (null (ignore-errors (cffi:foreign-symbol-pointer "ts_kernel_activation_math"))))))
+
+(defun kernel-activation-math-p (tree)
+  (if (consp tree) (some #'kernel-activation-math-p tree)
+      (member tree '(log tanh sigmoid :log :tanh :sigmoid))))
 
 (defstruct (native-program (:constructor %make-native-program))
   code code-length f32-constants f64-constants constants constant-type scratch-count scalar-constants

@@ -92,3 +92,11 @@
           ((and (member *fma-mode* '(:auto :native)) *native-fma-available-p*)
            (if single (%native-fma-f32 a b c) (%native-fma-f64 a b c)))
           (t (portable-fma a b c)))))
+
+(declaim (inline sigmoid))
+
+(defun sigmoid (value)
+  (check-type value (or single-float double-float))
+  (let* ((one (float 1 value))
+         (z (exp (- (abs value)))))
+    (if (minusp value) (/ z (+ one z)) (/ one (+ one z)))))

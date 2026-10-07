@@ -7,7 +7,7 @@
     (:multiply . 4) (:divide . 5) (:negate . 6) (:spill . 7) (:reload . 8)
     (:sqrt . 9) (:abs . 10) (:min . 11) (:max . 12) (:fma . 13)
     (:eq . 14) (:ne . 15) (:lt . 16) (:le . 17) (:gt . 18) (:ge . 19)
-    (:select . 20) (:exp . 21) (:sin . 22) (:cos . 23)))
+    (:select . 20) (:exp . 21) (:sin . 22) (:cos . 23) (:log . 24) (:tanh . 25) (:sigmoid . 26)))
 
 (defconstant +kernel-output+ #xFF)
 (defconstant +kernel-input-base+ +kernel-registers+)
@@ -16,7 +16,7 @@
 (defparameter *kernel-operators*
   '((+ . :add) (- . :subtract) (* . :multiply) (/ . :divide)
     (sqrt . :sqrt) (abs . :abs) (min . :min) (max . :max) (fma . :fma)
-    (exp . :exp) (sin . :sin) (cos . :cos)))
+    (exp . :exp) (sin . :sin) (cos . :cos) (log . :log) (tanh . :tanh) (sigmoid . :sigmoid)))
 
 (defun parse-kernel-expression (expression arguments)
   "Parse an elementwise expression into a typed operator tree."
@@ -30,7 +30,7 @@
                                  (rest expression))))
            (cond ((null operands)
                   (error "Kernel operator ~S needs an operand" (first expression)))
-                 ((member kind '(:sqrt :abs :exp :sin :cos))
+                 ((member kind '(:sqrt :abs :exp :sin :cos :log :tanh :sigmoid))
                   (unless (= 1 (length operands))
                     (error "Kernel operator ~S needs one operand" (first expression)))
                   (list :unary kind (first operands)))
@@ -632,7 +632,7 @@ Empty slices give NIL for the extrema and a zero otherwise."
                  (:argument nil)
                  (:fma (error "FMA requires float vectors"))
                  (:unary
-                  (when (member (second node) '(:sqrt :exp :sin :cos))
+                  (when (member (second node) '(:sqrt :exp :sin :cos :log :tanh :sigmoid))
                     (error "~A requires float vectors" (second node)))
                   (walk (third node)))
                  (:negate (walk (second node)))
@@ -647,7 +647,7 @@ Empty slices give NIL for the extrema and a zero otherwise."
                ((:argument :constant) nil)
                (:negate (walk (second node)))
                (:unary
-                (when (member (second node) '(:abs :exp :sin :cos))
+                (when (member (second node) '(:abs :exp :sin :cos :log :tanh :sigmoid))
                   (error "~A requires real float vectors" (second node)))
                 (walk (third node)))
                (:fma (error "FMA requires real float vectors"))

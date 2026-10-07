@@ -114,7 +114,7 @@ foreign call. Nested reductions are evaluated separately for each row.
 
 ## Numerical behavior
 
-`exp`, `sin`, and `cos` use [scalar system math](kernel-transcendentals.md),
+`exp`, `sin`, `cos`, `log`, `tanh` and `trivial-simd:sigmoid` use [scalar system math](kernel-transcendentals.md),
 without a fixed ULP or cross-backend bit-identity guarantee.
 
 `sqrt` signals an error for a negative operand on every backend; negative zero
@@ -190,6 +190,11 @@ expression, vector length, and backend. See [kernel benchmarks](kernel-performan
 for measurements and [FMA fallback limitations](#limitations).
 
 ## Limitations
+
+- ECL's native runner cache can select a helper with the wrong argument count
+  when one-input product and two-input elementwise kernels share the cache.
+  Use the Lisp backend for affected product calls; tracked in
+  [#153](https://todo.sr.ht/~takeiteasy/trivial-simd/153).
 
 - Transcendental math uses scalar system routines. See its
   [numerical and execution limitations](kernel-transcendentals.md#limitations).

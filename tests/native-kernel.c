@@ -854,16 +854,16 @@ CHECK_FLOAT_LOADER(f64, double, 1)
 static void check_transcendentals_##suffix(void) { \
     type x[513], out[513], sum; \
     const type *inputs[] = {x}; \
-    const uint8_t ops[] = {TS_OP_EXP, TS_OP_SIN, TS_OP_COS}; \
+    const uint8_t ops[] = {TS_OP_EXP, TS_OP_SIN, TS_OP_COS, TS_OP_LOG, TS_OP_TANH, TS_OP_SIGMOID}; \
     size_t lengths[] = {0, 1, 3, 5, 255, 256, 257, 513}; \
-    for (size_t i = 0; i < 513; ++i) x[i] = (type)((int)(i % 17) - 8) / 4; \
-    for (size_t op = 0; op < 3; ++op) { \
+    for (size_t i = 0; i < 513; ++i) x[i] = (type)(1 + i % 17) / 4; \
+    for (size_t op = 0; op < 6; ++op) { \
         uint8_t code[] = {ops[op], TS_KERNEL_OUTPUT, 8, 0}; \
         for (size_t l = 0; l < sizeof(lengths) / sizeof(lengths[0]); ++l) { \
             size_t n = lengths[l]; type expected_sum = 0; \
             assert(ts_kernel_##suffix(code, sizeof(code), NULL, inputs, out, n, 0) == 0); \
             for (size_t i = 0; i < n; ++i) { \
-                type expected = op == 0 ? exps(x[i]) : op == 1 ? sins(x[i]) : coss(x[i]); \
+                type expected = op == 0 ? exps(x[i]) : op == 1 ? sins(x[i]) : op == 2 ? coss(x[i]) : op == 3 ? (sizeof(type) == sizeof(float) ? logf(x[i]) : log(x[i])) : op == 4 ? (sizeof(type) == sizeof(float) ? tanhf(x[i]) : tanh(x[i])) : ts_sigmoid_##suffix(x[i]); \
                 assert(out[i] == expected); expected_sum += expected; \
             } \
             assert(ts_kernel_sum_##suffix(code, sizeof(code), NULL, inputs, &sum, n, 0) == 0); \
@@ -873,10 +873,23 @@ static void check_transcendentals_##suffix(void) { \
             assert(ts_kernel_inputs_##suffix(code, sizeof(code), NULL, &descriptor, 1, out, 1, n, \
                                              0, TS_INPUT_OUTPUT, 1, &wide, &index) == 0); \
             for (size_t i = 0; i < n; ++i) \
-                assert(out[i] == (op == 0 ? exps(x[i]) : op == 1 ? sins(x[i]) : coss(x[i]))); \
+                assert(out[i] == (op == 0 ? exps(x[i]) : op == 1 ? sins(x[i]) : op == 2 ? coss(x[i]) : op == 3 ? (sizeof(type) == sizeof(float) ? logf(x[i]) : log(x[i])) : op == 4 ? (sizeof(type) == sizeof(float) ? tanhf(x[i]) : tanh(x[i])) : ts_sigmoid_##suffix(x[i]))); \
         } \
     } \
     x[0] = -(type)0; x[1] = (type)1; x[2] = (type)INFINITY; x[3] = (type)NAN; \
+    uint8_t logarithm[] = {TS_OP_LOG, TS_KERNEL_OUTPUT, 8, 0}; \
+    assert(ts_kernel_##suffix(logarithm, sizeof(logarithm), NULL, inputs, out, 4, 0) == 0); \
+    assert(isinf(out[0]) && signbit(out[0]) && out[1] == 0 && isinf(out[2]) && isnan(out[3])); \
+    uint8_t hyperbolic[] = {TS_OP_TANH, TS_KERNEL_OUTPUT, 8, 0}; \
+    assert(ts_kernel_##suffix(hyperbolic, sizeof(hyperbolic), NULL, inputs, out, 4, 0) == 0); \
+    assert(out[0] == 0 && signbit(out[0]) && out[2] == 1 && isnan(out[3])); \
+    uint8_t logistic[] = {TS_OP_SIGMOID, TS_KERNEL_OUTPUT, 8, 0}; \
+    assert(ts_kernel_##suffix(logistic, sizeof(logistic), NULL, inputs, out, 4, 0) == 0); \
+    assert(out[0] == (type)0.5 && out[2] == 1 && isnan(out[3])); \
+    x[0] = (type)-INFINITY; \
+    assert(ts_kernel_##suffix(logistic, sizeof(logistic), NULL, inputs, out, 1, 0) == 0); \
+    assert(out[0] == 0); \
+    x[0] = -(type)0; \
     uint8_t sine[] = {TS_OP_SIN, TS_KERNEL_OUTPUT, 8, 0}; \
     assert(ts_kernel_##suffix(sine, sizeof(sine), NULL, inputs, out, 4, 0) == 0); \
     assert(signbit(out[0]) && isnan(out[2]) && isnan(out[3])); \

@@ -2,7 +2,7 @@
 
 (defparameter *nd-operations*
   '(:add :subtract :multiply :divide :negate :abs :sqrt :reciprocal
-    :min :max :clamp :compare :select :convert))
+    :min :max :clamp :compare :select :convert :log :tanh :sigmoid))
 
 (defparameter *nd-types* (mapcar #'first *numeric-types*))
 
@@ -121,6 +121,9 @@
       (error "Selection needs a byte mask"))
     (when (eq operation :convert)
       (unless (operand-vector-p (first operands)) (error "Operation needs a vector input")))
+    (when (and (member operation '(:log :tanh :sigmoid))
+               (not (member type '(:f32 :f64))))
+      (error "Operation requires real floating-point input"))
     (when (and (integer-type-p type) (member operation '(:sqrt :reciprocal)))
       (error "Operation requires floating-point input"))
     (when (and (complex-type-p type) (member operation '(:min :max :clamp)))
@@ -182,6 +185,7 @@
                                    (ecase operation (:add (+ a b)) (:subtract (- a b))
                                           (:multiply (* a b)) (:divide (/ a b))))))
                             ((:negate :abs) (wrapped-unary operation type a))
+                            (:log (log a)) (:tanh (tanh a)) (:sigmoid (sigmoid a))
                             (:sqrt (if (complex-type-p type) (sqrt a) (kernel-sqrt a)))
                             (:reciprocal (/ (coerce 1 (if (eq type :c32) 'single-float
                                                         (if (eq type :c64) 'double-float
@@ -204,6 +208,10 @@
 
 (defvar *native-nd-available-p*
   (and *native-available-p* (null (missing-native-symbols '("ts_nd_execute")))))
+
+(defvar *native-nd-activation-math-p*
+  (and *native-available-p*
+       (not (null (ignore-errors (cffi:foreign-symbol-pointer "ts_nd_activation_math"))))))
 
 (defun nd-with-pointers (values starts types function &optional (pointers nil))
   (if (null values)
@@ -233,6 +241,7 @@
     (values (coerce dimensions 'vector) (map 'vector (lambda (steps) (coerce steps 'vector)) strides))))
 
 (defun nd-flat-lisp (operation destination operands shape layouts starts type operator rounding d-encoding i-encoding)
+  (when (member operation '(:log :tanh :sigmoid)) (return-from nd-flat-lisp nil))
   (unless (and (<= (length shape) 1) (vectorp destination) (not (complex-type-p type))
                (or (zerop (length shape)) (= (aref (aref layouts 0) 0) 1))
                (every (lambda (input) (or (numberp input) (vectorp input))) operands)
@@ -356,6 +365,8 @@
     (let* ((operands (coerce (subseq values 1) 'list))
            (native (and (eq *backend* :native) *native-nd-available-p*
                         (eq *native-array-access* :pointer) (not (complex-type-p type))
+                        (or (not (member operation '(:log :tanh :sigmoid)))
+                            *native-nd-activation-math-p*)
                         (or (not (eq operation :convert))
                             (and (member type '(:f32 :f64 :u16))
                                  (member (vector-type destination) '(:f32 :f64 :u16))
@@ -399,3 +410,7 @@
                                                    mask-strides left-strides right-strides)
   (nd-operation :compare mask (list left right) shape (list mask-start left-start right-start)
                 (list mask-strides left-strides right-strides) :operator operator))
+
+(define-nd-operation nd-log! :log (input) (destination input))
+(define-nd-operation nd-tanh! :tanh (input) (destination input))
+(define-nd-operation nd-sigmoid! :sigmoid (input) (destination input))

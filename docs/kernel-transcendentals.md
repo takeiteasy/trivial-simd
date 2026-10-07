@@ -1,10 +1,10 @@
 # Kernel transcendental math
 
-`define-kernel` accepts unary `exp`, `sin`, and `cos` for single- and double-float
+`define-kernel` accepts unary `exp`, `sin`, `cos`, `log`, `tanh`, and `trivial-simd:sigmoid` for single- and double-float
 computation. They use scalar system math on every backend.
 
 ```lisp
-(trivial-simd:define-kernel silu (x) (/ x (+ 1 (exp (- x)))))
+(trivial-simd:define-kernel silu (x) (* x (trivial-simd:sigmoid x)))
 (trivial-simd:define-kernel rope-sine (angle) (sin angle))
 (trivial-simd:define-kernel rope-cosine (angle) (cos angle))
 ```
@@ -22,6 +22,16 @@ and f64 produces double-floats. These operations use the implementation's ordina
 math routines, without relaxed polynomial approximations or a fixed ULP bound.
 Results need not be bit-identical across backends or Lisp implementations.
 
+`log` is the natural logarithm and accepts one argument. Positive finite inputs
+have real results; nonpositive inputs follow backend math policy (Lisp may signal
+an error and native libm may return an infinity or NaN). `tanh` is the hyperbolic
+tangent. `trivial-simd:sigmoid` is also a scalar function accepting a single- or
+double-float.
+
+Sigmoid computes `z = exp(-abs(x))`, then `1/(1+z)` for nonnegative inputs or
+`z/(1+z)` otherwise. This avoids exponential overflow; underflow follows the
+active floating-point environment.
+
 Overflow, underflow, NaNs, infinities, floating-point traps, and non-default
 rounding modes follow the existing [numerical limitations](#limitations).
 An arithmetic error may leave part of the destination updated. Stable softmax
@@ -34,8 +44,17 @@ inputs a portable softmax result.
 |---|---|
 | `:lisp` | Typed scalar Common Lisp math |
 | `:sbcl` | Typed scalar Lisp loop for a pass containing these operations |
-| `:native` | Scalar C `expf`/`sinf`/`cosf` for f32, `exp`/`sin`/`cos` for f64 inside the VM |
+| `:native` | Scalar C libm in the computation precision, including stable sigmoid, inside the VM |
 | Native library without these opcodes | Typed Lisp fallback |
+
+Libraries with only `exp`/`sin`/`cos` support select typed Lisp fallback for
+passes using the additional operators. N-D activation operations have a separate
+capability check.
+
+`nd-log!`, `nd-tanh!` and `nd-sigmoid!` use the same destination, input, shape,
+start and stride arguments as `nd-sqrt!`. They accept f32/f64 storage and preserve
+N-D validation, broadcasting and overlap snapshots. Native traversal evaluates
+scalar libm directly; Lisp traversal accesses strided storage without packing.
 
 Arithmetic-only passes retain their existing packed paths. The native VM keeps
 arithmetic around transcendental operations in its existing registers and
@@ -43,6 +62,8 @@ bounded blocks; scalar math does not imply a separate foreign call per element.
 
 See [softmax, SiLU, and RoPE examples](../examples/inference-stages.lisp) and
 [complete-stage performance](kernel-stage-performance.md).
+
+See [activation and log-softmax examples](../examples/activation-math.lisp).
 
 ## Limitations
 

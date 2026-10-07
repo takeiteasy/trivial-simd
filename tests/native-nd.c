@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <math.h>
 #include <stdint.h>
 #include <stddef.h>
 #include <string.h>
@@ -16,6 +17,19 @@ int main(void) {
         for (int col = 0; col < 5; ++col) assert(out[30 - 10 * row + 2 * col] == row + 1);
     assert(out[1] == -1);
 
+    for (unsigned op = 14; op <= 16; ++op) {
+        for (int i = 0; i < 100; ++i) left[i] = (float)(i + 1) / 10;
+        p[2] = NULL;
+        assert(ts_nd_execute(op, 0, 0, 0, 0, 0, 2, shape, strides, p, indices) == 0);
+        for (int row = 0; row < 3; ++row)
+            for (int col = 0; col < 5; ++col) {
+                float x = left[row];
+                float z = expf(-fabsf(x));
+                float expected = op == 14 ? logf(x) : op == 15 ? tanhf(x) : 1.0f / (1.0f + z);
+                assert(out[30 - 10 * row + 2 * col] == expected);
+            }
+    }
+    for (size_t i = 0; i < 100; ++i) left[i] = (float)i;
     int64_t dimensions[] = {2, 2, 2, 3};
     int64_t steps[] = {24, 12, 6, 2, 24, 12, 6, 2, 0, 0, 0, 0, 0, 0, 0, 0};
     p[0] = out; p[1] = left; p[2] = right;

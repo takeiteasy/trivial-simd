@@ -2,8 +2,11 @@
 enum {
     TS_ND_ADD, TS_ND_SUBTRACT, TS_ND_MULTIPLY, TS_ND_DIVIDE,
     TS_ND_NEGATE, TS_ND_ABS, TS_ND_SQRT, TS_ND_RECIPROCAL,
-    TS_ND_MIN, TS_ND_MAX, TS_ND_CLAMP, TS_ND_COMPARE, TS_ND_SELECT, TS_ND_CONVERT
+    TS_ND_MIN, TS_ND_MAX, TS_ND_CLAMP, TS_ND_COMPARE, TS_ND_SELECT, TS_ND_CONVERT,
+    TS_ND_LOG, TS_ND_TANH, TS_ND_SIGMOID
 };
+
+int ts_nd_activation_math(void) { return 1; }
 
 static const unsigned ts_nd_binary_ops[] = {TS_OP_ADD, TS_OP_SUBTRACT, TS_OP_MULTIPLY, TS_OP_DIVIDE};
 
@@ -103,6 +106,9 @@ static int ts_nd_row_##suffix(unsigned op, void *const *p, const int64_t *s, siz
         else if (op == TS_ND_ABS) result = integer ? value(TS_OP_ABS, x, 0) : absolute(x); \
         else if (op == TS_ND_SQRT) { if (x < 0) return -2; result = x == 0 ? x : square_root(x); } \
         else if (op == TS_ND_RECIPROCAL) { if (x == 0) return -2; result = (type)1 / x; } \
+        else if (op == TS_ND_LOG) result = sizeof(type) == sizeof(float) ? logf(x) : log(x); \
+        else if (op == TS_ND_TANH) result = sizeof(type) == sizeof(float) ? tanhf(x) : tanh(x); \
+        else if (op == TS_ND_SIGMOID) result = sizeof(type) == sizeof(float) ? ts_sigmoid_f32(x) : ts_sigmoid_f64(x); \
         else if (op == TS_ND_MIN) result = y < x ? y : x; \
         else if (op == TS_ND_MAX) result = y > x ? y : x; \
         else if (op == TS_ND_CLAMP) { \
@@ -189,7 +195,8 @@ int ts_nd_execute(unsigned op, unsigned type, unsigned destination_type, unsigne
                                      ts_nd_row_s64, ts_nd_row_u64};
     static const size_t sizes[] = {4, 8, 1, 1, 2, 2, 4, 4, 8, 8};
     static const size_t conversion_sizes[] = {4, 8, 2, 2};
-    if (op > TS_ND_CONVERT || type >= 10 || comparison > 5 || rounding < 0 || rounding > 3 ||
+    if (op > TS_ND_SIGMOID || (op >= TS_ND_LOG && type > 1) || type >= 10 ||
+        comparison > 5 || rounding < 0 || rounding > 3 ||
         (op == TS_ND_CONVERT && (destination_type > 3 || input_type > 3))) return -1;
     for (size_t axis = 0; axis < rank; ++axis) {
         if (shape[axis] < 0) return -1;
@@ -208,7 +215,7 @@ int ts_nd_execute(unsigned op, unsigned type, unsigned destination_type, unsigne
         steps[operand] = rank ? strides[operand * rank + rank - 1] : 0;
     }
     if (!p[0] || !p[1] ||
-        ((op < TS_ND_NEGATE || op >= TS_ND_MIN) && op != TS_ND_CONVERT && !p[2]) ||
+        ((op < TS_ND_NEGATE || (op >= TS_ND_MIN && op <= TS_ND_SELECT)) && op != TS_ND_CONVERT && !p[2]) ||
         ((op == TS_ND_CLAMP || op == TS_ND_SELECT) && !p[3])) return -1;
     size_t n = rank ? (size_t)shape[rank - 1] : 1;
     for (;;) {

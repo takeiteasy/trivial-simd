@@ -518,3 +518,16 @@ both RoPE output tables. It compares typed Lisp loops with each available kernel
 backend for f32/f64 vectors and softmax row batches. Lisp allocation counters
 exclude C buffers and are unavailable on ECL. See
 [results and measurement limits](kernel-stage-performance.md).
+
+## Activation math
+
+Run `examples/activation-math.lisp` for sigmoid, SiLU, tanh-approximate GELU and
+stable log-softmax. Kernel activation tests cover both precisions, slices, tails,
+row batches, reductions, constant expressions, N-D strides and capability
+fallback. Native harnesses check VM output, sums, declared-input execution and
+strided N-D math in scalar and SIMD builds.
+
+Run the typed-loop versus kernel benchmark with
+`sbcl --non-interactive --load tests/activation-bench.lisp`. It reports per-call
+microseconds for log, tanh, sigmoid, SiLU and tanh-GELU at 32, 1,024 and 65,536 elements.
+See [activation measurements](activation-performance.md).

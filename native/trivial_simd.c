@@ -284,10 +284,21 @@ enum {
     TS_OP_MULTIPLY, TS_OP_DIVIDE, TS_OP_NEGATE, TS_OP_SPILL, TS_OP_RELOAD,
     TS_OP_SQRT, TS_OP_ABS, TS_OP_MIN, TS_OP_MAX, TS_OP_FMA,
     TS_OP_EQ, TS_OP_NE, TS_OP_LT, TS_OP_LE, TS_OP_GT, TS_OP_GE, TS_OP_SELECT,
-    TS_OP_EXP, TS_OP_SIN, TS_OP_COS
+    TS_OP_EXP, TS_OP_SIN, TS_OP_COS, TS_OP_LOG, TS_OP_TANH, TS_OP_SIGMOID
 };
 
 int ts_kernel_transcendentals(void) { return 1; }
+int ts_kernel_activation_math(void) { return 1; }
+
+static float ts_sigmoid_f32(float x) {
+    float z = expf(-fabsf(x));
+    return x < 0 ? z / (1.0f + z) : 1.0f / (1.0f + z);
+}
+
+static double ts_sigmoid_f64(double x) {
+    double z = exp(-fabs(x));
+    return x < 0 ? z / (1.0 + z) : 1.0 / (1.0 + z);
+}
 
 #define TS_KERNEL_BLOCK 256
 #define TS_KERNEL_REGISTERS 8
@@ -334,6 +345,9 @@ static int ts_kernel_apply_##mode##_##suffix(unsigned op, type *destination, \
     case TS_OP_EXP: for (; i < m; ++i) destination[i] = sizeof(type) == sizeof(float) ? expf(left[i]) : exp(left[i]); break; \
     case TS_OP_SIN: for (; i < m; ++i) destination[i] = sizeof(type) == sizeof(float) ? sinf(left[i]) : sin(left[i]); break; \
     case TS_OP_COS: for (; i < m; ++i) destination[i] = sizeof(type) == sizeof(float) ? cosf(left[i]) : cos(left[i]); break; \
+    case TS_OP_LOG: for (; i < m; ++i) destination[i] = sizeof(type) == sizeof(float) ? logf(left[i]) : log(left[i]); break; \
+    case TS_OP_TANH: for (; i < m; ++i) destination[i] = sizeof(type) == sizeof(float) ? tanhf(left[i]) : tanh(left[i]); break; \
+    case TS_OP_SIGMOID: for (; i < m; ++i) destination[i] = sizeof(type) == sizeof(float) ? ts_sigmoid_f32(left[i]) : ts_sigmoid_f64(left[i]); break; \
     case TS_OP_SQRT: \
         for (size_t j = 0; j < m; ++j) { \
             if (left[j] < 0) return -2; \
@@ -439,6 +453,9 @@ static int ts_kernel_reduce_##suffix(uint8_t op, const type *left, const type *r
     case TS_OP_COS: \
         for (; i < m; ++i) result += sizeof(type) == sizeof(float) ? cosf(left[i]) : cos(left[i]); \
         break; \
+    case TS_OP_LOG: for (; i < m; ++i) result += sizeof(type) == sizeof(float) ? logf(left[i]) : log(left[i]); break; \
+    case TS_OP_TANH: for (; i < m; ++i) result += sizeof(type) == sizeof(float) ? tanhf(left[i]) : tanh(left[i]); break; \
+    case TS_OP_SIGMOID: for (; i < m; ++i) result += sizeof(type) == sizeof(float) ? ts_sigmoid_f32(left[i]) : ts_sigmoid_f64(left[i]); break; \
     case TS_OP_SQRT: \
         for (size_t j = 0; j < m; ++j) if (left[j] < 0) return -2; \
         TS_KERNEL_REDUCE(type, width, store, add, sqrtv(load(left + i)), (left[i] == 0 ? left[i] : sqrts(left[i]))); \

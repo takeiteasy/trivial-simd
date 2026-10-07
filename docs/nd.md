@@ -17,7 +17,7 @@ N-D operations execute a shape over independently strided operands. Signed eleme
 | Call | Layout names |
 |---|---|
 | `(nd-add! out left right shape &key ...)`, also `nd-subtract!`, `nd-multiply!`, `nd-divide!`, `nd-min!`, `nd-max!` | `destination`, `left`, `right` |
-| `(nd-negate! out input shape &key ...)`, also `nd-abs!`, `nd-sqrt!`, `nd-reciprocal!` | `destination`, `input` |
+| `(nd-negate! out input shape &key ...)`, also `nd-abs!`, `nd-sqrt!`, `nd-reciprocal!`, `nd-log!`, `nd-tanh!`, `nd-sigmoid!` | `destination`, `input` |
 | `(nd-clamp! out input lower upper shape &key ...)` | `destination`, `input`, `lower`, `upper` |
 | `(nd-compare! mask operator left right shape &key ...)` | `mask`, `left`, `right` |
 | `(nd-select! out mask on-true on-false shape &key ...)` | `destination`, `mask`, `true`, `false` |
@@ -28,6 +28,10 @@ Each layout name supplies `:NAME-start` and `:NAME-strides`, for example `:desti
 Scalars match the numeric dtype exactly and have no layout keywords. Unary and bounded operations accept scalar numeric inputs; conversion requires vector storage. Comparisons use the existing six operators and write byte masks; their numeric type comes from a vector input, or from the byte destination when both inputs are scalars. Selection requires byte mask storage; any nonzero byte selects the true operand.
 
 Arithmetic uses identical numeric types. Complex `nd-abs!` writes the corresponding real precision. Integer arithmetic wraps; division truncates toward zero and rejects zero divisors. `nd-convert!` accepts the existing [conversion](conversion.md) rounding and encoding keywords, including raw-bit copies for matching encodings.
+
+`nd-log!`, `nd-tanh!` and `nd-sigmoid!` require f32/f64 computation. They use
+[scalar system math](kernel-transcendentals.md) with the same layout and alias
+rules. Older native libraries without these operations select Lisp traversal.
 
 ## Layouts and aliases
 
@@ -41,7 +45,7 @@ Run [the example](../examples/nd.lisp) for broadcasting, reversed inputs and a t
 
 | Configuration | Execution |
 |---|---|
-| Native pointer access, real/integer operations and masks | One C traversal; contiguous inner runs use existing bulk kernels |
+| Native pointer access, real/integer operations and masks | One C traversal; contiguous inner runs use bulk kernels where available, activations use scalar libm |
 | Native real-float and encoded conversion | One C traversal; irregular conversion reads and writes elements directly |
 | Complex operations and other conversion pairs | Direct Lisp storage traversal |
 | SBCL SIMD backend | Supported contiguous array runs use SBCL SIMD; irregular layouts use Lisp |
