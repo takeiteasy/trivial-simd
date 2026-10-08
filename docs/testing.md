@@ -530,8 +530,9 @@ fallback. Native harnesses check VM output, sums, declared-input execution and
 strided N-D math in scalar and SIMD builds. N-D exp, sine, cosine, SiLU and
 tanh-GELU checks cover both precisions, broadcast/reversed layouts, aliases,
 foreign storage, validation before writes and missing-capability fallback.
-See [kernel limitations](kernels.md#limitations) for the existing ECL product
-runner cache collision affecting full-suite validation.
+ECL runner-cache checks cover product and binary elementwise calls in both
+invocation orders, matching-signature sharing, concurrent first use and
+compiler-failure fallback. Helpers share by input count and reducer identity.
 
 Run the typed-loop versus kernel benchmark with
 `sbcl --non-interactive --load tests/activation-bench.lisp`. It reports per-call

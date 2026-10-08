@@ -602,7 +602,7 @@ Empty slices give NIL for the extrema and a zero otherwise."
     (error () fallback)))
 
 #+ecl
-(defvar *native-kernel-runners* (make-hash-table :test 'eql))
+(defvar *native-kernel-runners* (make-hash-table :test 'equal))
 
 #+(and ecl threads)
 ;; TODO: cold compilation is serialized; evaluate per-signature locks (#65).
@@ -854,7 +854,7 @@ END, and per-input start keywords. Experimental."
                                            (setf (aref ,programs slot)
                                                  (make-native-program ',bytes ',constants ,scratch-count ,type)))))
                         #+ecl (funcall (ensure-native-kernel-runner
-                                       ,program ,(+ (* 8 (length arguments)) (position reducer '(nil sum asum nrm2 minimum maximum argmin argmax prod)))
+                                       ,program ',(list (length arguments) reducer)
                                        ',runner-form ,runner)
                                        ,@runner-arguments)
                         #-ecl ,native-form))))

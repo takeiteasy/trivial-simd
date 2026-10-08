@@ -334,7 +334,7 @@
   (let ((cold nil) (shared nil) (function nil) (other nil)
         (trivial-simd::*backend* :native))
     (dotimes (trial 5)
-      (let* ((trivial-simd::*native-kernel-runners* (make-hash-table :test 'eql))
+      (let* ((trivial-simd::*native-kernel-runners* (make-hash-table :test 'equal))
              #+threads (trivial-simd::*native-kernel-runner-lock* (mp:make-lock :name "benchmark runners"))
              (a (make-array 32 :element-type type :initial-element (coerce 1 type)))
              (b (make-array 32 :element-type type :initial-element (coerce 2 type)))
@@ -351,7 +351,7 @@
             (check-ecl-kernel-result result reduction-p output (cdr case))
             (if (eq (car case) function) (push elapsed cold) (push elapsed shared))))
         (unless (and (= 1 (hash-table-count trivial-simd::*native-kernel-runners*))
-                     (functionp (gethash (+ 24 (if reduction-p 1 0)) trivial-simd::*native-kernel-runners*)))
+                     (functionp (gethash (list 3 (if reduction-p 'trivial-simd:sum nil)) trivial-simd::*native-kernel-runners*)))
           (error "Expected one compiled runner shared by both definitions"))))
     (format t "~A ~A ~A: cold signature ~,3F ms; shared-definition first call ~,3F ms (five-trial medians; clock ~,3F ms)~%"
             definition (if reduction-p :sum :elementwise) type

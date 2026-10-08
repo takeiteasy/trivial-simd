@@ -234,7 +234,7 @@
 
 #+ecl
 (defmacro with-fresh-native-runners (&body body)
-  `(let ((simd::*native-kernel-runners* (make-hash-table :test 'eql))
+  `(let ((simd::*native-kernel-runners* (make-hash-table :test 'equal))
          #+threads (simd::*native-kernel-runner-lock* (mp:make-lock :name "test runners")))
      ,@body))
 
@@ -299,6 +299,44 @@
           (dolist (definition definitions) (fmakunbound (first definition))))))))
 
 #+ecl
+(test ecl-product-and-binary-runner-signatures
+  (when (and simd::*native-available-p* simd::*native-row-reducers-p*)
+    (dolist (product-first '(nil t))
+      (with-fresh-native-runners
+        (let ((add (gensym "ADD")) (product (gensym "PRODUCT")))
+          (unwind-protect
+               (progn
+                 (eval `(simd:define-kernel ,add (a b) (+ a b)))
+                 (eval `(simd:define-kernel ,product (a) (simd:prod a)))
+                 (dolist (type '(single-float double-float))
+                   (dolist (mode '(:native :native-copy))
+                     (dolist (count '(0 3 257))
+                       (let ((input (make-array (+ count 2) :element-type type
+                                                :initial-element (coerce 1 type)))
+                             (output (make-array (+ count 2) :element-type type
+                                                 :initial-element (coerce -1 type))))
+                         (dotimes (i (min count 3))
+                           (setf (aref input (1+ i)) (coerce 2 type)))
+                         (flet ((run-add ()
+                                  (is (eq output
+                                          (with-backend (mode)
+                                            (funcall add output input input :start 1 :end (1+ count)))))
+                                  (dotimes (i count)
+                                    (is (= (* 2 (aref input (1+ i))) (aref output (1+ i))))))
+                                (run-product ()
+                                  (is (= (expt 2 (min count 3))
+                                         (with-backend (mode)
+                                           (funcall product input :start 1 :end (1+ count)))))))
+                           (if product-first
+                               (progn (run-product) (run-add))
+                               (progn (run-add) (run-product))))))))
+                 (is (= 2 (hash-table-count simd::*native-kernel-runners*)))
+                 (is (functionp (gethash '(1 simd:prod) simd::*native-kernel-runners*)))
+                 (is (functionp (gethash '(2 nil) simd::*native-kernel-runners*))))
+            (fmakunbound add)
+            (fmakunbound product)))))))
+
+#+ecl
 (test ecl-native-runner-failure-fallback
   (with-fresh-native-runners
     (let ((fallback (lambda () :fallback)))
@@ -318,10 +356,10 @@
                                    (declare (ignore form))
                                    (incf attempts)
                                    fallback))
-          (is (eq fallback (simd::ensure-native-kernel-runner program 2 '(lambda () nil) fallback)))
-          (is (eq fallback (simd::ensure-native-kernel-runner program 2 '(lambda () nil) fallback)))
-          (is (eq other-fallback (simd::ensure-native-kernel-runner other 2 '(lambda () nil) other-fallback)))
-          (is (eq :failed (gethash 2 simd::*native-kernel-runners*)))
+          (is (eq fallback (simd::ensure-native-kernel-runner program '(0 nil) '(lambda () nil) fallback)))
+          (is (eq fallback (simd::ensure-native-kernel-runner program '(0 nil) '(lambda () nil) fallback)))
+          (is (eq other-fallback (simd::ensure-native-kernel-runner other '(0 nil) '(lambda () nil) other-fallback)))
+          (is (eq :failed (gethash '(0 nil) simd::*native-kernel-runners*)))
           (is (= 1 attempts)))))
     (when simd::*native-available-p*
       (let ((attempts 0))
@@ -388,7 +426,7 @@
     (with-fresh-native-runners
       (let ((released (list 0)))
         (finishes (exercise-native-redefinitions released))
-        (is (functionp (gethash 8 simd::*native-kernel-runners*)))))))
+        (is (functionp (gethash '(1 nil) simd::*native-kernel-runners*)))))))
 
 (defun collecting-native-call (function counter)
   (lambda (&rest arguments)
@@ -419,7 +457,7 @@
         (with-function-replaced (simd::compile-native-kernel-runner
                                  (lambda (form fallback) (declare (ignore form)) fallback))
           (finishes (exercise-native-redefinitions released))
-          (is (eq :failed (gethash 8 simd::*native-kernel-runners*))))))))
+          (is (eq :failed (gethash '(1 nil) simd::*native-kernel-runners*))))))))
 
 (test native-copy-compact-slices
   (dolist (type '(single-float double-float))

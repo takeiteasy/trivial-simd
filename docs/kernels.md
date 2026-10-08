@@ -191,11 +191,6 @@ for measurements and [FMA fallback limitations](#limitations).
 
 ## Limitations
 
-- ECL's native runner cache can select a helper with the wrong argument count
-  when one-input product and two-input elementwise kernels share the cache.
-  Use the Lisp backend for affected product calls; tracked in
-  [#153](https://todo.sr.ht/~takeiteasy/trivial-simd/153).
-
 - Transcendental math uses scalar system routines. See its
   [numerical and execution limitations](kernel-transcendentals.md#limitations).
 - Real/integer mask expressions use scalar comparison and selection lanes in the native VM
