@@ -527,7 +527,11 @@ Run `examples/activation-math.lisp` for sigmoid, SiLU, tanh-approximate GELU and
 stable log-softmax. Kernel activation tests cover both precisions, slices, tails,
 row batches, reductions, constant expressions, N-D strides and capability
 fallback. Native harnesses check VM output, sums, declared-input execution and
-strided N-D math in scalar and SIMD builds.
+strided N-D math in scalar and SIMD builds. N-D exp, sine, cosine, SiLU and
+tanh-GELU checks cover both precisions, broadcast/reversed layouts, aliases,
+foreign storage, validation before writes and missing-capability fallback.
+See [kernel limitations](kernels.md#limitations) for the existing ECL product
+runner cache collision affecting full-suite validation.
 
 Run the typed-loop versus kernel benchmark with
 `sbcl --non-interactive --load tests/activation-bench.lisp`. It reports per-call

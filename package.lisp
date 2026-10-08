@@ -12,5 +12,6 @@
            #:prod #:minimum #:maximum #:argmin #:argmax #:asum #:nrm2
            #:define-kernel #:fma #:sigmoid
            #:nd-log! #:nd-tanh! #:nd-sigmoid!
+           #:nd-exp! #:nd-sin! #:nd-cos! #:nd-silu! #:nd-gelu!
            #:vector-view #:make-vector-view #:vector-view-p #:vector-view-pointer
            #:vector-view-type #:vector-view-length))

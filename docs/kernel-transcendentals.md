@@ -51,9 +51,11 @@ Libraries with only `exp`/`sin`/`cos` support select typed Lisp fallback for
 passes using the additional operators. N-D activation operations have a separate
 capability check.
 
-`nd-log!`, `nd-tanh!` and `nd-sigmoid!` use the same destination, input, shape,
-start and stride arguments as `nd-sqrt!`. They accept f32/f64 storage and preserve
-N-D validation, broadcasting and overlap snapshots. Native traversal evaluates
+`nd-log!`, `nd-tanh!`, `nd-sigmoid!`, `nd-exp!`, `nd-sin!`, `nd-cos!`,
+`nd-silu!` and `nd-gelu!` use the same destination, input, shape,
+start and stride arguments as `nd-sqrt!`. SiLU and tanh-approximate GELU
+evaluate their compound expressions within one traversal; see [N-D math](nd.md).
+They accept f32/f64 storage and preserve N-D validation, broadcasting and overlap snapshots. Native traversal evaluates
 scalar libm directly; Lisp traversal accesses strided storage without packing.
 
 Arithmetic-only passes retain their existing packed paths. The native VM keeps

@@ -29,6 +29,30 @@ int main(void) {
                 assert(out[30 - 10 * row + 2 * col] == expected);
             }
     }
+    for (unsigned type = 0; type < 2; ++type) {
+        float f_input[] = {-30, -2, -1, 0, 1, 2, 3, 30}, f_out[16];
+        double d_input[] = {-30, -2, -1, 0, 1, 2, 3, 30}, d_out[16];
+        int64_t math_shape[] = {2, 3}, math_steps[] = {1, 4, 3, -1, 0, 0, 0, 0};
+        for (unsigned op = 17; op <= 21; ++op) {
+            for (int i = 0; i < 16; ++i) { f_out[i] = -99; d_out[i] = -99; }
+            void *math_p[] = {type ? (void *)(d_out + 1) : (void *)(f_out + 1),
+                             type ? (void *)(d_input + 2) : (void *)(f_input + 2), NULL, NULL};
+            assert(ts_nd_execute(op, type, type, type, 0, 0, 2, math_shape, math_steps, math_p, indices) == 0);
+            for (int row = 0; row < 2; ++row)
+                for (int col = 0; col < 3; ++col) {
+                    double x = d_input[2 + 3 * row - col];
+                    double z = exp(-fabs(x)), sigmoid = x < 0 ? z / (1 + z) : 1 / (1 + z);
+                    double expected = op == 17 ? exp(x) : op == 18 ? sin(x) : op == 19 ? cos(x) :
+                                      op == 20 ? x * sigmoid :
+                                      0.5 * x * (1 + tanh(sqrt(2 / acos(-1)) * (x + 0.044715 * x * x * x)));
+                    double actual = type ? d_out[1 + row + 4 * col] : f_out[1 + row + 4 * col];
+                    assert(fabs(actual - expected) <= (type ? 2e-14 : 2e-6) * fmax(1, fabs(expected)));
+                }
+            assert((type ? d_out[0] : f_out[0]) == -99);
+            assert((type ? d_out[3] : f_out[3]) == -99);
+            assert(ts_nd_execute(op, 2, 2, 2, 0, 0, 2, math_shape, math_steps, math_p, indices) == -1);
+        }
+    }
     for (size_t i = 0; i < 100; ++i) left[i] = (float)i;
     int64_t dimensions[] = {2, 2, 2, 3};
     int64_t steps[] = {24, 12, 6, 2, 24, 12, 6, 2, 0, 0, 0, 0, 0, 0, 0, 0};

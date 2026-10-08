@@ -211,3 +211,111 @@
                                :left-start 4)
                  (is (= 26f0 (aref out 1)))))))
       (dolist (entry originals) (setf (symbol-function (car entry)) (cdr entry))))))
+
+(defun nd-inference-reference (operation x)
+  (let ((one (float 1 x)))
+    (ecase operation
+      (:exp (exp x)) (:sin (sin x)) (:cos (cos x))
+      (:silu (* x (if (minusp x) (/ (exp x) (+ one (exp x)))
+                      (/ one (+ one (exp (- x)))))))
+      (:gelu (* (float 0.5 x) x
+                (+ one (tanh (* (float (sqrt (/ 2d0 pi)) x)
+                               (+ x (* (float 0.044715d0 x) x x x))))))))))
+
+(defun nd-inference-operations ()
+  '((:exp simd:nd-exp!) (:sin simd:nd-sin!) (:cos simd:nd-cos!)
+    (:silu simd:nd-silu!) (:gelu simd:nd-gelu!)))
+
+(test nd-inference-math-backends-and-layouts
+  (dolist (backend (available-backends))
+    (with-backend (backend)
+      (dolist (type '(single-float double-float))
+        (dolist (spec (nd-inference-operations))
+          (destructuring-bind (operation function) spec
+            (let ((input (make-array 8 :element-type type :initial-contents
+                                      (mapcar (lambda (x) (coerce x type)) '(-30 -2 -1 0 1 2 3 30))))
+                  (out (make-array 16 :element-type type :initial-element (coerce -99 type))))
+              (dolist (layout '(((3 -1) 2) ((1 2) 0) ((0 1) 0)))
+                (destructuring-bind (strides start) layout
+                  (let ((expected (map 'vector (lambda (x) (nd-inference-reference operation x))
+                                       (nd-test-gather input '(2 3) strides start))))
+                    (check-views
+                     (lambda (out input)
+                       (funcall function out input '(2 3) :destination-start 1
+                                :destination-strides '(1 4) :input-start start :input-strides strides))
+                     (list out input) :test #'numerically-close-p)
+                    (is (eq out (funcall function out input '(2 3) :destination-start 1
+                                         :destination-strides '(1 4) :input-start start :input-strides strides)))
+                    (is (every #'floats-close-p (nd-test-gather out '(2 3) '(1 4) 1) expected))
+                    (is (= -99 (aref out 0)))
+                    (is (= -99 (aref out 3))))))
+              (let ((expected (map 'vector (lambda (x) (nd-inference-reference operation x)) input)))
+                (funcall function out input '(8))
+                (is (every #'floats-close-p (subseq out 0 8) expected))
+                (funcall function input input '(8))
+                (is (every #'floats-close-p input expected)))
+              (funcall function out (coerce 1 type) nil)
+              (is (floats-close-p (aref out 0) (nd-inference-reference operation (coerce 1 type))))
+              (is (eq out (funcall function out input '(0 3))))
+              (let ((simd::*native-nd-inference-math-p* nil))
+                (let ((expected (map 'vector (lambda (x) (nd-inference-reference operation x))
+                                     (subseq input 0 6))))
+                  (funcall function out input '(2 3) :destination-start 10 :destination-strides '(-6 2))
+                  (is (every #'floats-close-p (nd-test-gather out '(2 3) '(-6 2) 10) expected)))))
+            (let* ((input (make-array 10 :element-type type :initial-contents
+                                        (loop for i below 10 collect (coerce (/ (- i 5) 2) type))))
+                   (expected (map 'vector (lambda (x) (nd-inference-reference operation x)) (subseq input 0 6))))
+              (funcall function input input '(2 3) :destination-start 2)
+              (is (every #'floats-close-p (subseq input 2 8) expected)))
+            (let* ((input (make-array 6 :element-type type :initial-contents
+                                       (mapcar (lambda (x) (coerce x type)) '(-2 -1 0 1 2 3))))
+                   (expected (map 'vector (lambda (x) (nd-inference-reference operation x))
+                                  (nd-test-gather input '(2 3) '(0 1) 0))))
+              (funcall function input input '(2 3) :input-strides '(0 1))
+              (is (every #'floats-close-p input expected)))))))))
+
+(test nd-inference-math-validation
+  (dolist (spec (nd-inference-operations))
+    (let ((function (second spec))
+          (out (make-array 6 :element-type 'single-float :initial-element -99f0))
+          (input (make-array 6 :element-type 'single-float :initial-element 1f0)))
+      (dolist (keys '((:destination-strides (0 1)) (:input-start -1)
+                      (:input-strides (1)) (:input-strides (3 99))))
+        (signals error (apply function out input '(2 3) keys))
+        (is (every (lambda (x) (= -99 x)) out)))
+      (signals error (funcall function out (make-array 6 :element-type 'double-float) '(2 3)))
+      (is (every (lambda (x) (= -99 x)) out))
+      (dolist (type '((signed-byte 8) (unsigned-byte 16) (complex single-float) (complex double-float)))
+        (let ((storage (make-array 0 :element-type type)))
+          (signals error (funcall function storage storage '(0))))))))
+
+(test nd-inference-large-angles
+  (dolist (backend (available-backends))
+    (with-backend (backend)
+      (dolist (type '(single-float double-float))
+        (let ((input (make-array 4 :element-type type :initial-contents
+                                  (mapcar (lambda (x) (coerce x type)) '(-1d20 -1d6 1d6 1d20))))
+              (out (make-array 4 :element-type type)))
+          (dolist (spec '((simd:nd-sin! sin) (simd:nd-cos! cos)))
+            (funcall (first spec) out input '(4))
+            (is (every #'floats-close-p out (map 'vector (second spec) input)))))))))
+
+#+sbcl
+(test nd-inference-native-capability-dispatch
+  (when (and simd::*native-nd-available-p* simd::*native-nd-inference-math-p*)
+    (let ((original (symbol-function 'simd::%native-nd-execute)) (calls 0))
+      (unwind-protect
+           (progn
+             (setf (symbol-function 'simd::%native-nd-execute)
+                   (lambda (&rest arguments) (incf calls) (apply original arguments)))
+             (with-backend (:native)
+               (dolist (spec (nd-inference-operations))
+                 (let ((input (make-array 6 :element-type 'single-float :initial-element 1f0))
+                       (out (make-array 6 :element-type 'single-float))
+                       (before calls))
+                   (funcall (second spec) out input '(2 3))
+                   (is (= (1+ before) calls))
+                   (let ((simd::*native-nd-inference-math-p* nil))
+                     (funcall (second spec) out input '(2 3)))
+                   (is (= (1+ before) calls))))))
+        (setf (symbol-function 'simd::%native-nd-execute) original)))))

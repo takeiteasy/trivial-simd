@@ -17,7 +17,9 @@ N-D operations execute a shape over independently strided operands. Signed eleme
 | Call | Layout names |
 |---|---|
 | `(nd-add! out left right shape &key ...)`, also `nd-subtract!`, `nd-multiply!`, `nd-divide!`, `nd-min!`, `nd-max!` | `destination`, `left`, `right` |
-| `(nd-negate! out input shape &key ...)`, also `nd-abs!`, `nd-sqrt!`, `nd-reciprocal!`, `nd-log!`, `nd-tanh!`, `nd-sigmoid!` | `destination`, `input` |
+| `(nd-negate! out input shape &key ...)`, also `nd-abs!`, `nd-sqrt!`, `nd-reciprocal!` | `destination`, `input` |
+| `(nd-exp! out input shape &key ...)`, also `nd-sin!`, `nd-cos!`, `nd-log!`, `nd-tanh!`, `nd-sigmoid!` | `destination`, `input` |
+| `(nd-silu! out input shape &key ...)`, also `nd-gelu!` | `destination`, `input` |
 | `(nd-clamp! out input lower upper shape &key ...)` | `destination`, `input`, `lower`, `upper` |
 | `(nd-compare! mask operator left right shape &key ...)` | `mask`, `left`, `right` |
 | `(nd-select! out mask on-true on-false shape &key ...)` | `destination`, `mask`, `true`, `false` |
@@ -29,9 +31,12 @@ Scalars match the numeric dtype exactly and have no layout keywords. Unary and b
 
 Arithmetic uses identical numeric types. Complex `nd-abs!` writes the corresponding real precision. Integer arithmetic wraps; division truncates toward zero and rejects zero divisors. `nd-convert!` accepts the existing [conversion](conversion.md) rounding and encoding keywords, including raw-bit copies for matching encodings.
 
-`nd-log!`, `nd-tanh!` and `nd-sigmoid!` require f32/f64 computation. They use
-[scalar system math](kernel-transcendentals.md) with the same layout and alias
-rules. Older native libraries without these operations select Lisp traversal.
+`nd-log!`, `nd-tanh!`, `nd-sigmoid!`, `nd-exp!`, `nd-sin!`, `nd-cos!`,
+`nd-silu!` and `nd-gelu!` require f32/f64 computation. Sine and cosine take
+radians. SiLU is `x * sigmoid(x)` with stable sigmoid; GELU uses the standard
+tanh approximation.[^activations] They use [scalar system math](kernel-transcendentals.md)
+with the same layout and alias rules. Older native libraries without the
+required operation capability select Lisp traversal.
 
 ## Layouts and aliases
 
@@ -64,3 +69,5 @@ Adjacent compatible axes are coalesced. Ordinary execution allocates layout meta
 
 [^bounds]: Dimensions, starts, counts and stride arithmetic must fit the host's fixnum range and signed 64-bit native metadata. Byte stride/span arithmetic is checked as well. Empty layouts need no reachable storage, but their metadata still has to fit these ranges.
 [^native]: C traversal uses typed scalar loads for irregular strides. Native execution requires direct pointer access; otherwise the API uses Lisp rather than copying arrays into native buffers. The floating-point environment and numerical error behavior follow the corresponding bulk operation.
+
+[^activations]: GELU computes `0.5*x*(1+tanh(sqrt(2/pi)*(x+0.044715*x³)))`. Constants and intermediates use the input precision. SiLU and GELU execute in one traversal without intermediate arrays. Overflow, underflow, exceptional values and traps follow the active backend; GELU's cubic intermediate can overflow for large finite inputs.

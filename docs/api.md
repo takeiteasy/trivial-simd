@@ -27,7 +27,7 @@ is.
 | [`minimum`, `maximum`, `argmin`, `argmax`](reductions.md) | Extreme element or its index |
 | [`make-vector-view`](vector-views.md) | A vector of foreign memory |
 | `(backend)` | `:sbcl`, `:native`, or `:lisp` |
-| [N-D operations](nd.md) | Arithmetic, masks and conversion over a shape with independent signed strides |
+| [N-D operations](nd.md) | Arithmetic, real-float math/activations, masks and conversion over independently strided shapes |
 | [Small arrays](small-arrays.md) | Short float vectors run inline, without a backend call |
 
 The four binary `!` functions accept a scalar on either side, with a vector

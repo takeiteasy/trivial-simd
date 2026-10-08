@@ -2,7 +2,7 @@
 
 (defparameter *nd-operations*
   '(:add :subtract :multiply :divide :negate :abs :sqrt :reciprocal
-    :min :max :clamp :compare :select :convert :log :tanh :sigmoid))
+    :min :max :clamp :compare :select :convert :log :tanh :sigmoid :exp :sin :cos :silu :gelu))
 
 (defparameter *nd-types* (mapcar #'first *numeric-types*))
 
@@ -121,7 +121,7 @@
       (error "Selection needs a byte mask"))
     (when (eq operation :convert)
       (unless (operand-vector-p (first operands)) (error "Operation needs a vector input")))
-    (when (and (member operation '(:log :tanh :sigmoid))
+    (when (and (member operation '(:log :tanh :sigmoid :exp :sin :cos :silu :gelu))
                (not (member type '(:f32 :f64))))
       (error "Operation requires real floating-point input"))
     (when (and (integer-type-p type) (member operation '(:sqrt :reciprocal)))
@@ -166,6 +166,17 @@
                        (f32-bits-to-f16 (to-single-bits value) rounding))))))
       (convert-element value destination-type rounding)))
 
+(declaim (inline nd-silu-value nd-gelu-value))
+
+(defun nd-silu-value (x)
+  (* x (sigmoid x)))
+
+(defun nd-gelu-value (x)
+  (* (* (float 0.5 x) x)
+     (+ (float 1 x)
+        (tanh (* (float 0.7978845608028654d0 x)
+                 (+ x (* (float 0.044715d0 x) (* x (* x x)))))))))
+
 (defun nd-lisp (operation destination operands shape layouts starts type operator rounding d-encoding i-encoding)
   (let* ((destination-type (vector-type destination))
          (integer-function (and (integer-type-p type) (member operation '(:add :subtract :multiply :divide))
@@ -186,6 +197,8 @@
                                           (:multiply (* a b)) (:divide (/ a b))))))
                             ((:negate :abs) (wrapped-unary operation type a))
                             (:log (log a)) (:tanh (tanh a)) (:sigmoid (sigmoid a))
+                            (:exp (exp a)) (:sin (sin a)) (:cos (cos a))
+                            (:silu (nd-silu-value a)) (:gelu (nd-gelu-value a))
                             (:sqrt (if (complex-type-p type) (sqrt a) (kernel-sqrt a)))
                             (:reciprocal (/ (coerce 1 (if (eq type :c32) 'single-float
                                                         (if (eq type :c64) 'double-float
@@ -212,6 +225,10 @@
 (defvar *native-nd-activation-math-p*
   (and *native-available-p*
        (not (null (ignore-errors (cffi:foreign-symbol-pointer "ts_nd_activation_math"))))))
+
+(defvar *native-nd-inference-math-p*
+  (and *native-available-p*
+       (not (null (ignore-errors (cffi:foreign-symbol-pointer "ts_nd_inference_math"))))))
 
 (defun nd-with-pointers (values starts types function &optional (pointers nil))
   (if (null values)
@@ -241,7 +258,7 @@
     (values (coerce dimensions 'vector) (map 'vector (lambda (steps) (coerce steps 'vector)) strides))))
 
 (defun nd-flat-lisp (operation destination operands shape layouts starts type operator rounding d-encoding i-encoding)
-  (when (member operation '(:log :tanh :sigmoid)) (return-from nd-flat-lisp nil))
+  (when (member operation '(:log :tanh :sigmoid :exp :sin :cos :silu :gelu)) (return-from nd-flat-lisp nil))
   (unless (and (<= (length shape) 1) (vectorp destination) (not (complex-type-p type))
                (or (zerop (length shape)) (= (aref (aref layouts 0) 0) 1))
                (every (lambda (input) (or (numberp input) (vectorp input))) operands)
@@ -367,6 +384,8 @@
                         (eq *native-array-access* :pointer) (not (complex-type-p type))
                         (or (not (member operation '(:log :tanh :sigmoid)))
                             *native-nd-activation-math-p*)
+                        (or (not (member operation '(:exp :sin :cos :silu :gelu)))
+                            *native-nd-inference-math-p*)
                         (or (not (eq operation :convert))
                             (and (member type '(:f32 :f64 :u16))
                                  (member (vector-type destination) '(:f32 :f64 :u16))
@@ -414,3 +433,9 @@
 (define-nd-operation nd-log! :log (input) (destination input))
 (define-nd-operation nd-tanh! :tanh (input) (destination input))
 (define-nd-operation nd-sigmoid! :sigmoid (input) (destination input))
+
+(define-nd-operation nd-exp! :exp (input) (destination input))
+(define-nd-operation nd-sin! :sin (input) (destination input))
+(define-nd-operation nd-cos! :cos (input) (destination input))
+(define-nd-operation nd-silu! :silu (input) (destination input))
+(define-nd-operation nd-gelu! :gelu (input) (destination input))
