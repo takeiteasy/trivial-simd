@@ -1,7 +1,7 @@
 (asdf:defsystem "trivial-simd"
   :description "Bulk SIMD operations for Common Lisp numeric vectors"
   :author "George Watson"
-  :license "MIT"
+  :license "GPL-3.0-or-later"
   :version "0.1.0"
   :depends-on ("cffi" "trivial-garbage")
   :serial t
