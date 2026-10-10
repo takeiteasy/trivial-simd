@@ -19,6 +19,9 @@ Arrays and compiled programs are prepared before timing.
 Each nonempty spilling call allocates and releases one scratch buffer. Empty
 and non-spilling calls allocate none. Scratch size depends on peak live slots,
 not vector length; spills and reloads operate on blocks of up to 256 elements.
+Mask-output and count/any/all kernel calls reuse that allocation across all
+blocks and release it after success or an error. Concurrent calls own separate
+scratch buffers.
 
 ## Storage comparison
 

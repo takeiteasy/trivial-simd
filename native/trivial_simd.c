@@ -328,6 +328,7 @@ static double ts_sigmoid_f64(double x) {
  * FMA uses a register destination as its addend.
  */
 #include "kernel-vm.h"
+#include "masks.h"
 
 #define TS_KERNEL_RUN(suffix, mode, sum, type, width, load, store, zero, add, sub, mul, div, \
                       sqrtv, absv, minv, maxv, fmav, sqrts, abss, fmas) \
@@ -389,14 +390,14 @@ static int ts_kernel_apply_##mode##_##suffix(unsigned op, type *destination, \
             store(destination + i, fmav(load(left + i), load(right + i), load(destination + i))); \
         for (; i < m; ++i) destination[i] = fmas(left[i], right[i], destination[i]); \
         break; \
-    /* TODO: scalar comparison and selection lanes; add packed VM opcodes (#72). */ \
-    case TS_OP_EQ: for (; i < m; ++i) destination[i] = left[i] == right[i]; break; \
-    case TS_OP_NE: for (; i < m; ++i) destination[i] = left[i] != right[i]; break; \
-    case TS_OP_LT: for (; i < m; ++i) destination[i] = left[i] < right[i]; break; \
-    case TS_OP_LE: for (; i < m; ++i) destination[i] = left[i] <= right[i]; break; \
-    case TS_OP_GT: for (; i < m; ++i) destination[i] = left[i] > right[i]; break; \
-    case TS_OP_GE: for (; i < m; ++i) destination[i] = left[i] >= right[i]; break; \
+    case TS_OP_EQ: i = ts_mask_compare_##suffix(0, destination, left, right, 0, 0, m, 0); for (; i < m; ++i) destination[i] = left[i] == right[i]; break; \
+    case TS_OP_NE: i = ts_mask_compare_##suffix(1, destination, left, right, 0, 0, m, 0); for (; i < m; ++i) destination[i] = left[i] != right[i]; break; \
+    case TS_OP_LT: i = ts_mask_compare_##suffix(2, destination, left, right, 0, 0, m, 0); for (; i < m; ++i) destination[i] = left[i] < right[i]; break; \
+    case TS_OP_LE: i = ts_mask_compare_##suffix(3, destination, left, right, 0, 0, m, 0); for (; i < m; ++i) destination[i] = left[i] <= right[i]; break; \
+    case TS_OP_GT: i = ts_mask_compare_##suffix(4, destination, left, right, 0, 0, m, 0); for (; i < m; ++i) destination[i] = left[i] > right[i]; break; \
+    case TS_OP_GE: i = ts_mask_compare_##suffix(5, destination, left, right, 0, 0, m, 0); for (; i < m; ++i) destination[i] = left[i] >= right[i]; break; \
     case TS_OP_SELECT: \
+        i = ts_mask_select_##suffix(destination, left, right, destination, 0, 0, m, 0); \
         for (; i < m; ++i) destination[i] = left[i] != 0 ? right[i] : destination[i]; \
         break; \
     case TS_OP_NEGATE: \
@@ -570,20 +571,22 @@ int ts_kernel_mask_##suffix(const uint8_t *code, size_t code_length, const type 
                             const type *const *inputs, size_t input_count, uint8_t *mask, \
                             size_t n, size_t scratch_count, unsigned reduction, size_t *result) { \
     size_t total = 0; \
+    if (n && scratch_count > SIZE_MAX / TS_KERNEL_BLOCK / sizeof(type)) return -1; \
+    type *scratch = n && scratch_count ? malloc(scratch_count * TS_KERNEL_BLOCK * sizeof(type)) : NULL; \
+    if (n && scratch_count && !scratch) return -1; \
     for (size_t base = 0; base < n; base += TS_KERNEL_BLOCK) { \
         size_t m = n - base < TS_KERNEL_BLOCK ? n - base : TS_KERNEL_BLOCK; \
         const type *shifted[256]; \
         type values[TS_KERNEL_BLOCK]; \
         for (size_t j = 0; j < input_count; ++j) shifted[j] = inputs[j] + base; \
-        /* TODO: spilled mask kernels allocate per block; reuse one scratch buffer (#72). */ \
-        int status = ts_kernel_##suffix(code, code_length, constants, shifted, values, m, scratch_count); \
-        if (status) return status; \
-        for (size_t j = 0; j < m; ++j) { \
-            int truth = values[j] != 0; \
-            if (reduction == 0) mask[base + j] = (uint8_t)truth; \
-            else total += truth; \
-        } \
+        int status = ts_kernel_with_scratch_##suffix(code, code_length, constants, shifted, values, m, scratch_count, scratch, scratch_count); \
+        if (status) { free(scratch); return status; } \
+        uint8_t truth[TS_KERNEL_BLOCK], *target = reduction ? truth : mask + base; \
+        size_t j = ts_mask_compare_##suffix(1, target, values, NULL, 0, 0, m, 1); \
+        for (; j < m; ++j) target[j] = values[j] != 0; \
+        if (reduction) total += ts_mask_count(target, m); \
     } \
+    free(scratch); \
     if (reduction) *result = reduction == 1 ? total : reduction == 2 ? total != 0 : total == n; \
     return 0; \
 }

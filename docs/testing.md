@@ -12,6 +12,14 @@ pointer/copy modes, mixed-size foreign views, and `swap!` validation before writ
 
 Extended operation tests cover unary and bounded arithmetic, all conversion
 type pairs and rounding modes, byte masks, selection, and mask kernels.
+Conversion boundary tests check all 100 real/integer pairs against rational
+rounding and range clamping, including direct 64-bit-to-f32 midpoint cases,
+pointer/copy modes, offset slices, foreign views with five-element staging,
+and fallback without the native library. Native mask/conversion tests cover
+all ten types, scalar operands, noncanonical mask bytes, packed tails, spill
+allocation counts, allocation failure before writes and cleanup after domain
+errors in SIMD and scalar builds. SBCL branch tests check scalar fallback where
+packed execution would change selection or any/all errors.
 bf16 and f16 tests widen all 65536 bit patterns of each encoding on every
 backend, and narrow every encoded value, the midpoints between neighbours and
 one unit either side, and pseudo-random single-floats. They compare the results
@@ -538,3 +546,32 @@ Run the typed-loop versus kernel benchmark with
 `sbcl --non-interactive --load tests/activation-bench.lisp`. It reports per-call
 microseconds for log, tanh, sigmoid, SiLU and tanh-GELU at 32, 1,024 and 65,536 elements.
 See [activation measurements](activation-performance.md).
+
+## Conversion and mask profiling
+
+The optional C profile compares explicit packed conversions and bulk comparisons
+with typed source loops, checking results before warmed calibrated medians.
+The Lisp profile measures complete conversion and mask-kernel calls, including
+native pointer/copy access and available SBCL execution. Both use 32, 1,024 and
+65,536 elements. See [results](conversion-mask-performance.md).
+
+```sh
+cmake -S . -B build -DBUILD_CONVERSION_MASK_PROFILE=ON
+cmake --build build --target native_conversion_mask_profile
+build/native_conversion_mask_profile
+sbcl --dynamic-space-size 4096 --script tests/conversion-masks-bench.lisp
+```
+
+Set `CONVERSION_MASK_CROSSOVER=1` for 4,096/8,192/16,384/32,768-element
+Lisp measurements with the native conversion size gate disabled. Set
+`CONVERSION_MASK_OPERATIONS=convert,bulk-compare,bulk-select` to restrict rows.
+Run profiles on an idle machine; repeat in fresh processes.
+The profiles do not run in the test suite or CI.
+
+## Limitations
+
+CCL x86-64 test setup and large data coercion remain costly under Rosetta,
+tracked in [#125](https://todo.sr.ht/~takeiteasy/trivial-simd/125).
+Rosetta CCL also intermittently asserts or waits during register-state/thread
+handling, including a library-independent arithmetic reproducer; this is
+tracked in [#140](https://todo.sr.ht/~takeiteasy/trivial-simd/140).

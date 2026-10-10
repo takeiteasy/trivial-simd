@@ -53,75 +53,7 @@ static int ts_validate_inputs(const ts_kernel_input *inputs, size_t input_count,
     return 0;
 }
 
-#if !defined(TS_SCALAR) && (defined(__aarch64__) || defined(_M_ARM64))
-static void ts_store_s32_f32(float *out, int32x4_t value) {
-    vst1q_f32(out, vcvtq_f32_s32(value));
-}
-
-static void ts_store_u32_f32(float *out, uint32x4_t value) {
-    vst1q_f32(out, vcvtq_f32_u32(value));
-}
-
-static void ts_store_s32_f64(double *out, int32x4_t value) {
-    vst1q_f64(out, vcvtq_f64_s64(vmovl_s32(vget_low_s32(value))));
-    vst1q_f64(out + 2, vcvtq_f64_s64(vmovl_s32(vget_high_s32(value))));
-}
-
-static void ts_store_u32_f64(double *out, uint32x4_t value) {
-    vst1q_f64(out, vcvtq_f64_u64(vmovl_u32(vget_low_u32(value))));
-    vst1q_f64(out + 2, vcvtq_f64_u64(vmovl_u32(vget_high_u32(value))));
-}
-
-#define TS_LOAD_BYTES(suffix, type, name, source, sign, tag) \
-static size_t ts_load_##name##_##suffix(type *out, const source *input, size_t n) { \
-    size_t i = 0; \
-    for (; n - i >= 8; i += 8) { \
-        sign##16x8_t value = vmovl_##name(vld1_##name(input + i)); \
-        ts_store_##tag##32_##suffix(out + i, vmovl_##tag##16(vget_low_##tag##16(value))); \
-        ts_store_##tag##32_##suffix(out + i + 4, vmovl_##tag##16(vget_high_##tag##16(value))); \
-    } \
-    return i; \
-}
-
-#define TS_LOAD_WORDS(suffix, type, name, source, tag) \
-static size_t ts_load_##name##_##suffix(type *out, const source *input, size_t n) { \
-    size_t i = 0; \
-    for (; n - i >= 4; i += 4) \
-        ts_store_##tag##32_##suffix(out + i, vmovl_##name(vld1_##name(input + i))); \
-    return i; \
-}
-
-#define TS_LOAD_DWORDS(suffix, type, name, source) \
-static size_t ts_load_##name##_##suffix(type *out, const source *input, size_t n) { \
-    size_t i = 0; \
-    for (; n - i >= 4; i += 4) ts_store_##name##_##suffix(out + i, vld1q_##name(input + i)); \
-    return i; \
-}
-
-#define TS_LOAD_NARROW(suffix, type) \
-TS_LOAD_BYTES(suffix, type, s8, int8_t, int, s) \
-TS_LOAD_BYTES(suffix, type, u8, uint8_t, uint, u) \
-TS_LOAD_WORDS(suffix, type, s16, int16_t, s) \
-TS_LOAD_WORDS(suffix, type, u16, uint16_t, u) \
-TS_LOAD_DWORDS(suffix, type, s32, int32_t) \
-TS_LOAD_DWORDS(suffix, type, u32, uint32_t)
-
-TS_LOAD_NARROW(f32, float)
-TS_LOAD_NARROW(f64, double)
-
-#define TS_LOAD_QWORDS(name, source) \
-static size_t ts_load_##name##_f64(double *out, const source *input, size_t n) { \
-    size_t i = 0; \
-    for (; n - i >= 2; i += 2) vst1q_f64(out + i, vcvtq_f64_##name(vld1q_##name(input + i))); \
-    return i; \
-}
-
-TS_LOAD_QWORDS(s64, int64_t)
-TS_LOAD_QWORDS(u64, uint64_t)
-#define TS_LOAD_PACKED(suffix, name, out, input, n) ts_load_##name##_##suffix(out, input, n)
-#else
-#define TS_LOAD_PACKED(suffix, name, out, input, n) 0
-#endif
+#include "conversion.h"
 
 /* Volatile reads prevent Clang from vectorizing 64-bit-to-f32 through f64. */
 #define TS_SOURCE_s64_f32 volatile int64_t

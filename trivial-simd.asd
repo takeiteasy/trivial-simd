@@ -55,6 +55,7 @@
                (:file "tests/gemm-validation")
                (:file "tests/blas-native")
                (:file "tests/views")
+               (:file "tests/conversions-masks")
                (:file "tests/nd")
                (:file "tests/bulk-overlap")
                (:file "tests/kernel-inputs")

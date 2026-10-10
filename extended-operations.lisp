@@ -185,7 +185,7 @@ strides of DESTINATION then every operand, with NIL for scalars."
 
 ;; Typed Lisp loops. An operand is a vector read at OFFSET or a scalar; the
 ;; typed array and value are bound outside the loop so the loop body is typed.
-(defmacro with-lisp-operand ((reference operand offset element) &body body)
+(defmacro with-lisp-operand ((reference operand offset element &optional packed) &body body)
   (let ((array (gensym "ARRAY")) (value (gensym "VALUE"))
         (base (gensym "BASE")) (vector-p (gensym "VECTOR-P")))
     `(let* ((,vector-p (vectorp ,operand))
@@ -196,8 +196,13 @@ strides of DESTINATION then every operand, with NIL for scalars."
                 (type fixnum ,base))
        (flet ((,reference (i)
                 (declare (type fixnum i))
-                (if ,vector-p (aref ,array (+ ,base i)) ,value)))
-         (declare (inline ,reference))
+                (if ,vector-p (aref ,array (+ ,base i)) ,value))
+              ,@(when packed
+                  (destructuring-bind (name load broadcast) packed
+                    `((,name (i)
+                        (declare (type fixnum i))
+                        (if ,vector-p (,load ,array (+ ,base i)) (,broadcast ,value)))))))
+         (declare (inline ,reference ,@(when packed (list (first packed)))))
          ,@body))))
 
 (defmacro define-lisp-extended-loops ()
@@ -399,13 +404,6 @@ strides of DESTINATION then every operand, with NIL for scalars."
                      destination input lower upper count d-offset i-offset l-offset u-offset)))))
   destination)
 
-(defun integer-limits (type)
-  (destructuring-bind (key element foreign bits signed) (numeric-type type)
-    (declare (ignore key element foreign))
-    (if signed
-        (values (- (ash 1 (1- bits))) (1- (ash 1 (1- bits))))
-        (values 0 (1- (ash 1 bits))))))
-
 (defun convert-element (value destination-type rounding)
   (cond ((complex-type-p destination-type)
          (let ((real-type (if (eq destination-type :c32) 'single-float 'double-float)))
@@ -424,11 +422,76 @@ strides of DESTINATION then every operand, with NIL for scalars."
                  ((integerp value) value)
                  (t (min high (max low
                                    (ecase rounding
-                                     (:nearest-even (round value))
-                                     (:truncate (truncate value))
-                                     (:floor (floor value))
-                                     (:ceiling (ceiling value)))))))))
+                                     (:nearest-even (round (rational value)))
+                                     (:truncate (truncate (rational value)))
+                                     (:floor (floor (rational value)))
+                                     (:ceiling (ceiling (rational value))))))))))
         (t (coerce value (second (numeric-type destination-type))))))
+
+(define-native ("ts_extended_conversion_supported" %native-conversion-supported) :int
+  (destination :uint) (input :uint))
+(define-native ("ts_extended_convert_numeric" %native-convert-numeric) :int
+  (output :pointer) (input :pointer) (count :size) (destination :uint) (source :uint))
+
+(defmacro define-lisp-numeric-conversions ()
+  `(progn
+     ,@(loop for (input-type input-element) in *numeric-types*
+             when (integer-type-p input-type)
+             append
+             (loop for (destination-type element) in *numeric-types*
+                   collect
+                   `(defun ,(intern (format nil "%LISP-CONVERT-~A-~A" input-type destination-type) :trivial-simd)
+                        (destination input count d-offset i-offset)
+                      (declare (type (simple-array ,element (*)) destination)
+                               (type (simple-array ,input-element (*)) input)
+                               (type fixnum count d-offset i-offset))
+                      (dotimes (i count destination)
+                        (setf (aref destination (+ d-offset i))
+                              ,(if (integer-type-p destination-type)
+                                   (multiple-value-bind (low high) (integer-limits destination-type)
+                                     `(min ,high (max ,low (aref input (+ i-offset i)))))
+                                   `(coerce (aref input (+ i-offset i)) ',element)))))))))
+
+(define-lisp-numeric-conversions)
+
+(defmacro define-lisp-numeric-convert-dispatch ()
+  `(defun lisp-numeric-convert (destination input count d-offset i-offset)
+     (funcall (ecase (vector-type input)
+                ,@(loop for (source) in *numeric-types* when (integer-type-p source)
+                        collect `(,source (ecase (vector-type destination)
+                                           ,@(loop for (target) in *numeric-types*
+                                                   collect `(,target #',(intern (format nil "%LISP-CONVERT-~A-~A" source target)
+                                                                               :trivial-simd)))))))
+              destination input count d-offset i-offset)))
+
+(define-lisp-numeric-convert-dispatch)
+
+(defun sbcl-numeric-conversion-p (destination input count foreign-p)
+  (and (not foreign-p) (eq *backend* :sbcl) (eq destination :f32) (eq input :s32)
+       (fboundp '%sbcl-convert-s32-f32)
+       (not (native-numeric-conversion-p destination input count nil))))
+
+(defparameter *native-numeric-conversion-minimum-count* 32768)
+
+;; TODO: M1 size gate; tune per platform after crossover measurements (#156).
+(defun native-numeric-conversion-p (destination input count direct-view)
+  (and (or direct-view (and (eq *native-array-access* :pointer) (>= count *native-numeric-conversion-minimum-count*)))
+       (member *backend* '(:native :sbcl)) *native-available-p*
+       (not (complex-type-p destination)) (not (complex-type-p input))
+       (ignore-errors (cffi:foreign-symbol-pointer "ts_extended_convert_numeric"))
+       (ignore-errors (cffi:foreign-symbol-pointer "ts_extended_conversion_supported"))
+       (not (zerop (%native-conversion-supported
+                    (position destination *numeric-types* :key #'first)
+                    (position input *numeric-types* :key #'first))))))
+
+(defun native-numeric-convert (destination input count d-offset i-offset)
+  (let ((destination-type (vector-type destination)) (input-type (vector-type input)))
+    (with-native-bulk-output (output destination d-offset (foreign-type destination) count)
+      (with-native-bulk-input (source input i-offset (foreign-type input) count)
+        (check-native-extended-status
+         (%native-convert-numeric output source count
+                                 (position destination-type *numeric-types* :key #'first)
+                                 (position input-type *numeric-types* :key #'first)))))))
 
 (defun native-float-conversion-p (destination-type input-type)
   "True when CONVERT! between DESTINATION-TYPE and INPUT-TYPE calls the native library."
@@ -458,13 +521,25 @@ strides of DESTINATION then every operand, with NIL for scalars."
                                  (native-encoded-conversion-p
                                   encode rounding
                                   (extended-encoded-conversion-p destination input destination-encoding input-encoding))
-                                 (native-float-conversion-p destination-type (vector-type input))))
-            ;; TODO: scalar paths for other type pairs; add packed conversions where safe (#72).
+                                 (and (not (sbcl-numeric-conversion-p destination-type (vector-type input) count
+                                                                        (or (vector-view-p destination) (vector-view-p input))))
+                                      (or (native-float-conversion-p destination-type (vector-type input))
+                                          (native-numeric-conversion-p destination-type (vector-type input) count
+                                                                       (or (vector-view-p destination) (vector-view-p input)))))))
             (cond (encoding
                    (convert-encoded encoding encode rounding destination input count d-offset i-offset
                                     destination-encoding input-encoding))
+                  #+(and sbcl x86-64)
+                  ((sbcl-numeric-conversion-p destination-type (vector-type input) count
+                                                                        (or (vector-view-p destination) (vector-view-p input)))
+                   (funcall '%sbcl-convert-s32-f32 destination input count d-offset i-offset))
+                  ((native-numeric-conversion-p destination-type (vector-type input) count
+                                                                       (or (vector-view-p destination) (vector-view-p input)))
+                   (native-numeric-convert destination input count d-offset i-offset))
                   ((native-float-conversion-p destination-type (vector-type input))
                    (native-extended-float-convert destination input count d-offset i-offset))
+                  ((and (integer-type-p (vector-type input)) (not (complex-type-p destination-type)))
+                   (lisp-numeric-convert destination input count d-offset i-offset))
                   (t
                    (dotimes (i count)
                      (setf (aref destination (+ d-offset i))
@@ -477,6 +552,57 @@ strides of DESTINATION then every operand, with NIL for scalars."
     (:eq (= left right)) (:ne (/= left right))
     (:lt (< left right)) (:le (<= left right))
     (:gt (> left right)) (:ge (>= left right))))
+
+#+(and sbcl x86-64)
+(defmacro define-sbcl-mask-loops ()
+  `(progn
+     ,@(loop for (type element) in *numeric-types*
+             when (or (member type '(:f32 :f64)) (< (fourth (numeric-type type)) 64))
+             append
+             (let ((compare (lisp-bulk-symbol "%SBCL-COMPARE-" type))
+                   (select (lisp-bulk-symbol "%SBCL-SELECT-" type))
+                   (prefix (sbcl-mask-pack type)))
+               `((defun ,compare (mask operator left right count m-offset l-offset r-offset)
+                   (declare (optimize (speed 3) (safety 0))
+                            (type (simple-array (unsigned-byte 8) (*)) mask))
+                   (with-lisp-operand (a left l-offset ,element
+                                           ,(list 'a-pack (sbcl-mask-symbol prefix "-AREF") (sbcl-mask-symbol prefix "")))
+                     (with-lisp-operand (b right r-offset ,element
+                                             ,(list 'b-pack (sbcl-mask-symbol prefix "-AREF") (sbcl-mask-symbol prefix "")))
+                       (ecase operator
+                         ,@(loop for op in '(:eq :ne :lt :le :gt :ge)
+                                 collect
+                                 `(,op ,(sbcl-mask-form
+                                         `(:operation ,op (:argument 0) (:argument 1))
+                                         type :mask nil 'mask '(left right) '(l-offset r-offset) 'm-offset 'count
+                                         `(funcall ',(intern (format nil "%LISP-COMPARE-~A" type))
+                                                   mask operator left right count m-offset l-offset r-offset)
+                                         '(a-pack b-pack) nil `(lambda (i) (compare-values ,op (a i) (b i))))))))))
+                 (defun ,select (destination mask on-true on-false count d-offset m-offset t-offset f-offset)
+                   (declare (optimize (speed 3) (safety 0))
+                            (type (simple-array ,element (*)) destination)
+                            (type (simple-array (unsigned-byte 8) (*)) mask))
+                   (with-lisp-operand (a on-true t-offset ,element
+                                           ,(list 'a-pack (sbcl-mask-symbol prefix "-AREF") (sbcl-mask-symbol prefix "")))
+                     (with-lisp-operand (b on-false f-offset ,element
+                                             ,(list 'b-pack (sbcl-mask-symbol prefix "-AREF") (sbcl-mask-symbol prefix "")))
+                       ,(sbcl-mask-form
+                         '(:select (:operation :eq (:argument 0) (:argument 1)) (:argument 0) (:argument 1))
+                         type :numeric nil 'destination '(on-true on-false) '(t-offset f-offset) 'd-offset 'count
+                         `(funcall ',(intern (format nil "%LISP-SELECT-~A" type))
+                                   destination mask on-true on-false count d-offset m-offset t-offset f-offset)
+                         '(a-pack b-pack) '(mask m-offset)
+                         '(lambda (i) (if (zerop (aref mask (+ m-offset i))) (b i) (a i))))))))))))
+
+#+(and sbcl x86-64)
+(define-sbcl-mask-loops)
+
+;; TODO: f32 byte-mask expansion stays scalar; widen byte flags in packs (#157).
+(defun sbcl-bulk-mask-p (type &optional selection-p)
+  (and (eq *backend* :sbcl)
+       (not (and selection-p (eq type :f32)))
+       (or (member type '(:f32 :f64))
+           (and (integer-type-p type) (< (fourth (numeric-type type)) 64)))))
 
 (defun compare! (mask operator left right &key start end mask-start left-start right-start
                                             stride mask-stride left-stride right-stride)
@@ -507,6 +633,9 @@ strides of DESTINATION then every operand, with NIL for scalars."
                 ((eq *backend* :native)
                  (native-extended-compare mask operator left right type count
                                           m-offset l-offset r-offset))
+                ((sbcl-bulk-mask-p type)
+                 (funcall (lisp-bulk-symbol "%SBCL-COMPARE-" type)
+                          mask operator left right count m-offset l-offset r-offset))
                 (t
                  (funcall (lisp-bulk-function "%LISP-COMPARE-" (if (vectorp left) left right))
                           mask operator left right count m-offset l-offset r-offset)))))))
@@ -537,6 +666,9 @@ strides of DESTINATION then every operand, with NIL for scalars."
               ((eq *backend* :native)
                (native-extended-select destination mask on-true on-false count
                                        d-offset m-offset t-offset f-offset))
+              ((sbcl-bulk-mask-p type t)
+               (funcall (lisp-bulk-symbol "%SBCL-SELECT-" type)
+                        destination mask on-true on-false count d-offset m-offset t-offset f-offset))
               (t
                (funcall (lisp-bulk-function "%LISP-SELECT-" destination)
                         destination mask on-true on-false count
@@ -553,12 +685,16 @@ strides of DESTINATION then every operand, with NIL for scalars."
                   :combine (ecase operation
                              (:count #'count-combiner) (:any #'any-combiner)
                              (:all #'all-combiner)))
-        (if (eq *backend* :native)
-            (native-extended-reduction operation mask length offset)
-            (ecase operation
+        (cond ((eq *backend* :native)
+               (native-extended-reduction operation mask length offset))
+              #+(and sbcl x86-64)
+              ((eq *backend* :sbcl)
+               (let ((total (funcall '%sbcl-mask-count mask length offset)))
+                 (ecase operation (:count total) (:any (plusp total)) (:all (= total length)))))
+              (t (ecase operation
               (:count (loop for i below length count (not (zerop (aref mask (+ offset i))))))
               (:any (loop for i below length thereis (not (zerop (aref mask (+ offset i))))))
-              (:all (loop for i below length always (not (zerop (aref mask (+ offset i))))))))))))
+              (:all (loop for i below length always (not (zerop (aref mask (+ offset i)))))))))))))
 
 (defun count (mask &key start end mask-start stride mask-stride)
   (mask-reduction :count mask start end mask-start stride mask-stride))
@@ -713,7 +849,14 @@ strides of DESTINATION then every operand, with NIL for scalars."
 
   (defun mask-kernel-dispatch-form (scalar programs program slot bytes constants scratch-count
                                     key foreign kind reduction destination arguments
-                                    d-offset input-offsets count)
+                                    d-offset input-offsets count tree)
+    #+(and sbcl x86-64)
+    (when *sbcl-simd-available-p*
+      (let ((packed (sbcl-mask-form tree key kind reduction destination arguments input-offsets
+                                   d-offset count scalar)))
+        (setf scalar `(if (eq *backend* :sbcl) ,packed ,scalar))))
+    #-(and sbcl x86-64) (declare (ignore tree))
+    ;; TODO: numeric mask reducers stay scalar; route through native reducers (#159).
     (if (member reduction *kernel-reducers*)
         scalar
         `(if (eq *backend* :native)
@@ -746,7 +889,6 @@ by a copy; see UNSHIFTED-KERNEL-INPUT."
                          (unshifted-kernel-input ,destination ,d-offset ,argument ,offset ,count))))))
 
   (defun mask-kernel-expansion (name arguments expression)
-    ;; TODO: SBCL mask kernels still use scalar loops; add packed expressions (#72).
     (unless arguments (error "A mask kernel needs input vectors"))
     (let* ((outer (and (consp expression) (first expression)))
            (reduction (and (member outer (list* 'count 'any 'all *kernel-reducers*)) outer))
@@ -763,6 +905,7 @@ by a copy; see UNSHIFTED-KERNEL-INPUT."
            (programs (gensym "PROGRAMS")) (program (gensym "PROGRAM"))
            #+ecl (runners (gensym "RUNNERS"))
            (complex-kernel (gensym "COMPLEX-KERNEL"))
+           ;; TODO: repeated trees expand VM work; share pure subexpressions (#160).
            (lowered (multiple-value-list (lower-kernel (mask-kernel-tree body arguments))))
            (bytes (kernel-bytes (first lowered)))
            (constants (second lowered)) (scratch-count (third lowered)))
@@ -832,7 +975,7 @@ by a copy; see UNSHIFTED-KERNEL-INPUT."
                                         ,destination)))
                                    programs program slot bytes constants scratch-count
                                    key foreign kind reduction destination arguments
-                                   d-offset input-offsets count))
+                                   d-offset input-offsets count (mask-kernel-tree body arguments)))
                               (error (condition)
                                 `(error ,(princ-to-string condition))))
                          collect

@@ -28,9 +28,8 @@ elements updated.
 (trivial-simd:convert! integer-output float-input :rounding :truncate)
 ```
 
-The native backend uses packed SIMD for single-float/double-float conversion
-where the CPU provides it. The SBCL backend uses that path when the native
-library is present. Other pairs use typed scalar conversion.
+Packed conversion coverage and the size-dependent dispatch rules are listed
+in [execution paths](#execution-paths).
 
 ## bf16 and f16
 
@@ -103,11 +102,34 @@ flush-to-zero setting or trap mask, and raise no floating-point exceptions.
 Every backend produces the same bits.[^fpcr] The native and SBCL backends use
 the native library when it supports the requested mode.[^capability][^paths]
 
+## Execution paths
+
+| Conversion | Packed path |
+|---|---|
+| f32 ↔ f64 | Native SSE2/NEON |
+| s8/u8/s16/u16/s32/u32 → f32/f64 | Shared native SSE2/NEON loaders |
+| s64/u64 → f64 | Native NEON |
+| s16/u16 → s8/u8; s32/u32 → s16/u16 | Native saturating SSE2/NEON |
+| s32 → f32 on the SBCL backend | In-process SSE2; large pointer calls use native when available |
+| f64 ↔ bf16/f16 | Native packed integer conversion with scalar exceptional lanes |
+
+Additional native numeric conversions use pointer access for Lisp-vector slices
+of at least 32,768 elements. Smaller slices and copy-mode Lisp vectors use typed
+Lisp loops. Direct foreign views use native conversion at every size when the
+pair is supported. Missing native conversion symbols select Lisp. The shared
+loaders also prepare contiguous declared integer inputs; repeated-input runs
+retain broadcast preparation.
+
+See [conversion and mask measurements](conversion-mask-performance.md).
+
 ## Limitations
 
-Most type pairs use scalar loops; expanding packed SIMD coverage is tracked in
-[#72](https://todo.sr.ht/~takeiteasy/trivial-simd/72).
-Shifted overlap follows the [bulk overlap limitation](api.md#limitations).
+Float-to-integer and integer pairs outside the packed coverage table use scalar
+loops. Direct s64/u64-to-f32 conversion stays scalar to preserve single rounding.
+Further native coverage and platform tuning are tracked in
+[#156](https://todo.sr.ht/~takeiteasy/trivial-simd/156); additional in-process SBCL
+conversion pairs are tracked in [#157](https://todo.sr.ht/~takeiteasy/trivial-simd/157).
+Shifted overlap follows the [bulk snapshot rules](api.md#overlap).
 Floating-point exceptional behavior outside the float-to-integer rules is
 covered by the [IEEE consistency limitation](kernels.md#limitations).
 
@@ -125,7 +147,7 @@ covered by the [IEEE consistency limitation](kernels.md#limitations).
     Rebuild with CMake to enable native directed rounding. If encoding symbols
     are missing, all encoded conversions use Lisp.
 
-[^paths]: Native conversions use SSE2 integer code on x86-64 for both encodings,
+[^paths]: Native f32 encoding conversions use SSE2 integer code on x86-64 for both encodings,
     and NEON on ARM64, with `FCVTL`/`FCVTN` for f16. On x86-64, a block of eight
     elements containing an f16 subnormal result uses scalar conversion, as do
     vector tails. Directed rounding also sends nonzero inputs below the f16
@@ -133,8 +155,11 @@ covered by the [IEEE consistency limitation](kernels.md#limitations).
     conversion. The Lisp backend uses typed integer loops.
 
 [^extended]: The native encoded cross-format path reuses a 256-element f32 stack
-    buffer; both source formats widen exactly to f32. f64 narrowing and widening
-    use scalar integer bit conversion. The Lisp paths convert one element at a
+    buffer; both source formats widen exactly to f32. f64 narrowing uses packed
+    integer shifts and rounding for normal lanes, and scalar bit conversion for
+    exceptional lanes and tails. Encoded widening to f64 uses packed integer
+    construction for normal lanes; zeros, encoded subnormals, infinities and NaNs
+    use scalar bit conversion. The Lisp paths convert one element at a
     time. Stride staging and native copy mode retain their existing allocation
     rules. The extended native entry point reports rounding support separately;
     missing symbols or modes select Lisp without disabling the existing f32 paths.

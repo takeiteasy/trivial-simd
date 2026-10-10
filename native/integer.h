@@ -182,7 +182,8 @@ static int ts_integer_kernel_##suffix(const uint8_t *code, size_t code_length, \
             } else if (op == TS_OP_NEGATE || op == TS_OP_ABS) { \
                 for (size_t j = 0; j < m; ++j) destination[j] = ts_value_##suffix(op, left[j], 0); \
             } else if (op >= TS_OP_EQ && op <= TS_OP_GE) { \
-                for (size_t j = 0; j < m; ++j) { \
+                size_t j = ts_mask_compare_##suffix(op - TS_OP_EQ, destination, left, right, 0, 0, m, 0); \
+                for (; j < m; ++j) { \
                     type x = left[j], y = right[j]; \
                     int less = x != y && ts_value_##suffix(TS_OP_MIN, x, y) == x; \
                     int greater = x != y && !less; \
@@ -191,7 +192,8 @@ static int ts_integer_kernel_##suffix(const uint8_t *code, size_t code_length, \
                                      op == TS_OP_GT ? greater : !less; \
                 } \
             } else if (op == TS_OP_SELECT) { \
-                for (size_t j = 0; j < m; ++j) \
+                size_t j = ts_mask_select_##suffix(destination, left, right, destination, 0, 0, m, 0); \
+                for (; j < m; ++j) \
                     destination[j] = left[j] ? right[j] : destination[j]; \
             } else { \
                 status = ts_binary_##suffix(op, destination, left, right, m); \

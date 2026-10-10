@@ -47,11 +47,36 @@ integer inputs. See [complex kernel execution](complex.md#kernels).
 The [runnable example](../examples/extended.lisp) combines clamping,
 conversion, comparison, and mask counting.
 
+## Execution
+
+Native SSE2/NEON comparisons and selection cover both float precisions and all
+eight integer types in bulk calls and the register VM. VM comparisons retain
+numeric `0`/`1` lanes; byte-mask output also uses `0`/`1`. Selection copies the
+chosen bits, including signed zero and NaN payloads.
+
+SBCL uses in-process SSE2 for supported comparisons and selections on f32/f64
+and integer types through 32 bits. Bulk f32 selection uses typed Lisp loops;
+f32 selection kernels use packed masks. Native and SBCL byte-mask reductions use
+packed counting. Scalar tails retain the same results and empty identities.
+A spilling native mask call owns one scratch allocation across its 256-element
+blocks; concurrent calls have independent scratch.
+
+See [measurements and coverage](conversion-mask-performance.md).
+
 ## Limitations
 
-Real/integer mask kernels use scalar comparison and selection lanes in the native
-VM, and scalar loops on SBCL. Packed execution for these types is tracked in
-[#72](https://todo.sr.ht/~takeiteasy/trivial-simd/72).
+Deeply repeated native selection trees can underperform Lisp; see the
+[measured VM limitation](conversion-mask-performance.md#limitations).
+
+Numeric reductions over real/integer selections use scalar execution on every
+backend; native integration is tracked in
+[#159](https://todo.sr.ht/~takeiteasy/trivial-simd/159).
+SBCL s64/u64 masks and unsupported packed arithmetic also use scalar execution.
+Floating-point `any`/`all` kernels retain scalar short-circuit evaluation.
+Expressions whose packed
+execution could evaluate an erroneous unselected branch or a later operand of
+`any`/`all` also retain scalar execution. Further SBCL coverage is tracked in
+[#157](https://todo.sr.ht/~takeiteasy/trivial-simd/157).
 Mask kernels follow the [kernel overlap rule](kernels.md#overlap); shifted
-overlap in bulk mask operations follows the [bulk overlap limitation](api.md#limitations).
+overlap in bulk mask operations follows the [bulk snapshot rules](api.md#overlap).
 Floating-point comparisons follow the [IEEE consistency limitation](kernels.md#limitations).

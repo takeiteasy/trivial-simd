@@ -23,6 +23,13 @@
 (defun integer-type-p (type)
   (member type '(:s8 :u8 :s16 :u16 :s32 :u32 :s64 :u64)))
 
+(defun integer-limits (type)
+  (destructuring-bind (key element foreign bits signed) (numeric-type type)
+    (declare (ignore key element foreign))
+    (if signed
+        (values (- (ash 1 (1- bits))) (1- (ash 1 (1- bits))))
+        (values 0 (1- (ash 1 bits))))))
+
 (defun complex-type-p (type)
   (member type '(:c32 :c64)))
 

@@ -10,6 +10,9 @@
 #include <xmmintrin.h>
 #endif
 
+#include "masks.h"
+#include "conversion.h"
+
 #define TS_COMPARE(op, a, b) ((op) == 0 ? (a) == (b) : (op) == 1 ? (a) != (b) : \
                               (op) == 2 ? (a) < (b) : (op) == 3 ? (a) <= (b) : \
                               (op) == 4 ? (a) > (b) : (a) >= (b))
@@ -45,7 +48,8 @@ int ts_extended_clamp_##suffix(type *out, const type *input, const type *lower, 
 } \
 int ts_extended_compare_##suffix(unsigned op, uint8_t *mask, const type *left, \
                                   const type *right, type left_scalar, type right_scalar, size_t n) { \
-    for (size_t i = 0; i < n; ++i) { \
+    size_t i = ts_mask_compare_##suffix(op, mask, left, right, left_scalar, right_scalar, n, 1); \
+    for (; i < n; ++i) { \
         type a = left ? left[i] : left_scalar, b = right ? right[i] : right_scalar; \
         mask[i] = (uint8_t)TS_COMPARE(op, a, b); \
     } \
@@ -53,7 +57,8 @@ int ts_extended_compare_##suffix(unsigned op, uint8_t *mask, const type *left, \
 } \
 int ts_extended_select_##suffix(type *out, const uint8_t *mask, const type *on_true, \
                                  const type *on_false, type true_scalar, type false_scalar, size_t n) { \
-    for (size_t i = 0; i < n; ++i) \
+    size_t i = ts_mask_select_##suffix(out, mask, on_true, on_false, true_scalar, false_scalar, n, 1); \
+    for (; i < n; ++i) \
         out[i] = mask[i] ? (on_true ? on_true[i] : true_scalar) \
                          : (on_false ? on_false[i] : false_scalar); \
     return 0; \
@@ -103,7 +108,8 @@ int ts_extended_clamp_##suffix(type *out, const type *input, const type *lower, 
 } \
 int ts_extended_compare_##suffix(unsigned op, uint8_t *mask, const type *left, \
                                   const type *right, type left_scalar, type right_scalar, size_t n) { \
-    for (size_t i = 0; i < n; ++i) { \
+    size_t i = ts_mask_compare_##suffix(op, mask, left, right, left_scalar, right_scalar, n, 1); \
+    for (; i < n; ++i) { \
         type a = left ? left[i] : left_scalar, b = right ? right[i] : right_scalar; \
         mask[i] = (uint8_t)TS_COMPARE(op, a, b); \
     } \
@@ -111,7 +117,8 @@ int ts_extended_compare_##suffix(unsigned op, uint8_t *mask, const type *left, \
 } \
 int ts_extended_select_##suffix(type *out, const uint8_t *mask, const type *on_true, \
                                  const type *on_false, type true_scalar, type false_scalar, size_t n) { \
-    for (size_t i = 0; i < n; ++i) \
+    size_t i = ts_mask_select_##suffix(out, mask, on_true, on_false, true_scalar, false_scalar, n, 1); \
+    for (; i < n; ++i) \
         out[i] = mask[i] ? (on_true ? on_true[i] : true_scalar) \
                          : (on_false ? on_false[i] : false_scalar); \
     return 0; \
@@ -533,15 +540,13 @@ TS_EXTENDED_FLOAT(f32, float, -, fabsf, sqrtf)
 TS_EXTENDED_FLOAT(f64, double, -, fabs, sqrt)
 
 int ts_extended_mask_reduce(unsigned op, const uint8_t *mask, size_t n, size_t *result) {
-    size_t total = 0;
-    for (size_t i = 0; i < n; ++i) total += mask[i] != 0;
+    size_t total = ts_mask_count(mask, n);
     *result = op == 0 ? total : op == 1 ? total != 0 : total == n;
     return 0;
 }
 
 unsigned ts_extended_encoded_conversion_rounding_modes(void) { return 0xfu; }
 
-/* Scalar f64 bit conversion; packed shifts and rounding are tracked in #72. */
 static uint16_t ts_f64_bits_to_encoded(uint64_t bits, int f16, int rounding) {
     unsigned precision = f16 ? 10 : 7, bias = f16 ? 15 : 127;
     unsigned infinity = (f16 ? 31u : 255u) << precision;
@@ -587,6 +592,94 @@ static uint64_t ts_f32_bits_to_f64_bits(uint32_t bits) {
 }
 
 /* Types: 0=f32, 1=f64, 2=bf16, 3=f16. */
+/* TODO: exceptional f64 lanes remain scalar; add variable-shift bit conversion (#156). */
+static size_t ts_f64_to_encoded_packed(uint16_t *out, const double *input, size_t n, int f16, int rounding) {
+    size_t i = 0;
+#if !defined(TS_SCALAR) && (defined(__aarch64__) || defined(_M_ARM64) || defined(__x86_64__) || defined(_M_X64))
+    unsigned precision = f16 ? 10 : 7, bias = f16 ? 15 : 127, shift = 52 - precision;
+    uint64_t adjustment = (uint64_t)(1023 - bias) << precision;
+    for (; n - i >= 2; i += 2) {
+        uint64_t bits[2], result[2]; memcpy(bits, input + i, sizeof bits);
+#if defined(__aarch64__) || defined(_M_ARM64)
+        uint64x2_t v = vld1q_u64(bits), magnitude = vandq_u64(v, vdupq_n_u64(UINT64_C(0x7fffffffffffffff)));
+        uint64x2_t quotient = vshlq_u64(magnitude, vdupq_n_s64(-(int64_t)shift));
+        uint64x2_t increment = vdupq_n_u64(0);
+        if (rounding == TS_ROUND_NEAREST_EVEN)
+            increment = vaddq_u64(vdupq_n_u64((UINT64_C(1) << (shift - 1)) - 1), vandq_u64(quotient, vdupq_n_u64(1)));
+        else if (rounding == TS_ROUND_FLOOR || rounding == TS_ROUND_CEILING) {
+            uint64x2_t sign = vshrq_n_u64(v, 63);
+            if (rounding == TS_ROUND_CEILING) sign = veorq_u64(sign, vdupq_n_u64(1));
+            increment = vandq_u64(vsubq_u64(vdupq_n_u64(0), sign), vdupq_n_u64((UINT64_C(1) << shift) - 1));
+        }
+        quotient = vsubq_u64(vshlq_u64(vaddq_u64(magnitude, increment), vdupq_n_s64(-(int64_t)shift)), vdupq_n_u64(adjustment));
+        vst1q_u64(result, vorrq_u64(quotient, vandq_u64(vshrq_n_u64(v, 48), vdupq_n_u64(0x8000))));
+#else
+        __m128i v = _mm_loadu_si128((const __m128i *)bits);
+        __m128i magnitude = _mm_and_si128(v, _mm_set1_epi64x(INT64_MAX));
+        __m128i count = _mm_cvtsi32_si128((int)shift), quotient = _mm_srl_epi64(magnitude, count);
+        __m128i increment = _mm_setzero_si128();
+        if (rounding == TS_ROUND_NEAREST_EVEN)
+            increment = _mm_add_epi64(_mm_set1_epi64x((INT64_C(1) << (shift - 1)) - 1), _mm_and_si128(quotient, _mm_set1_epi64x(1)));
+        else if (rounding == TS_ROUND_FLOOR || rounding == TS_ROUND_CEILING) {
+            __m128i sign = _mm_srli_epi64(v, 63);
+            if (rounding == TS_ROUND_CEILING) sign = _mm_xor_si128(sign, _mm_set1_epi64x(1));
+            increment = _mm_and_si128(_mm_sub_epi64(_mm_setzero_si128(), sign), _mm_set1_epi64x((INT64_C(1) << shift) - 1));
+        }
+        quotient = _mm_sub_epi64(_mm_srl_epi64(_mm_add_epi64(magnitude, increment), count), _mm_set1_epi64x((int64_t)adjustment));
+        _mm_storeu_si128((__m128i *)result, _mm_or_si128(quotient, _mm_and_si128(_mm_srli_epi64(v, 48), _mm_set1_epi64x(0x8000))));
+#endif
+        for (size_t j = 0; j < 2; ++j) {
+            unsigned exponent = (unsigned)(bits[j] >> 52) & 0x7ffu;
+            out[i + j] = exponent >= 1024 - bias && exponent <= 1023 + bias
+                ? (uint16_t)result[j] : ts_f64_bits_to_encoded(bits[j], f16, rounding);
+        }
+    }
+#endif
+    return i;
+}
+
+static size_t ts_encoded_to_f64_packed(double *out, const uint16_t *input, size_t n, int f16) {
+    size_t i = 0;
+#if !defined(TS_SCALAR) && (defined(__aarch64__) || defined(_M_ARM64) || defined(__x86_64__) || defined(_M_X64))
+    unsigned precision = f16 ? 10 : 7, maximum = f16 ? 31 : 255;
+    uint64_t fraction_mask = (UINT64_C(1) << precision) - 1, adjustment = f16 ? 1008 : 896;
+    for (; n - i >= 4; i += 4) {
+        uint64_t result[4];
+#if defined(__aarch64__) || defined(_M_ARM64)
+        uint32x4_t v = vmovl_u16(vld1_u16(input + i));
+        for (size_t j = 0; j < 2; ++j) {
+            uint64x2_t wide = vmovl_u32(j ? vget_high_u32(v) : vget_low_u32(v));
+            uint64x2_t fraction = vshlq_u64(vandq_u64(wide, vdupq_n_u64(fraction_mask)), vdupq_n_s64(52 - precision));
+            uint64x2_t exponent = vaddq_u64(vandq_u64(vshlq_u64(wide, vdupq_n_s64(-(int64_t)precision)),
+                                                                   vdupq_n_u64(maximum)), vdupq_n_u64(adjustment));
+            vst1q_u64(result + j * 2, vorrq_u64(vorrq_u64(fraction, vshlq_n_u64(exponent, 52)),
+                                             vshlq_n_u64(vandq_u64(wide, vdupq_n_u64(0x8000)), 48)));
+        }
+#else
+        __m128i v = _mm_unpacklo_epi16(_mm_loadl_epi64((const __m128i *)(input + i)), _mm_setzero_si128());
+        __m128i right = _mm_cvtsi32_si128((int)precision), left = _mm_cvtsi32_si128((int)(52 - precision));
+        for (size_t j = 0; j < 2; ++j) {
+            __m128i wide = j ? _mm_unpackhi_epi32(v, _mm_setzero_si128()) : _mm_unpacklo_epi32(v, _mm_setzero_si128());
+            __m128i fraction = _mm_sll_epi64(_mm_and_si128(wide, _mm_set1_epi64x((int64_t)fraction_mask)), left);
+            __m128i exponent = _mm_add_epi64(_mm_and_si128(_mm_srl_epi64(wide, right), _mm_set1_epi64x(maximum)),
+                                           _mm_set1_epi64x((int64_t)adjustment));
+            _mm_storeu_si128((__m128i *)(result + j * 2), _mm_or_si128(_mm_or_si128(fraction, _mm_slli_epi64(exponent, 52)),
+                              _mm_slli_epi64(_mm_and_si128(wide, _mm_set1_epi64x(0x8000)), 48)));
+        }
+#endif
+        for (size_t j = 0; j < 4; ++j) {
+            unsigned exponent = (input[i + j] >> precision) & maximum;
+            if (!exponent || exponent == maximum) {
+                float value = f16 ? ts_f16_to_f32_scalar(input[i + j]) : ts_bf16_to_f32_scalar(input[i + j]);
+                result[j] = ts_f32_bits_to_f64_bits(ts_float_bits(value));
+            }
+        }
+        memcpy(out + i, result, sizeof result);
+    }
+#endif
+    return i;
+}
+
 void ts_extended_convert_encoded(void *out, const void *input, size_t n,
                                 unsigned destination_type, unsigned input_type, int rounding) {
     if (destination_type == input_type) {
@@ -608,13 +701,15 @@ void ts_extended_convert_encoded(void *out, const void *input, size_t n,
             else ts_extended_f32_to_f16((uint16_t *)out + i, scratch, count, rounding);
         }
     } else if (input_type == 1) {
-        for (size_t i = 0; i < n; ++i) {
+        size_t i = ts_f64_to_encoded_packed(out, input, n, destination_type == 3, rounding);
+        for (; i < n; ++i) {
             uint64_t bits;
             memcpy(&bits, (const double *)input + i, sizeof bits);
             ((uint16_t *)out)[i] = ts_f64_bits_to_encoded(bits, destination_type == 3, rounding);
         }
     } else {
-        for (size_t i = 0; i < n; ++i) {
+        size_t i = ts_encoded_to_f64_packed(out, input, n, input_type == 3);
+        for (; i < n; ++i) {
             uint16_t half = ((const uint16_t *)input)[i];
             float value = input_type == 2 ? ts_bf16_to_f32_scalar(half) : ts_f16_to_f32_scalar(half);
             uint64_t bits = ts_f32_bits_to_f64_bits(ts_float_bits(value));
@@ -664,4 +759,62 @@ void ts_nd_convert(void *out, const void *input, size_t n, int64_t ds, int64_t i
                 ? ts_f32_to_bf16_scalar(value, rounding) : ts_f32_to_f16_scalar(value, rounding);
         }
     }
+}
+
+int ts_extended_conversion_supported(unsigned destination, unsigned input) {
+    return (destination < 2 && input >= 2 && input < 10) ||
+           ((destination == 2 || destination == 3) && (input == 4 || input == 5)) ||
+           ((destination == 4 || destination == 5) && (input == 6 || input == 7));
+}
+#define TS_CONVERT_SOURCE(suffix, type, name, source, packed) \
+    case name: { \
+        const source *values = input; type *out = output; \
+        size_t i = packed; \
+        for (; i < n; ++i) out[i] = (type)values[i]; \
+        return 0; \
+    }
+#define TS_CONVERT_NARROW(suffix, type) \
+    TS_CONVERT_SOURCE(suffix, type, 2, int8_t, TS_LOAD_PACKED(suffix, s8, out, values, n)) \
+    TS_CONVERT_SOURCE(suffix, type, 3, uint8_t, TS_LOAD_PACKED(suffix, u8, out, values, n)) \
+    TS_CONVERT_SOURCE(suffix, type, 4, int16_t, TS_LOAD_PACKED(suffix, s16, out, values, n)) \
+    TS_CONVERT_SOURCE(suffix, type, 5, uint16_t, TS_LOAD_PACKED(suffix, u16, out, values, n)) \
+    TS_CONVERT_SOURCE(suffix, type, 6, int32_t, TS_LOAD_PACKED(suffix, s32, out, values, n)) \
+    TS_CONVERT_SOURCE(suffix, type, 7, uint32_t, TS_LOAD_PACKED(suffix, u32, out, values, n))
+int ts_extended_convert_numeric(void *output, const void *input, size_t n,
+                                unsigned destination, unsigned source) {
+    switch (destination * 10 + source) {
+#define TS_NARROW_CASE(code, from, to, source_type, target_type, low, high) \
+    case code: { \
+        const source_type *values = input; target_type *out = output; \
+        size_t i = ts_narrow_##from##_##to(out, values, n); \
+        for (; i < n; ++i) { \
+            int64_t value = values[i]; \
+            out[i] = (target_type)(value < low ? low : value > high ? high : value); \
+        } \
+        return 0; \
+    }
+    TS_NARROW_CASE(24, s16, s8, int16_t, int8_t, INT8_MIN, INT8_MAX)
+    TS_NARROW_CASE(25, u16, s8, uint16_t, int8_t, INT8_MIN, INT8_MAX)
+    TS_NARROW_CASE(34, s16, u8, int16_t, uint8_t, 0, UINT8_MAX)
+    TS_NARROW_CASE(35, u16, u8, uint16_t, uint8_t, 0, UINT8_MAX)
+    TS_NARROW_CASE(46, s32, s16, int32_t, int16_t, INT16_MIN, INT16_MAX)
+    TS_NARROW_CASE(47, u32, s16, uint32_t, int16_t, INT16_MIN, INT16_MAX)
+    TS_NARROW_CASE(56, s32, u16, int32_t, uint16_t, 0, UINT16_MAX)
+    TS_NARROW_CASE(57, u32, u16, uint32_t, uint16_t, 0, UINT16_MAX)
+#undef TS_NARROW_CASE
+    }
+    if (destination == 0) {
+        switch (source) {
+        TS_CONVERT_NARROW(f32, float)
+        TS_CONVERT_SOURCE(f32, float, 8, volatile int64_t, 0)
+        TS_CONVERT_SOURCE(f32, float, 9, volatile uint64_t, 0)
+        }
+    } else if (destination == 1) {
+        switch (source) {
+        TS_CONVERT_NARROW(f64, double)
+        TS_CONVERT_SOURCE(f64, double, 8, int64_t, TS_LOAD_PACKED(f64, s64, out, values, n))
+        TS_CONVERT_SOURCE(f64, double, 9, uint64_t, TS_LOAD_PACKED(f64, u64, out, values, n))
+        }
+    }
+    return -1;
 }

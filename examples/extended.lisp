@@ -30,3 +30,14 @@
   (trivial-simd:convert! doubles halves :input-encoding :f16)
   (format t "Direct f64/f16: ~S~%bf16 bits: ~{~4,'0X~^ ~}~%"
           doubles (coerce bfloat 'list)))
+
+(let ((wide-integers (make-array 19 :element-type '(signed-byte 16)
+                                   :initial-contents (loop for i below 19 collect (- (* i 32) 128))))
+      (bytes (make-array 19 :element-type '(unsigned-byte 8)))
+      (floats (make-array 19 :element-type 'single-float))
+      (mask (make-array 19 :element-type '(unsigned-byte 8))))
+  (trivial-simd:convert! bytes wide-integers)
+  (trivial-simd:convert! floats bytes)
+  (trivial-simd:compare! mask :gt floats 127.0)
+  (trivial-simd:select! floats mask floats 0.0)
+  (format t "Saturated bytes: ~S~%Selected floats: ~S~%" bytes floats))

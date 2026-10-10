@@ -7,6 +7,8 @@
   (when (find-package :sb-simd-sse2)
     (load (asdf:system-relative-pathname "trivial-simd" "sbcl-simd.lisp"))
     (load (asdf:system-relative-pathname "trivial-simd" "sbcl-integers.lisp"))
+    (load (asdf:system-relative-pathname "trivial-simd" "sbcl-masks.lisp"))
+    (load (asdf:system-relative-pathname "trivial-simd" "sbcl-conversions.lisp"))
     (setf *sbcl-simd-available-p* t)
     (initialize-sbcl-fma)))
 
