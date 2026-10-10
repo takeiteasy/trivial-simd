@@ -114,11 +114,11 @@ thresholds apply.
 ## Limitations
 
 Complex routines and band, packed, and symmetric Level 2 routines run scalar
-Lisp loops, tracked by [#80](https://todo.sr.ht/~takeiteasy/trivial-simd/80) and
-[#81](https://todo.sr.ht/~takeiteasy/trivial-simd/81). The Lisp kernels box
+Lisp loops, tracked by [#38](https://github.com/communal-software/trivial-simd/issues/38) and
+[#39](https://github.com/communal-software/trivial-simd/issues/39). The Lisp kernels box
 double-floats on ECL unless each array read is bound to a typed variable.
 On x86-64, native `trsm` is slow relative to `gemm` for `f32` and at 64 × 64,
-tracked by [#89](https://todo.sr.ht/~takeiteasy/trivial-simd/89).
+tracked by [#44](https://github.com/communal-software/trivial-simd/issues/44).
 
 [^scope]: The benchmark covers `dgemm`, `dsyrk`, `dtrsm`, `dgemv`, `dgbmv`,
     `dtrsv`, and `dger`. Other real routines in those families and `sgemm`

@@ -187,7 +187,7 @@ compiler, CPU, memory access mode, and system load.
 - These results cover one Apple M1 using SBCL, CCL, and ECL. They do not
   measure x86-64 SBCL SIMD or other CPUs.
 - Strided calls gather into temporaries;
-  see [#101](https://todo.sr.ht/~takeiteasy/trivial-simd/101).
+  see [#49](https://github.com/communal-software/trivial-simd/issues/49).
 - Short kernel setup and copy-mode costs remain; see
   [kernel limitations](kernels.md#limitations) and
   [array access limitations](backends.md#limitations).

@@ -102,7 +102,7 @@ floats at STRIDE."
                              (- index offset))))))
           (+ offset (* (or stride 1) (staged-index found)))))))
 
-;; TODO: SBCL and integer vectors use typed scalar loops; SIMD paths in #92
+;; TODO: SBCL and integer vectors use typed scalar loops; SIMD paths in #46
 (defun real-argext (maximum-p input count offset)
   (if (and (eq *backend* :native) (member (vector-type input) '(:f32 :f64)))
       (if maximum-p

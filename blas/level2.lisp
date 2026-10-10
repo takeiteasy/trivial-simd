@@ -23,7 +23,7 @@
   (unless (member diag '(:unit :non-unit)) (error "Invalid diagonal flag: ~S" diag)))
 
 (defmacro define-level2-kernels (type)
-  ;; TODO: Complex types (#80) and band/packed/symmetric routines (#81) are scalar loops.
+  ;; TODO: Complex types (#38) and band/packed/symmetric routines (#39) are scalar loops.
   (let ((array `(simple-array ,type (*))) (zero `(coerce 0 ',type))
         (declarations '(optimize (speed 3) (safety 0) (debug 0))))
     (progn

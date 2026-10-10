@@ -162,7 +162,7 @@ static int ts_complex_program_valid(const uint8_t *code, size_t length, const vo
     return 1;
 }
 
-/* TODO: complex reductions materialize blocks; fuse the final opcode into packed reducers (#96). */
+/* TODO: complex reductions materialize blocks; fuse the final opcode into packed reducers (#48). */
 #define TS_COMPLEX_KERNEL(suffix, type, magnitude) \
 static int ts_complex_execute_##suffix(const uint8_t *code, size_t code_length, \
                  const type *constants, const type *const *inputs, size_t input_count, \

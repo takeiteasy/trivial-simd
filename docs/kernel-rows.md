@@ -129,14 +129,14 @@ See [row-batch measurements](kernel-performance.md#row-batching) and
   Mask results, `asum` and `nrm2` reject batch keywords.
 - Integer/complex batches invoke each row separately. Complex products and declared-input
   products use typed Lisp execution; native extensions are tracked in
-  [#148](https://todo.sr.ht/~takeiteasy/trivial-simd/148).
+  [#62](https://github.com/communal-software/trivial-simd/issues/62).
 - Multi-pass and elementwise batches set up separate calls for each row/pass.
   Native graph batching is tracked in
-  [#137](https://todo.sr.ht/~takeiteasy/trivial-simd/137).
+  [#58](https://github.com/communal-software/trivial-simd/issues/58).
 - Destination overlap is rejected conservatively: output inside unused row
   padding is also rejected.
 - A single row can cost more than a scalar invocation. Short native scalar
-  setup remains tracked in [#59](https://todo.sr.ht/~takeiteasy/trivial-simd/59).
+  setup remains tracked in [#34](https://github.com/communal-software/trivial-simd/issues/34).
 - On implementations without pinned Lisp-vector access, overlap checks compare
   Lisp vector identity and foreign-view addresses; views into Lisp array storage
   require implementation-specific pinning support.

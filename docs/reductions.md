@@ -68,7 +68,7 @@ every CPU.
 
 | Area | Ticket |
 |---|---|
-| SIMD `argmin`, `argmax` and `asum` on SBCL and for integers | [#92](https://todo.sr.ht/~takeiteasy/trivial-simd/92) |
+| SIMD `argmin`, `argmax` and `asum` on SBCL and for integers | [#46](https://github.com/communal-software/trivial-simd/issues/46) |
 
 [^nrm2]: The `double-float` fast path accepts sums from `1d-280` to the largest
     double; the scaled pass divides by the largest absolute part. A zero sum

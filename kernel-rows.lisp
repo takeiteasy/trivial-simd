@@ -176,7 +176,7 @@
                                             (make-native-program bytes constants scratch-count type)))))
                     (native-kernel-rows program type inputs destination starts strides spans
                                         destination-start rows row-length pointers reducer)))
-                 ;; TODO: integer/complex setup scales with rows; add native batches (#148).
+                 ;; TODO: integer/complex setup scales with rows; add native batches (#62).
                  (t
                   (dotimes (row rows)
                     (setf (vector-ref destination (+ destination-start row))

@@ -63,8 +63,8 @@ for Level 2 and 3 operands.
 ## Limitations
 
 Level 1 routines pass nonunit increments to the core [strides](api.md#strides),
-which gather into temporaries ([#101](https://todo.sr.ht/~takeiteasy/trivial-simd/101)). Shifted overlap
-between `x` and `y` can affect results ([#143](https://todo.sr.ht/~takeiteasy/trivial-simd/143)).
+which gather into temporaries ([#49](https://github.com/communal-software/trivial-simd/issues/49)). Shifted overlap
+between `x` and `y` can affect results ([#61](https://github.com/communal-software/trivial-simd/issues/61)).
 
 [^negative]: The [reference SAXPY routine](https://www.netlib.org/lapack/explore-html/d5/d4b/group__axpy_gabe0745849954ad2106e633fd2ebfc920.html)
     begins a negative-increment traversal at the far end of the storage span.

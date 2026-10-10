@@ -59,7 +59,7 @@
                      (expression (if reducer (list reducer body) body))
                      (form (declared-kernel-loop arguments (loop for nil in arguments collect '(nil 1))
                                                 expression (complex-kernel-kind kernel) reducer type)))
-                ;; TODO: CCL ARM64 drops typed complex operands; inline after a compiler fix (#138).
+                ;; TODO: CCL ARM64 drops typed complex operands; inline after a compiler fix (#59).
                 #+ccl (setf form `(lambda ,(second form)
                                    (declare (notinline + - * / sqrt abs = /=))
                                    ,@(cddr form)))
@@ -101,7 +101,7 @@
             (keep-native-program-alive program)))))))
 
 (defun run-native-complex-kernel (program type destination inputs offsets output-start count kind reducer)
-  ;; TODO: Lisp complex slices copy per call; pin validated layouts or reuse buffers (#74).
+  ;; TODO: Lisp complex slices copy per call; pin validated layouts or reuse buffers (#37).
   (let ((buffers nil))
     (unwind-protect
          (multiple-value-bind (foreign element) (native-constant-types type)
@@ -146,7 +146,7 @@
 (defun run-complex-expression (kernel type destination inputs offsets output-start count)
   (let ((tree (complex-kernel-tree kernel))
         (kind (complex-kernel-kind kernel)) (reducer (complex-kernel-reducer kernel)))
-    ;; TODO: complex products use typed Lisp; add native product kernels (#148).
+    ;; TODO: complex products use typed Lisp; add native product kernels (#62).
     (if (and (native-complex-kernel-p) (not (eq reducer 'prod)))
         (let* ((slot (if (eq type :c32) 0 1)) (programs (complex-kernel-programs kernel))
                (program (or (aref programs slot)

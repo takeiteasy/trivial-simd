@@ -309,7 +309,7 @@ static void ts_blas_pack_triangle_##suffix(int unit, ptrdiff_t m, const type *a,
     } \
 } \
 \
-/* TODO: #86 the solve runs on the memory tile, not the live accumulators */ \
+/* TODO: #41 the solve runs on the memory tile, not the live accumulators */ \
 static void ts_blas_gemmtrsm_##suffix(ptrdiff_t depth, const type *a, type *b, ptrdiff_t live_rows, \
                                       ptrdiff_t live_columns, type *target, ptrdiff_t rs) { \
     const type *negated = a + TS_BLAS_MR_##suffix * depth; \

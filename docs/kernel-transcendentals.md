@@ -73,7 +73,7 @@ See [activation and log-softmax examples](../examples/activation-math.lisp).
   path needs an explicit domain and error contract.
 - System math has no project-wide ULP guarantee. Exceptional values, trap
   behavior, and non-default modes may differ by backend; consistency work is
-  tracked in [#53](https://todo.sr.ht/~takeiteasy/trivial-simd/53).
+  tracked in [#33](https://github.com/communal-software/trivial-simd/issues/33).
 - Stable softmax recomputes exponentials in its output pass. Intermediate-storage
   and pass-setup evaluation is tracked in
-  [#137](https://todo.sr.ht/~takeiteasy/trivial-simd/137).
+  [#58](https://github.com/communal-software/trivial-simd/issues/58).

@@ -38,6 +38,6 @@ Use [N-D entry points](nd.md) for shapes with several strided axes or zero-strid
 ## Limitations
 
 Shifted overlap between destination and input slices has
-[backend-dependent results](https://todo.sr.ht/~takeiteasy/trivial-simd/67).
+backend-dependent results.
 Floating-point NaNs, infinities, non-default rounding modes, and traps follow
 the [IEEE consistency limitation](kernels.md#limitations).

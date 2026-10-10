@@ -133,17 +133,17 @@ local costs; they do not predict physical Intel or AMD performance.[^versions][^
 
 Deeply repeated selection trees can execute more VM work than the Lisp
 baseline. Packed opcodes and scratch reuse do not remove that repeated work;
-sharing pure nodes is tracked in [#160](https://todo.sr.ht/~takeiteasy/trivial-simd/160).
+sharing pure nodes is tracked in [#70](https://github.com/communal-software/trivial-simd/issues/70).
 
 Remaining conversion pairs, exceptional encoded lanes and platform-specific
-size gates are tracked in [#156](https://todo.sr.ht/~takeiteasy/trivial-simd/156).
+size gates are tracked in [#67](https://github.com/communal-software/trivial-simd/issues/67).
 Additional in-process SBCL conversions and 64-bit masks are tracked in
-[#157](https://todo.sr.ht/~takeiteasy/trivial-simd/157).
+[#68](https://github.com/communal-software/trivial-simd/issues/68).
 Local CCL x86-64 verification is subject to the
 [Rosetta testing limitations](testing.md#limitations).
 
 Numeric reductions over mask expressions retain scalar dispatch; native
-integration is tracked in [#159](https://todo.sr.ht/~takeiteasy/trivial-simd/159).
+integration is tracked in [#69](https://github.com/communal-software/trivial-simd/issues/69).
 
 [^versions]: Release native builds use Apple Clang with CMake. Lisp measurements
     use SBCL 2.6.8. The test suite also covers CCL 1.13 and ECL 26.5.5.

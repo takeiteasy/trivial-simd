@@ -70,13 +70,13 @@ Deeply repeated native selection trees can underperform Lisp; see the
 
 Numeric reductions over real/integer selections use scalar execution on every
 backend; native integration is tracked in
-[#159](https://todo.sr.ht/~takeiteasy/trivial-simd/159).
+[#69](https://github.com/communal-software/trivial-simd/issues/69).
 SBCL s64/u64 masks and unsupported packed arithmetic also use scalar execution.
 Floating-point `any`/`all` kernels retain scalar short-circuit evaluation.
 Expressions whose packed
 execution could evaluate an erroneous unselected branch or a later operand of
 `any`/`all` also retain scalar execution. Further SBCL coverage is tracked in
-[#157](https://todo.sr.ht/~takeiteasy/trivial-simd/157).
+[#68](https://github.com/communal-software/trivial-simd/issues/68).
 Mask kernels follow the [kernel overlap rule](kernels.md#overlap); shifted
 overlap in bulk mask operations follows the [bulk snapshot rules](api.md#overlap).
 Floating-point comparisons follow the [IEEE consistency limitation](kernels.md#limitations).

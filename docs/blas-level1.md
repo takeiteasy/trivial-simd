@@ -50,9 +50,9 @@ vectors. Without `:end`, paired vectors have equal lengths.
 
 Complex `asum` and `i?amax` and the real-factor scales `csscal` and `zdscal` use
 scalar loops; native complex reductions are tracked by
-[#91](https://todo.sr.ht/~takeiteasy/trivial-simd/91). Nonunit increments
+[#45](https://github.com/communal-software/trivial-simd/issues/45). Nonunit increments
 [gather into temporaries](api.md#limitations), tracked by
-[#101](https://todo.sr.ht/~takeiteasy/trivial-simd/101). Shifted overlap
+[#49](https://github.com/communal-software/trivial-simd/issues/49). Shifted overlap
 between input and output spans follows the [overlap limitation](api.md#limitations).
 
 [^rotm]: The flag in the first parameter element selects which matrix entries

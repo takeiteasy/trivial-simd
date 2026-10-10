@@ -592,7 +592,7 @@ static uint64_t ts_f32_bits_to_f64_bits(uint32_t bits) {
 }
 
 /* Types: 0=f32, 1=f64, 2=bf16, 3=f16. */
-/* TODO: exceptional f64 lanes remain scalar; add variable-shift bit conversion (#156). */
+/* TODO: exceptional f64 lanes remain scalar; add variable-shift bit conversion (#67). */
 static size_t ts_f64_to_encoded_packed(uint16_t *out, const double *input, size_t n, int f16, int rounding) {
     size_t i = 0;
 #if !defined(TS_SCALAR) && (defined(__aarch64__) || defined(_M_ARM64) || defined(__x86_64__) || defined(_M_X64))

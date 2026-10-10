@@ -155,7 +155,7 @@ instead. The available integer operations and backend paths are described in
 
 | Area | Ticket |
 |---|---|
-| Native strided kernels | [#101](https://todo.sr.ht/~takeiteasy/trivial-simd/101) |
+| Native strided kernels | [#49](https://github.com/communal-software/trivial-simd/issues/49) |
 
 [^overlap]: Shifted overlapping inputs use full-slice temporary vectors before
     backend dispatch or block staging. Simple Lisp vectors share storage by

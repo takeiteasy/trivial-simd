@@ -70,21 +70,21 @@ comparisons. Complex kernels reject `min`, `max`, `abs`, FMA, and transcendental
 expressions; `asum` computes complex magnitudes. Simple `sum` and `prod` row batches
 support complex inputs. Declared inputs and dependent-pass batches retain their real-float restrictions.
 Complex product kernels use typed Lisp execution; native execution is tracked in
-[#148](https://todo.sr.ht/~takeiteasy/trivial-simd/148).
+[#62](https://github.com/communal-software/trivial-simd/issues/62).
 `fma!` retains its real floating-point contract.
 The native complex path copies vectors into temporary buffers; reducing that
-overhead is tracked by [#74](https://todo.sr.ht/~takeiteasy/trivial-simd/74).
+overhead is tracked by [#37](https://github.com/communal-software/trivial-simd/issues/37).
 Native complex reductions materialize a block before reducing it; packed fusion
-is tracked by [#96](https://todo.sr.ht/~takeiteasy/trivial-simd/96).
+is tracked by [#48](https://github.com/communal-software/trivial-simd/issues/48).
 CCL complex helpers call generic arithmetic to avoid an ARM64 compiler bug with
 typed complex-double constants in CCL 1.13 (`v1.13-459-g690ff7ea`,
 `DarwinARM6464`). A compiled sum drops its argument; interpreted evaluation
 and a `NOTINLINE` declaration produce the expected result.[^ccl]
 The cached kernel helpers retain the workaround. The compiler defect remains
-tracked by [#138](https://todo.sr.ht/~takeiteasy/trivial-simd/138); its scope on
+tracked by [#59](https://github.com/communal-software/trivial-simd/issues/59); its scope on
 x86-64 and in other typed complex arithmetic paths is unverified.
 Cold concurrent complex Lisp kernels have an intermittent ARM64 CCL SIGBUS
-under investigation in [#142](https://todo.sr.ht/~takeiteasy/trivial-simd/142).
+under investigation in the CCL ARM64 SIGBUS investigation.
 Exceptional floating-point behavior retains the
 [kernel numerical limitations](kernels.md#limitations).
 

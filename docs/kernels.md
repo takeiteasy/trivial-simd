@@ -196,31 +196,31 @@ for measurements and [FMA fallback limitations](#limitations).
 - Real/integer mask expressions use scalar comparison and selection lanes in the native VM
   and scalar loops on SBCL. Spilling mask reductions allocate scratch per
   256-element block. Packed execution and scratch reuse are tracked in
-  [#72](https://todo.sr.ht/~takeiteasy/trivial-simd/72).
+  the conversion and mask vectorization work.
 - NaNs, infinities, non-default rounding modes, and floating-point traps may
   behave differently by backend. See the
-  [IEEE consistency ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/53).
+  [IEEE consistency ticket](https://github.com/communal-software/trivial-simd/issues/33).
 - ARM64 scalar FMA uses guarded compiler versions; other versions use optional
   C helpers or exact arithmetic. See [ARM64 FMA limitations](arm64-fma.md#limitations).
 - A native program supports at most 65,536 simultaneous scratch slots; exceeding
   this limit signals an error when defining the kernel. See the
-  [scratch addressing ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/50).
+  [scratch addressing ticket](https://github.com/communal-software/trivial-simd/issues/32).
 - Spilling kernels allocate scratch storage on each native call. See the
-  [spill storage evaluation](https://todo.sr.ht/~takeiteasy/trivial-simd/49).
+  spill storage evaluation.
 - Native call setup dominates short reductions; specialised bulk `dot` may
   be faster for `sum(a*b)`. See the
-  [call setup ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/59).
+  [call setup ticket](https://github.com/communal-software/trivial-simd/issues/34).
 - Nested mask reductions are unsupported. Multi-pass kernels recompute vector
   intermediates; see [pass execution limitations](kernel-passes.md#limitations).
 - Native reducers other than `sum` evaluate a block before reducing it; see the
-  [fused reducers ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/96).
+  [fused reducers ticket](https://github.com/communal-software/trivial-simd/issues/48).
   SBCL `minimum`, `maximum`, `argmin` and `argmax` use scalar loops
-  ([#92](https://todo.sr.ht/~takeiteasy/trivial-simd/92)), as does single-float
-  `nrm2` ([#95](https://todo.sr.ht/~takeiteasy/trivial-simd/95)).
+  ([#46](https://github.com/communal-software/trivial-simd/issues/46)), as does single-float
+  `nrm2` ([#47](https://github.com/communal-software/trivial-simd/issues/47)).
 - ECL's first native call for each setup signature includes helper compilation,
   costing hundreds of milliseconds. Cold compilation for different signatures
   is serialized. See the
-  [concurrent compilation ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/65).
+  [concurrent compilation ticket](https://github.com/communal-software/trivial-simd/issues/36).
 - SBCL kernels are generated only on x86-64 with `sb-simd`.
 
 [^overlap]: Each shifted, overlapping input costs one Lisp copy of its slice per

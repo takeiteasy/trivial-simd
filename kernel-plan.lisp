@@ -1,7 +1,7 @@
 (in-package #:trivial-simd)
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
-  ;; TODO: structural dedup scans earlier passes; hash-cons large graphs (#137).
+  ;; TODO: structural dedup scans earlier passes; hash-cons large graphs (#58).
   (defun kernel-pass-plan (expression arguments)
     (let ((originals nil) (passes nil))
       (labels ((walk (form)
@@ -116,7 +116,7 @@
     (declared-kernel-span vector low (- high low) 1 0)
     (list low high)))
 
-;; TODO: setup scales with rows and passes; batch native pass graphs (#137).
+;; TODO: setup scales with rows and passes; batch native pass graphs (#58).
 (defun run-planned-rows (functions forms arguments inputs specs destination reducer kind options starts strides)
   (unless (and destination (eq kind :numeric) (member reducer '(nil sum minimum maximum argmin argmax prod)))
     (error "Unsupported row kernel result"))

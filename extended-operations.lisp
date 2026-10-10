@@ -473,7 +473,7 @@ strides of DESTINATION then every operand, with NIL for scalars."
 
 (defparameter *native-numeric-conversion-minimum-count* 32768)
 
-;; TODO: M1 size gate; tune per platform after crossover measurements (#156).
+;; TODO: M1 size gate; tune per platform after crossover measurements (#67).
 (defun native-numeric-conversion-p (destination input count direct-view)
   (and (or direct-view (and (eq *native-array-access* :pointer) (>= count *native-numeric-conversion-minimum-count*)))
        (member *backend* '(:native :sbcl)) *native-available-p*
@@ -597,7 +597,7 @@ strides of DESTINATION then every operand, with NIL for scalars."
 #+(and sbcl x86-64)
 (define-sbcl-mask-loops)
 
-;; TODO: f32 byte-mask expansion stays scalar; widen byte flags in packs (#157).
+;; TODO: f32 byte-mask expansion stays scalar; widen byte flags in packs (#68).
 (defun sbcl-bulk-mask-p (type &optional selection-p)
   (and (eq *backend* :sbcl)
        (not (and selection-p (eq type :f32)))
@@ -856,7 +856,7 @@ strides of DESTINATION then every operand, with NIL for scalars."
                                    d-offset count scalar)))
         (setf scalar `(if (eq *backend* :sbcl) ,packed ,scalar))))
     #-(and sbcl x86-64) (declare (ignore tree))
-    ;; TODO: numeric mask reducers stay scalar; route through native reducers (#159).
+    ;; TODO: numeric mask reducers stay scalar; route through native reducers (#69).
     (if (member reduction *kernel-reducers*)
         scalar
         `(if (eq *backend* :native)
@@ -905,7 +905,7 @@ by a copy; see UNSHIFTED-KERNEL-INPUT."
            (programs (gensym "PROGRAMS")) (program (gensym "PROGRAM"))
            #+ecl (runners (gensym "RUNNERS"))
            (complex-kernel (gensym "COMPLEX-KERNEL"))
-           ;; TODO: repeated trees expand VM work; share pure subexpressions (#160).
+           ;; TODO: repeated trees expand VM work; share pure subexpressions (#70).
            (lowered (multiple-value-list (lower-kernel (mask-kernel-tree body arguments))))
            (bytes (kernel-bytes (first lowered)))
            (constants (second lowered)) (scratch-count (third lowered)))

@@ -66,7 +66,7 @@ else 1. Return NIL, which every consumer reads as all 1, when no stride is given
 (define-strided-transfers)
 
 ;; TODO: strided calls gather into temporaries and run the contiguous kernels;
-;; native strided kernels would avoid the extra copies (#101).
+;; native strided kernels would avoid the extra copies (#49).
 (defmacro with-gathered ((&rest bindings) count &body body)
   "Run BODY with each (VECTOR OFFSET STRIDE [ROLE]) whose STRIDE is not 1 rebound
 to a contiguous temporary at offset 0. ROLE is :IN (default), :OUT or :IN-OUT;

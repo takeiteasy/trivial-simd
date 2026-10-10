@@ -79,9 +79,9 @@ workloads and cache prototype.
 
 - These measurements cover balanced addition stress kernels on Apple M1;
   other expressions and allocators may have different costs. The
-  [storage evaluation](https://todo.sr.ht/~takeiteasy/trivial-simd/49) records
+  storage evaluation records
   the measured decision.
 - Bytecode scratch indexes support at most 65,536 simultaneous slots. See the
-  [scratch addressing ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/50).
+  [scratch addressing ticket](https://github.com/communal-software/trivial-simd/issues/32).
 - Setup dominates short non-spilling reductions. See the
-  [call setup ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/59).
+  [call setup ticket](https://github.com/communal-software/trivial-simd/issues/34).

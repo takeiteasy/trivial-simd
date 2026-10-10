@@ -61,7 +61,7 @@ Microseconds per call at 4 and 32 elements, single-float:[^timing]
 ## Limitations
 
 - Other operations, vector-scalar forms and per-operation length limits are
-  not covered; see [#109](https://todo.sr.ht/~takeiteasy/trivial-simd/109).
+  not covered; see [#50](https://github.com/communal-software/trivial-simd/issues/50).
 
 [^timing]: From `tests/overhead-bench.lisp` on SBCL 2.6.8 and macOS ARM64,
     2026-10-02. See [call overhead](benchmarks.md#call-overhead).

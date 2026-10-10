@@ -74,10 +74,10 @@ native library is built; everything else runs typed Lisp loops.[^kernels] On the
 
 Exact GEMM validation uses bounded workspace but can require substantial search
 time for difficult layouts. Stronger search pruning is tracked in
-[#154](https://todo.sr.ht/~takeiteasy/trivial-simd/154).
+[#66](https://github.com/communal-software/trivial-simd/issues/66).
 
 Complex routines use scalar Lisp loops without cache blocking or SIMD. Native
-complex kernels are tracked by [#80](https://todo.sr.ht/~takeiteasy/trivial-simd/80).
+complex kernels are tracked by [#38](https://github.com/communal-software/trivial-simd/issues/38).
 
 [^kernels]: Native `gemm` packs `A` and `B` panels so any layout or transpose
     runs the same micro-kernel; `syrk` and `syr2k` run one `gemm` that skips

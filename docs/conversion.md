@@ -127,8 +127,8 @@ See [conversion and mask measurements](conversion-mask-performance.md).
 Float-to-integer and integer pairs outside the packed coverage table use scalar
 loops. Direct s64/u64-to-f32 conversion stays scalar to preserve single rounding.
 Further native coverage and platform tuning are tracked in
-[#156](https://todo.sr.ht/~takeiteasy/trivial-simd/156); additional in-process SBCL
-conversion pairs are tracked in [#157](https://todo.sr.ht/~takeiteasy/trivial-simd/157).
+[#67](https://github.com/communal-software/trivial-simd/issues/67); additional in-process SBCL
+conversion pairs are tracked in [#68](https://github.com/communal-software/trivial-simd/issues/68).
 Shifted overlap follows the [bulk snapshot rules](api.md#overlap).
 Floating-point exceptional behavior outside the float-to-integer rules is
 covered by the [IEEE consistency limitation](kernels.md#limitations).

@@ -50,7 +50,7 @@ an element."
       (values (matrix-view-cols view) (matrix-view-rows view))))
 
 (defmacro define-level3-kernels (type)
-  ;; TODO: Complex types use scalar loops without cache blocking or SIMD; native kernels (#80).
+  ;; TODO: Complex types use scalar loops without cache blocking or SIMD; native kernels (#38).
   (let ((array `(simple-array ,type (*))) (zero `(coerce 0 ',type)))
     `(progn
        (define-kernel gemm-kernel ,type

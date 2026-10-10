@@ -5,7 +5,7 @@ packages:
   - curl
   - sbcl
 sources:
-  - https://git.sr.ht/~takeiteasy/trivial-simd
+  - https://github.com/communal-software/trivial-simd
 tasks:
   - quicklisp: |
       curl -fsSL --retry 5 -o quicklisp.lisp https://beta.quicklisp.org/quicklisp.lisp

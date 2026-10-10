@@ -82,7 +82,7 @@ Zero rows write nothing; zero-length rows skip inner evaluation.
 - Structural deduplication scans earlier reductions. Native row execution sets
   up each row/pass separately, and vector expressions are recomputed. Further
   planning and execution work is tracked in
-  [#137](https://todo.sr.ht/~takeiteasy/trivial-simd/137).
+  [#58](https://github.com/communal-software/trivial-simd/issues/58).
 - Reduction order and exceptional floating-point behavior retain the
   [kernel numerical limitations](kernels.md#limitations).
 

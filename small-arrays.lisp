@@ -2,7 +2,7 @@
 
 ;; TODO: one limit for every operation; the measured crossover with the native
 ;; backend is ~80 elements for dot, ~110 for add! and higher for min!. Per-operation
-;; limits would gain a little (#109).
+;; limits would gain a little (#50).
 (defconstant +small-array-limit+ 64
   "Arrays up to this length run an inline loop instead of a backend call.")
 

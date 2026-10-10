@@ -95,7 +95,7 @@
   (declare (type double-float a b c) (optimize (speed 3)))
   #+(and ccl arm64-target)
   (if *arm64-fma-compiler-p*
-      ;; TODO: #64 unboxed kernel operands/results remove per-element allocation.
+      ;; TODO: #35 unboxed kernel operands/results remove per-element allocation.
       (%arm64-fma-f64! a b c (ccl::%alloc-misc 2 arm64::subtag-double-float))
       (portable-fma a b c))
   #-(and ccl arm64-target)

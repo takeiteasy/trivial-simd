@@ -646,7 +646,7 @@ static type ts_reduce_add_##suffix(type x, type y) { return ts_value_##suffix(TS
         if (base == 0 || better(values[first], best)) { best = values[first]; best_index = base + first; } \
     }
 
-/* TODO: scalar reduction of an evaluated block; fuse into the VM with packed lanes (#96). */
+/* TODO: scalar reduction of an evaluated block; fuse into the VM with packed lanes (#48). */
 /* The first extreme wins, so ties keep the earlier element. */
 #define TS_KERNEL_REDUCTION(suffix, type, integral) \
 static int ts_kernel_reduction_with_scratch_##suffix(const uint8_t *code, size_t code_length, const type *constants, \

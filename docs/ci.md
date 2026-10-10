@@ -49,10 +49,10 @@ Run the suite locally first; see [testing](testing.md). A local run on one
 platform catches most failures; dispatch a slice for the platform you cannot
 run.
 
-## sr.ht builds
+## Private mirror builds
 
 [`.build.yml`](../.build.yml) runs the suite on Linux with SBCL on every push
-to the sr.ht mirror, at no GitHub cost. It covers the same ground as the tier 1
+to the private mirror, at no GitHub cost. It covers the same ground as the tier 1
 SBCL job.
 
 ## Cost

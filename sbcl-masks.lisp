@@ -137,7 +137,7 @@
                         (t (loop for offset in (cons d-offset offsets)
                             do (setf scalar (subst `(+ ,offset ,index) offset scalar))
                             finally (return (subst `(- ,count ,index) count scalar))))))))))
-    ;; TODO: missing sb-simd mask operations stay scalar; synthesize packs (#157).
+    ;; TODO: missing sb-simd mask operations stay scalar; synthesize packs (#68).
     (error () scalar)))
 
 (defun %sbcl-mask-count (mask count offset)

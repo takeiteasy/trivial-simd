@@ -29,7 +29,7 @@ with separate caches and retained logs.
 Rosetta CCL has costly cold compilation, test-data setup and lifetime trials.
 The Linux x86-64 stall is unconfirmed; local macOS timings do not establish
 Linux behavior. Remaining investigation is tracked in
-[#125](https://todo.sr.ht/~takeiteasy/trivial-simd/125).
+[#56](https://github.com/communal-software/trivial-simd/issues/56).
 
 [^diagnostics]: Per-test timing wraps FiveAM's test execution method. Setup and
     comparison timings wrap the native BLAS test helpers only during a timed

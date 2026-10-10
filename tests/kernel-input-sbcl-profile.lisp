@@ -9,7 +9,7 @@
 (trivial-simd:define-kernel profile-mixed-dot (x (q :type :s8) (scale :repeat 32))
   (trivial-simd:sum (* x (* q scale))))
 
-;; TODO: benchmark-only scalar conversion; integrate packed compiler loads (#129).
+;; TODO: benchmark-only scalar conversion; integrate packed compiler loads (#57).
 (defun profile-packed-dot (x q scales rows width out)
   (declare (type (simple-array single-float (*)) x scales out)
            (type (simple-array (signed-byte 8) (*)) q)

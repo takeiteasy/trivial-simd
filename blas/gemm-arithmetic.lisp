@@ -44,7 +44,7 @@
                  (1 (zerop (mod target (aref coefficients 0))))
                  (2 (solve-two target))
                  (otherwise
-                  ;; TODO: candidate enumeration grows with bounds; add lattice pruning (#154).
+                  ;; TODO: candidate enumeration grows with bounds; add lattice pruning (#66).
                   (let ((best-index 0) (best-start 0) (best-period 1) (best-count nil))
                     (dotimes (index count)
                       (let* ((coefficient (aref coefficients index))

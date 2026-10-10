@@ -126,10 +126,10 @@ costs.
 - Packed quantization formats require decoding before the kernel call.
 - Float inputs do not convert between precisions.
 - Declared-input kernels use scalar Lisp loops under `:sbcl`; compiler
-  integration is tracked in [#129](https://todo.sr.ht/~takeiteasy/trivial-simd/129).
+  integration is tracked in [#57](https://github.com/communal-software/trivial-simd/issues/57).
 - Native x86-64 integer preparation uses typed source loops. Additional packed
   conversion primitives are tracked in
-  [#72](https://todo.sr.ht/~takeiteasy/trivial-simd/72).
+  the conversion and mask vectorization work.
 - On implementations without pinned array access, overlap checks compare array
   identity and foreign addresses; they cannot detect a foreign view into array
   storage.

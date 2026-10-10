@@ -131,14 +131,14 @@ failure is absent.[^environment]
 
 The root cause of an intermittent host register-state assertion is unconfirmed.
 Passing retries do not establish a Rosetta fix; investigation remains tracked
-by [#140](https://todo.sr.ht/~takeiteasy/trivial-simd/140).[^assertion]
+by [#60](https://github.com/communal-software/trivial-simd/issues/60).[^assertion]
 Cold compilation, suite setup and lifetime overhead remain tracked separately
-by [#125](https://todo.sr.ht/~takeiteasy/trivial-simd/125). These macOS checks do
+by [#56](https://github.com/communal-software/trivial-simd/issues/56). These macOS checks do
 not establish the cause of a Linux CCL stall. The cancelled overlap validation
 also shows slow Rosetta execution with substantial exception handling in its
 sample; its cause is unconfirmed.
 Cold concurrent Lisp complex kernels also have an intermittent ARM64 CCL SIGBUS,
-tracked separately by [#142](https://todo.sr.ht/~takeiteasy/trivial-simd/142).
+tracked separately by the CCL ARM64 SIGBUS investigation.
 
 [^assertion]: The host abort reports
     `assertion failed: state update should occur from waiters' queue`, in

@@ -196,7 +196,7 @@ or NIL. Lisp vectors share storage by identity; views share it by address."
 (defun unshifted-kernel-input (destination d-offset input offset count)
   "Return INPUT and OFFSET, or a Lisp copy of INPUT's COUNT-element slice and 0
 when that slice shares memory with DESTINATION's slice other than element for
-element, so a kernel reads every input element before writing any output (#67)."
+element, so a kernel reads every input element before writing any output."
   (declare (type fixnum d-offset offset count))
   (let ((input-size (vector-element-size (vector-type input)))
         (output-size (vector-element-size (vector-type destination))))

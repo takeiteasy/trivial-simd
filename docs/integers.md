@@ -85,7 +85,7 @@ per call, measured with three calibrated batches; values are the median of three
 ## Limitations
 
 The SBCL ARM64 backend is tracked separately; ARM64 currently uses native C
-or Lisp. See [the ARM64 SBCL ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/31).
+or Lisp. See [the ARM64 SBCL ticket](https://github.com/communal-software/trivial-simd/issues/30).
 
 Integer kernels read every input before writing; see
 [kernel overlap](kernels.md#overlap). Shifted overlap in bulk integer operations

@@ -159,7 +159,7 @@ shifted against the destination's replaced by a copy; see UNSHIFTED-KERNEL-INPUT
             finally (return (values copies copy-offsets copy-spans)))))
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
-  ;; TODO: scalar SBCL declarations; integrate packed mixed-input execution (#129).
+  ;; TODO: scalar SBCL declarations; integrate packed mixed-input execution (#57).
   (defun declared-kernel-loop (arguments specs expression kind reducer type)
     (let* ((offsets (loop for nil in arguments collect (gensym "OFFSET")))
            (phases (loop for nil in arguments collect (gensym "PHASE")))

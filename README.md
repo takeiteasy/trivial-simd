@@ -97,16 +97,16 @@ supported yet. Blank is not planned.
 | Linux ARM64 | X | H | X |
 | macOS ARM64[^macos-local] | L | L | L |
 | macOS x86-64[^macos-local] | L | L | L |
-| Windows x86-64 | X | [P](https://todo.sr.ht/~takeiteasy/trivial-simd/28) | [P](https://todo.sr.ht/~takeiteasy/trivial-simd/29) |
+| Windows x86-64 | X | [P](https://github.com/communal-software/trivial-simd/issues/27) | [P](https://github.com/communal-software/trivial-simd/issues/28) |
 | Windows ARM64 | X | | |
-| [FreeBSD](https://todo.sr.ht/~takeiteasy/trivial-simd/14) | P | P | P |
-| [OpenBSD](https://todo.sr.ht/~takeiteasy/trivial-simd/15) | P | | P |
-| [NetBSD](https://todo.sr.ht/~takeiteasy/trivial-simd/16) | P | | P |
-| [Android](https://todo.sr.ht/~takeiteasy/trivial-simd/17) | | | P |
-| [iOS](https://todo.sr.ht/~takeiteasy/trivial-simd/18) | | | P |
+| [FreeBSD](https://github.com/communal-software/trivial-simd/issues/14) | P | P | P |
+| [OpenBSD](https://github.com/communal-software/trivial-simd/issues/15) | P | | P |
+| [NetBSD](https://github.com/communal-software/trivial-simd/issues/16) | P | | P |
+| [Android](https://github.com/communal-software/trivial-simd/issues/17) | | | P |
+| [iOS](https://github.com/communal-software/trivial-simd/issues/18) | | | P |
 
 Planned implementations:
-[ABCL](https://todo.sr.ht/~takeiteasy/trivial-simd/20), [CLISP](https://todo.sr.ht/~takeiteasy/trivial-simd/21), [Clasp](https://todo.sr.ht/~takeiteasy/trivial-simd/22), [CMUCL](https://todo.sr.ht/~takeiteasy/trivial-simd/23), [MKCL](https://todo.sr.ht/~takeiteasy/trivial-simd/24), [LispWorks](https://todo.sr.ht/~takeiteasy/trivial-simd/25), [Allegro CL](https://todo.sr.ht/~takeiteasy/trivial-simd/26), [JSCL](https://todo.sr.ht/~takeiteasy/trivial-simd/27) (Node and browsers), [GCL](https://todo.sr.ht/~takeiteasy/trivial-simd/30).
+[ABCL](https://github.com/communal-software/trivial-simd/issues/19), [CLISP](https://github.com/communal-software/trivial-simd/issues/20), [Clasp](https://github.com/communal-software/trivial-simd/issues/21), [CMUCL](https://github.com/communal-software/trivial-simd/issues/22), [MKCL](https://github.com/communal-software/trivial-simd/issues/23), [LispWorks](https://github.com/communal-software/trivial-simd/issues/24), [Allegro CL](https://github.com/communal-software/trivial-simd/issues/25), [JSCL](https://github.com/communal-software/trivial-simd/issues/26) (Node and browsers), [GCL](https://github.com/communal-software/trivial-simd/issues/29).
 
 [^macos-local]: macOS testing is local only. ARM64 scripts use installed SBCL 2.6.8,
     ECL 26.5.5, and CCL `v1.13-459-g690ff7ea`; x86-64 scripts use cached
@@ -121,15 +121,15 @@ Planned implementations:
 | x86-64 SSE2 | X | X | X |
 | x86-64 AVX+FMA (real BLAS) | | X | |
 | ARM64 NEON | | X | X |
-| [x86-64 AVX2](https://todo.sr.ht/~takeiteasy/trivial-simd/4) | | P | |
-| [x86-64 AVX-512](https://todo.sr.ht/~takeiteasy/trivial-simd/5) | | P | |
-| [ARM64 SVE/SVE2](https://todo.sr.ht/~takeiteasy/trivial-simd/6) | | P | |
-| [ARM64 SBCL SIMD](https://todo.sr.ht/~takeiteasy/trivial-simd/31) | P | | |
-| [x86-32 SSE2](https://todo.sr.ht/~takeiteasy/trivial-simd/7) | | P | |
-| [ARMv7 NEON](https://todo.sr.ht/~takeiteasy/trivial-simd/8) | | P | |
-| [RISC-V Vector](https://todo.sr.ht/~takeiteasy/trivial-simd/9) | | P | |
-| [PowerPC VSX](https://todo.sr.ht/~takeiteasy/trivial-simd/10) | | P | |
-| [WebAssembly SIMD128](https://todo.sr.ht/~takeiteasy/trivial-simd/11) | | P | |
+| [x86-64 AVX2](https://github.com/communal-software/trivial-simd/issues/6) | | P | |
+| [x86-64 AVX-512](https://github.com/communal-software/trivial-simd/issues/7) | | P | |
+| [ARM64 SVE/SVE2](https://github.com/communal-software/trivial-simd/issues/8) | | P | |
+| [ARM64 SBCL SIMD](https://github.com/communal-software/trivial-simd/issues/30) | P | | |
+| [x86-32 SSE2](https://github.com/communal-software/trivial-simd/issues/9) | | P | |
+| [ARMv7 NEON](https://github.com/communal-software/trivial-simd/issues/10) | | P | |
+| [RISC-V Vector](https://github.com/communal-software/trivial-simd/issues/11) | | P | |
+| [PowerPC VSX](https://github.com/communal-software/trivial-simd/issues/12) | | P | |
+| [WebAssembly SIMD128](https://github.com/communal-software/trivial-simd/issues/13) | | P | |
 
 A scalar fallback compiling on an unlisted target does not establish tested
 SIMD support. See [backend coverage](docs/backends.md#limitations).

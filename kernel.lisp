@@ -60,7 +60,7 @@
                       (right (register-need (fourth node))))
                   (max 1 (if (= left right) (1+ left) (max left right)))))))
 
-;; TODO: 16-bit scratch indexes cap live slots at 65,536; widen bytecode (#50).
+;; TODO: 16-bit scratch indexes cap live slots at 65,536; widen bytecode (#32).
 (defun kernel-scratch-index (index)
   (unless (typep index '(unsigned-byte 16))
     (error "Kernel scratch index ~D exceeds the 65,536-slot limit" index))
@@ -336,7 +336,7 @@ Empty slices give NIL for the extrema and a zero otherwise."
           fallback))))
 
 #+(and sbcl x86-64)
-;; TODO: min/max/arg reducers use scalar loops (#92); f32 nrm2 too (#95).
+;; TODO: min/max/arg reducers use scalar loops (#46); f32 nrm2 too (#47).
 (defun sbcl-kernel-form (tree type destination arguments d-offset offsets count &optional reducer)
   (when (or (kernel-transcendental-p tree)
             (member reducer '(minimum maximum argmin argmax prod))
@@ -512,7 +512,7 @@ Empty slices give NIL for the extrema and a zero otherwise."
                                            ,(scalar-kernel-form tree type arguments offsets index)))))
                            `(,@accumulate ,sum)))))))))))
 
-;; TODO: reducers other than sum evaluate a block, then reduce it; fuse into the VM (#96).
+;; TODO: reducers other than sum evaluate a block, then reduce it; fuse into the VM (#48).
 ;; Reducer codes match ts_kernel_reduction_*.
 (defun native-reduction-form (program foreign table count reducer input-count)
   (let ((value (gensym "VALUE")) (wide (gensym "WIDE")) (index (gensym "INDEX"))
@@ -565,7 +565,7 @@ Empty slices give NIL for the extrema and a zero otherwise."
                  `(progn ,(call 4)
                          (coerce (sqrt ,(read-wide)) 'single-float))))))))))
 
-;; TODO: pointer/output setup dominates short kernels; specialize runners if worthwhile (#59).
+;; TODO: pointer/output setup dominates short kernels; specialize runners if worthwhile (#34).
 (defun native-kernel-form (program foreign destination arguments d-offset offsets count
                            &optional reducer)
   (let ((pointers (loop for nil in arguments collect (gensym "POINTER")))
@@ -605,7 +605,7 @@ Empty slices give NIL for the extrema and a zero otherwise."
 (defvar *native-kernel-runners* (make-hash-table :test 'equal))
 
 #+(and ecl threads)
-;; TODO: cold compilation is serialized; evaluate per-signature locks (#65).
+;; TODO: cold compilation is serialized; evaluate per-signature locks (#36).
 (defvar *native-kernel-runner-lock* (mp:make-lock :name "native kernel runners"))
 
 #+ecl

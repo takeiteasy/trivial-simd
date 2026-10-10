@@ -220,7 +220,7 @@ Final-output checks compare every supported reduction operation bit-for-bit
 with materialised block sums, including cancellation-sensitive inputs. Borrowed
 scratch checks cover capacity, overflow, zero-length calls, ownership, and recovery
 after domain errors.
-GitHub Actions and sourcehut builds run it alongside the Lisp suite.
+GitHub Actions and the private mirror's builds run it alongside the Lisp suite.
 
 ## Native program lifetime
 
@@ -571,7 +571,7 @@ The profiles do not run in the test suite or CI.
 ## Limitations
 
 CCL x86-64 test setup and large data coercion remain costly under Rosetta,
-tracked in [#125](https://todo.sr.ht/~takeiteasy/trivial-simd/125).
+tracked in [#56](https://github.com/communal-software/trivial-simd/issues/56).
 Rosetta CCL also intermittently asserts or waits during register-state/thread
 handling, including a library-independent arithmetic reproducer; this is
-tracked in [#140](https://todo.sr.ht/~takeiteasy/trivial-simd/140).
+tracked in [#60](https://github.com/communal-software/trivial-simd/issues/60).

@@ -82,9 +82,9 @@ The checkout's source registry takes precedence over Quicklisp local projects.
   use typed scalar loops; native arithmetic around them retains VM SIMD paths.
 - Pass setup, per-row native calls, quadratic structural deduplication, and
   vector-intermediate storage evaluation are tracked in
-  [#137](https://todo.sr.ht/~takeiteasy/trivial-simd/137).
+  [#58](https://github.com/communal-software/trivial-simd/issues/58).
 - Exceptional-value consistency remains tracked in
-  [#53](https://todo.sr.ht/~takeiteasy/trivial-simd/53).
+  [#33](https://github.com/communal-software/trivial-simd/issues/33).
 
 [^method]: `benchmark-time` calibrates each batch to at least 50 ms and reports
     the median of three timed batches after warmup. Inputs repeat moderate

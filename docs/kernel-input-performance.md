@@ -57,10 +57,10 @@ other arithmetic types or general expression compilation.
   additive decomposition or a guaranteed lower bound.
 - The packed SBCL prototype is a benchmark, not a supported execution path.
   Compiler integration is tracked in
-  [#129](https://todo.sr.ht/~takeiteasy/trivial-simd/129).
+  [#57](https://github.com/communal-software/trivial-simd/issues/57).
 - Native x86-64 integer preparation uses typed source loops. Additional packed
   conversion primitives are tracked in
-  [#72](https://todo.sr.ht/~takeiteasy/trivial-simd/72).
+  the conversion and mask vectorization work.
 
 [^method]: Baseline loader source is `2f82036`; implementation and profiler are
     `dbd9a61`. Each process calibrates to at least 50 ms of CPU time and takes

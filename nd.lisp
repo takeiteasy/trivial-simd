@@ -73,7 +73,7 @@
     (when (loop for (stride . dimension) in axes always (> stride extent)
                do (incf extent (* stride (1- dimension))))
       (return-from nd-unique-output-p t)))
-  ;; TODO: O(size) workspace; extend arithmetic uniqueness proofs (#150).
+  ;; TODO: O(size) workspace; extend arithmetic uniqueness proofs (#63).
   (let ((seen (make-hash-table :test #'eql)))
     (nd-walk shape (vector strides) (vector start)
              (lambda (offsets)
@@ -90,7 +90,7 @@
 
 (defun nd-alias-p (destination input shape d-strides i-strides d-start i-start d-low d-high i-low i-high)
   (let ((foreign-d (vector-view-p destination)) (foreign-i (vector-view-p input)))
-    ;; TODO: mixed storage snapshots; compare ranges while arrays are pinned (#151).
+    ;; TODO: mixed storage snapshots; compare ranges while arrays are pinned (#64).
     (when (not (eq foreign-d foreign-i)) (return-from nd-alias-p t))
     (unless (or (eq destination input) (and foreign-d foreign-i))
       (return-from nd-alias-p nil))
@@ -339,7 +339,7 @@
 
 (defun nd-operation (operation destination operands shape starts stride-specs
                       &key operator rounding destination-encoding input-encoding)
-  ;; TODO: per-call layout setup caps short spans; reuse validated descriptors (#152).
+  ;; TODO: per-call layout setup caps short spans; reuse validated descriptors (#65).
   (let* ((shape (nd-shape shape)) (empty (find 0 shape))
          (type (nd-check-types operation destination operands operator rounding destination-encoding input-encoding))
          (values (coerce (cons destination operands) 'vector))

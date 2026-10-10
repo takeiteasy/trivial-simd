@@ -76,15 +76,15 @@ tested SIMD support.
 
 | Target | Planned work |
 |---|---|
-| x86-64 AVX2 | [Add AVX2 backend](https://todo.sr.ht/~takeiteasy/trivial-simd/4) |
-| x86-64 AVX-512 | [Add AVX-512 backend](https://todo.sr.ht/~takeiteasy/trivial-simd/5) |
-| ARM64 SVE/SVE2 | [Add scalable-vector backend](https://todo.sr.ht/~takeiteasy/trivial-simd/6) |
-| x86-32 SSE2 | [Validate 32-bit x86 backend](https://todo.sr.ht/~takeiteasy/trivial-simd/7) |
-| ARMv7 NEON | [Add 32-bit ARM backend](https://todo.sr.ht/~takeiteasy/trivial-simd/8) |
-| RISC-V Vector | [Add RVV backend](https://todo.sr.ht/~takeiteasy/trivial-simd/9) |
-| PowerPC VSX | [Add VSX backend](https://todo.sr.ht/~takeiteasy/trivial-simd/10) |
-| WebAssembly SIMD128 | [Add wasm SIMD backend](https://todo.sr.ht/~takeiteasy/trivial-simd/11) |
-| SBCL ARM64 SIMD | [Use an in-process SBCL backend](https://todo.sr.ht/~takeiteasy/trivial-simd/31) |
+| x86-64 AVX2 | [Add AVX2 backend](https://github.com/communal-software/trivial-simd/issues/6) |
+| x86-64 AVX-512 | [Add AVX-512 backend](https://github.com/communal-software/trivial-simd/issues/7) |
+| ARM64 SVE/SVE2 | [Add scalable-vector backend](https://github.com/communal-software/trivial-simd/issues/8) |
+| x86-32 SSE2 | [Validate 32-bit x86 backend](https://github.com/communal-software/trivial-simd/issues/9) |
+| ARMv7 NEON | [Add 32-bit ARM backend](https://github.com/communal-software/trivial-simd/issues/10) |
+| RISC-V Vector | [Add RVV backend](https://github.com/communal-software/trivial-simd/issues/11) |
+| PowerPC VSX | [Add VSX backend](https://github.com/communal-software/trivial-simd/issues/12) |
+| WebAssembly SIMD128 | [Add wasm SIMD backend](https://github.com/communal-software/trivial-simd/issues/13) |
+| SBCL ARM64 SIMD | [Use an in-process SBCL backend](https://github.com/communal-software/trivial-simd/issues/30) |
 
 The current native C backend uses SSE2 on x86-64 and NEON on ARM64, plus
 AVX+FMA for real BLAS. The additional instruction sets above are not selected
@@ -94,34 +94,34 @@ by it.
 
 | Target | Implementations | Planned work |
 |---|---|---|
-| FreeBSD | SBCL, CCL, ECL | [Build and test](https://todo.sr.ht/~takeiteasy/trivial-simd/14) |
-| OpenBSD | SBCL, ECL | [Build and test](https://todo.sr.ht/~takeiteasy/trivial-simd/15) |
-| NetBSD | SBCL, ECL | [Build and test](https://todo.sr.ht/~takeiteasy/trivial-simd/16) |
-| Android | ECL | [Build and test](https://todo.sr.ht/~takeiteasy/trivial-simd/17) |
-| iOS | ECL | [Build and test](https://todo.sr.ht/~takeiteasy/trivial-simd/18) |
+| FreeBSD | SBCL, CCL, ECL | [Build and test](https://github.com/communal-software/trivial-simd/issues/14) |
+| OpenBSD | SBCL, ECL | [Build and test](https://github.com/communal-software/trivial-simd/issues/15) |
+| NetBSD | SBCL, ECL | [Build and test](https://github.com/communal-software/trivial-simd/issues/16) |
+| Android | ECL | [Build and test](https://github.com/communal-software/trivial-simd/issues/17) |
+| iOS | ECL | [Build and test](https://github.com/communal-software/trivial-simd/issues/18) |
 
 ### Planned Lisp implementations
 
 | Target | Planned work |
 |---|---|
-| ABCL | [Add fallback and tests](https://todo.sr.ht/~takeiteasy/trivial-simd/20) |
-| CLISP | [Add fallback and tests](https://todo.sr.ht/~takeiteasy/trivial-simd/21) |
-| Clasp | [Add fallback and tests](https://todo.sr.ht/~takeiteasy/trivial-simd/22) |
-| CMUCL | [Add fallback and tests](https://todo.sr.ht/~takeiteasy/trivial-simd/23) |
-| MKCL | [Add fallback and tests](https://todo.sr.ht/~takeiteasy/trivial-simd/24) |
-| LispWorks | [Add fallback and tests](https://todo.sr.ht/~takeiteasy/trivial-simd/25) |
-| Allegro CL | [Add fallback and tests](https://todo.sr.ht/~takeiteasy/trivial-simd/26) |
-| JSCL in Node and browsers | [Add a JavaScript-compatible backend](https://todo.sr.ht/~takeiteasy/trivial-simd/27) |
-| CCL on Windows | [Add CI coverage](https://todo.sr.ht/~takeiteasy/trivial-simd/28) |
-| ECL on Windows | [Add CI coverage](https://todo.sr.ht/~takeiteasy/trivial-simd/29) |
-| GCL | [Add fallback and tests](https://todo.sr.ht/~takeiteasy/trivial-simd/30) |
+| ABCL | [Add fallback and tests](https://github.com/communal-software/trivial-simd/issues/19) |
+| CLISP | [Add fallback and tests](https://github.com/communal-software/trivial-simd/issues/20) |
+| Clasp | [Add fallback and tests](https://github.com/communal-software/trivial-simd/issues/21) |
+| CMUCL | [Add fallback and tests](https://github.com/communal-software/trivial-simd/issues/22) |
+| MKCL | [Add fallback and tests](https://github.com/communal-software/trivial-simd/issues/23) |
+| LispWorks | [Add fallback and tests](https://github.com/communal-software/trivial-simd/issues/24) |
+| Allegro CL | [Add fallback and tests](https://github.com/communal-software/trivial-simd/issues/25) |
+| JSCL in Node and browsers | [Add a JavaScript-compatible backend](https://github.com/communal-software/trivial-simd/issues/26) |
+| CCL on Windows | [Add CI coverage](https://github.com/communal-software/trivial-simd/issues/27) |
+| ECL on Windows | [Add CI coverage](https://github.com/communal-software/trivial-simd/issues/28) |
+| GCL | [Add fallback and tests](https://github.com/communal-software/trivial-simd/issues/29) |
 
 ### CCL coverage
 
 CCL has no GitHub CI jobs. Linux coverage relies on historical CI results;
 macOS validation runs locally. Remaining x86-64 test setup and lifetime-stress
 costs, including the unconfirmed Linux stall, are tracked in
-[#125](https://todo.sr.ht/~takeiteasy/trivial-simd/125).
+[#56](https://github.com/communal-software/trivial-simd/issues/56).
 
 ### Array access
 

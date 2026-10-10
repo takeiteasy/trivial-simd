@@ -39,7 +39,7 @@
   (if (eq type :c32) #C(0.0f0 0.0f0) #C(0.0d0 0.0d0)))
 
 (defun complex-binary (operation destination left right count d-offset l-offset r-offset)
-  ;; TODO: Per-call copies cap short-span speed; evaluate pinned or reused buffers (#74).
+  ;; TODO: Per-call copies cap short-span speed; evaluate pinned or reused buffers (#37).
   (when (and (eq *backend* :native) *native-complex-available-p*
              (vectorp left) (vectorp right) (>= count 32)
              (member operation '(:add :subtract :multiply)))

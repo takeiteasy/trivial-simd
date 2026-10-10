@@ -66,9 +66,9 @@ for a local comparison.[^timing]
 
 - Compiler internals are version guarded. Unlisted versions use the fallback.
 - CCL double-float results and ECL scalar calls still box floats. See the
-  [boxing improvement ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/64).
+  [boxing improvement ticket](https://github.com/communal-software/trivial-simd/issues/35).
 - This path uses scalar instructions. Lisp ARM64 vector generation is tracked by
-  the [ARM64 SIMD ticket](https://todo.sr.ht/~takeiteasy/trivial-simd/31).
+  the [ARM64 SIMD ticket](https://github.com/communal-software/trivial-simd/issues/30).
 - NaNs, infinities, non-default rounding modes, and floating-point traps share
   [the kernel limitations](kernels.md#limitations).
 
