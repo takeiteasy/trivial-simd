@@ -19,7 +19,7 @@ fallback.
 
 ## Installation
 
-From the takeiteasy Quicklisp dist, which is served over HTTPS so Quicklisp needs [ql-https](https://github.com/takeiteasy/ql-dist#install):
+From the takeiteasy Quicklisp dist, which is served over HTTPS so Quicklisp needs [ql-https](https://github.com/communal-software/ql-dist#install):
 
 ```lisp
 (ql-dist:install-dist "https://takeiteasy.github.io/ql-dist/dist/takeiteasy.txt")
@@ -29,7 +29,7 @@ From the takeiteasy Quicklisp dist, which is served over HTTPS so Quicklisp need
 Or clone into Quicklisp's local-projects:
 
 ```sh
-git clone https://github.com/takeiteasy/trivial-simd ~/quicklisp/local-projects/trivial-simd
+git clone https://github.com/communal-software/trivial-simd ~/quicklisp/local-projects/trivial-simd
 ```
 
 ## Backends
